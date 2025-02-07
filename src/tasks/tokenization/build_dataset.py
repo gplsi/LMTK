@@ -19,9 +19,6 @@ class DataHandler():
         self.data_sources = self.scan_directory()
         self.dataset_dict = self.create_dataset_from_generator()
         
-        
-    @staticmethod
-    def scan_directory(path)
 
 
 def scan_directory(path):
