@@ -10,6 +10,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN mkdir -p /workspace && chmod 1777 /workspace
 WORKDIR /workspace
 
+RUN echo 'export PYTHONPATH=/workspace/src:$PYTHONPATH' > /etc/profile.d/pythonpath.sh
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
