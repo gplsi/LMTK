@@ -55,6 +55,7 @@ def split_large_file(file_path, max_size=104857600, output_dir=None):
             with open(output_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(''.join(content))
             
+            
 def split_files_in_directory(directory, output_dir, max_size=104857600):
     """
     Iterates through all .txt files in the specified directory.
