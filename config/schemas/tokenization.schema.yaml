@@ -1,11 +1,42 @@
-# config/tokenization.schema.yaml
-includes: ['base.schema.yaml']
-mapping:
-  vocab_size:
-    type: int
-    min: 1000
-    max: 1000000
-  special_tokens:
-    type: seq
-    seq:
-      type: str
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "tokenization.schema.yaml"
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      vocab_size:
+        type: integer
+        minimum: 1000
+        maximum: 1000000000
+      special_tokens:
+        type: array
+        items:
+          type: string
+      dataset:
+        type: object
+        properties:
+          path:
+            type: string
+          formats:
+            type: array
+            items:
+              type: string
+        required:
+          - path
+          - formats
+      processing:
+        type: object
+        properties:
+          max_length:
+            type: integer
+            minimum: 1
+          normalization:
+            type: string
+        required:
+          - max_length
+          - normalization
+    required:
+      - vocab_size
+      - special_tokens
+      - dataset
+      - processing

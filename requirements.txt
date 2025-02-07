@@ -4,6 +4,6 @@ evaluate
 accelerate
 tokenizers
 pyyaml
-yamale
+jsonschema
 python-box
 types-pyyaml
