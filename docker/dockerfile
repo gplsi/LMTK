@@ -1,24 +1,33 @@
-# Use an official PyTorch image with torch 2.0.0 and CUDA 12.0 with cuDNN 8
+# Use official PyTorch image with pinned versions
 FROM pytorch/pytorch:2.6.0-cuda11.8-cudnn9-devel
 
-# Environment variables to prevent Python from writing .pyc files and enable unbuffered stdout/stderr
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH="/workspace:${PYTHONPATH}" \
+    DEBIAN_FRONTEND=noninteractive
 
-# Set the working directory inside the container
-WORKDIR /app
+# Create workspace directory with proper permissions
+RUN mkdir -p /workspace && chmod 1777 /workspace
+WORKDIR /workspace
 
-# (Optional) Install additional system dependencies if needed
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
- && rm -rf /var/lib/apt/lists/*
+    git \
+    curl \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file and install any additional Python dependencies
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the project files into the container
-COPY . .
+# Copy project files
+COPY --chown=$(id -u):$(id -g) . /workspace/
 
-# Define the default command to run the application
-CMD ["python", "src/main.py"]
+# Configure entrypoint
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["echo 'Container ready - use exec to run commands' && tail -f /dev/null"]
