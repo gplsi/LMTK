@@ -1,0 +1,16 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "base.schema.yaml"
+title: "Base Configuration Schema"
+type: object
+properties:
+  task_name:
+    type: string
+    enum: [tokenize, train]
+  output_dir:
+    type: string
+    pattern: "^[\\w\\-\\.\\/]+$"
+  log_level:
+    type: string
+    enum: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+required: [task_name, output_dir]
+additionalProperties: false
