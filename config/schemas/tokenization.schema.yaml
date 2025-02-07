@@ -1,21 +1,11 @@
-$schema: "http://json-schema.org/draft-07/schema#"
-$id: "tokenization.schema.yaml"
-title: "Tokenization Task Schema"
-allOf:
-  - $ref: "base.schema.yaml"
-properties:
-  dataset_path:
-    oneOf:
-      - type: string
-      - type: array
-        items:
-          type: string
-  tokenizer_name:
-    type: string
-  batch_size:
-    type: integer
-    minimum: 1
-  chunk_size:
-    type: integer
-    minimum: 64
-required: [dataset_path, tokenizer_name]
+# config/tokenization.schema.yaml
+includes: ['base.schema.yaml']
+mapping:
+  vocab_size:
+    type: int
+    min: 1000
+    max: 1000000
+  special_tokens:
+    type: seq
+    seq:
+      type: str
