@@ -3,3 +3,7 @@ datasets
 evaluate
 accelerate
 tokenizers
+pyyaml
+yamale
+python-box
+types-pyyaml
