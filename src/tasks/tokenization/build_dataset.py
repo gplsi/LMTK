@@ -6,6 +6,24 @@ from sklearn.model_selection import train_test_split
 import psutil
 from huggingface_hub import HfApi, create_repo
 
+
+class DataHandler():
+    def __init__(self, path, dataset_name, dataset_version, split_ratio, max_file_size):
+        
+        self.path = path
+        self.dataset_name = dataset_name
+        self.dataset_version = dataset_version
+        self.split_ratio = split_ratio
+        self.max_file_size = max_file_size
+        
+        self.data_sources = self.scan_directory()
+        self.dataset_dict = self.create_dataset_from_generator()
+        
+        
+    @staticmethod
+    def scan_directory(path)
+
+
 def scan_directory(path):
     """
     Scans the given directory for text files and returns a dictionary of data sources and their files.
