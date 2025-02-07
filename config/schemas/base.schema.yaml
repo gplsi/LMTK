@@ -5,7 +5,7 @@ type: object
 properties:
   task_name:
     type: string
-    enum: [tokenize, train]
+    enum: [tokenize, continual]
   output_dir:
     type: string
     pattern: "^[\\w\\-\\.\\/]+$"

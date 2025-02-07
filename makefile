@@ -7,14 +7,14 @@ GPU_DEVICES ?= all  # Can specify "0", "0,1" or "none" for CPU-only
 .PHONY: help build validate tokenize train dev-shell clean
 
 help:
-	@echo Continual Pretraining Framework
-	@echo Available targets:
-	@echo   build       - Build Docker image
-	@echo   validate    - Validate config file (set CONFIG=path.yaml)
-	@echo   tokenize    - Run tokenization task
-	@echo   train       - Launch distributed training
-	@echo   dev-shell   - Start interactive development shell
-	@echo   clean       - Clean build artifacts
+	@echo "Continual Pretraining Framework"
+	@echo "Available targets:"
+	@echo   "build       - Build Docker image"
+	@echo   "validate    - Validate config file (set CONFIG=path.yaml)"
+	@echo   "tokenize    - Run tokenization task"
+	@echo   "train       - Launch distributed training"
+	@echo   "dev-shell   - Start interactive development shell"
+	@echo   "clean       - Clean build artifacts"
 
 build:
 	docker build -t $(PROJECT_NAME) -f docker/Dockerfile .
