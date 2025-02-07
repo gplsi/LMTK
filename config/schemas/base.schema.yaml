@@ -1,19 +1,13 @@
-# config/base.schema.yaml
-type: map
-mapping:
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "base"
+type: object
+properties:
   task:
-    type: str
-    required: yes
-    enum: ['tokenization', 'pretraining']
-  experiment_name: 
-    type: str
-    regex: \w+
-  distributed:
-    type: map
-    mapping:
-      strategy: 
-        type: str
-        enum: ['fsdp', 'ddp', 'none']
-      config: 
-        type: map
-        nullable: yes
+    type: string
+    enum: ["tokenization", "pretraining"]
+  experiment_name:
+    type: string
+    pattern: '^.+$'
+required:
+  - task
+  - experiment_name

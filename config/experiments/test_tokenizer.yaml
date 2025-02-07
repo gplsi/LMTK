@@ -1,0 +1,10 @@
+task: tokenization
+experiment_name: "test-vocab-2025"
+vocab_size: 32000
+special_tokens: ["<|im_start|>", "<|im_end|>", "<|pad|>"]
+dataset:
+  path: "/data/corpus-2025"
+  formats: ["jsonl", "parquet"]
+processing:
+  max_length: 2048
+  normalization: "nfkc"
