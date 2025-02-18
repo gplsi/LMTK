@@ -1,10 +1,45 @@
-task: tokenization
-experiment_name: "test-vocab-2025"
-vocab_size: 5000
-special_tokens: ["<|im_start|>", "<|im_end|>", "<|pad|>"]
+task: "tokenization"
+experiment_name: "news_corpus_tokenizer"
+
+tokenizer:
+  vocab_size: 32000
+  algorithm: "bpe"
+  special_tokens:
+    - "[PAD]"
+    - "[UNK]"
+    - "[CLS]"
+    - "[SEP]"
+    - "[MASK]"
+  training_params:
+    min_frequency: 2
+    character_coverage: 0.9995
+
 dataset:
-  path: "/data/raw/corpus-2025"
-  formats: ["jsonl", "parquet"]
+  source: "local"
+  name: "data/raw/news_corpus"
+  format: "files"
+  file_config:
+    format: "txt"
+    encoding: "utf-8"
+  save_raw:
+    enabled: true
+    path: "data/processed/news_corpus_raw"
+
 processing:
-  max_length: 2048
-  normalization: "nfkc"
+  max_length: 512
+  truncation: true
+  padding: "max_length"
+  normalization:
+    lowercase: true
+    strip_accents: true
+    remove_punctuation: false
+    custom_normalizer: null
+
+output:
+  save_tokenizer:
+    path: "models/tokenizer"
+    format: "json"
+  save_tokenized:
+    enabled: true
+    path: "data/tokenized/news_corpus"
+    format: "arrow"
