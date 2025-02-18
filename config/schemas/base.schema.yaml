@@ -8,6 +8,10 @@ properties:
   experiment_name:
     type: string
     pattern: '^.+$'
+  verbose_level:
+    type: integer
+    minimum: 0
+    maximum: 4
 required:
   - task
   - experiment_name

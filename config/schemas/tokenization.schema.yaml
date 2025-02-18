@@ -7,30 +7,23 @@ allOf:
       tokenizer:
         type: object
         properties:
-          vocab_size:
-            type: integer
-            minimum: 1000
-            maximum: 1000000000
-          special_tokens:
-            type: array
-            items:
-              type: string
-          algorithm:
+          name:
             type: string
-            enum: ["bpe", "wordpiece", "unigram", "sentencepiece"]
-          training_params:
-            type: object
-            properties:
-              min_frequency:
-                type: integer
-                minimum: 1
-              character_coverage:
-                type: number
-                minimum: 0
-                maximum: 1.0
+            description: "HuggingFace tokenizer name"
+          context_length:
+            type: integer
+            minimum: 1
+            maximum: 100000
+          overlap:
+            type: integer
+            minimum: 0
+          task:
+            type: string
+            enum: ["causal_pretraining"]
+            default: "causal_pretraining"
         required:
-          - vocab_size
-          - algorithm
+          - name
+          - context_length
       
       dataset:
         type: object
@@ -68,62 +61,16 @@ allOf:
           - nameOrPath
           - format
 
-      processing:
-        type: object
-        properties:
-          max_length:
-            type: integer
-            minimum: 1
-          truncation:
-            type: boolean
-            default: true
-          padding:
-            type: string
-            enum: ["max_length", "longest", "none"]
-            default: "max_length"
-          normalization:
-            type: object
-            properties:
-              lowercase:
-                type: boolean
-                default: true
-              strip_accents:
-                type: boolean
-                default: false
-              remove_punctuation:
-                type: boolean
-                default: false
-              custom_normalizer:
-                type: string
-                description: "Path to custom normalizer function"
-        required:
-          - max_length
-
       output:
         type: object
         properties:
-          save_tokenizer:
-            type: object
-            properties:
-              path:
-                type: string
-              format:
-                type: string
-                enum: ["json", "pickle"]
-          save_tokenized:
-            type: object
-            properties:
-              enabled:
-                type: boolean
-              path:
-                type: string
-              format:
-                type: string
-                enum: ["arrow", "parquet", "json"]
+          path:
+            type: string
+            description: "Path to save tokenized dataset"
         required:
-          - save_tokenizer
+          - path
+          
     required:
       - tokenizer
       - dataset
-      - processing
       - output
