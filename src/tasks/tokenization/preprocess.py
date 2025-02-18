@@ -6,6 +6,8 @@ from sklearn.model_selection import train_test_split
 import psutil
 from huggingface_hub import HfApi, create_repo
 
+from src.utils._dataset_helpers import scan_directory
+
 
 class DataHandler():
     def __init__(self, path, dataset_name, dataset_version, split_ratio, max_file_size):
@@ -16,29 +18,9 @@ class DataHandler():
         self.split_ratio = split_ratio
         self.max_file_size = max_file_size
         
-        self.data_sources = self.scan_directory()
-        self.dataset_dict = self.create_dataset_from_generator()
+        self.data_sources = scan_directory()
+        self.dataset_dict = create_dataset_from_generator()
         
-
-
-def scan_directory(path):
-    """
-    Scans the given directory for text files and returns a dictionary of data sources and their files.
-
-    Args:
-        path (str): Path to the directory containing subfolders with text files.
-
-    Returns:
-        dict: A dictionary where keys are data sources (folder names) and values are lists of text file paths.
-    """
-    data_sources = {}
-    for root, dirs, files in os.walk(path):
-        source = os.path.basename(root)
-        if source != os.path.basename(path):  # Exclude the root directory itself
-            txt_files = [os.path.join(root, file) for file in files if file.endswith('.txt')]
-            if txt_files:
-                data_sources[source] = txt_files
-    return data_sources
 
 def data_generator(txt_files_dict):
     """
