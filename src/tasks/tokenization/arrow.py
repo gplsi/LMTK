@@ -3,6 +3,7 @@ from datasets import load_dataset, concatenate_datasets, Dataset, DatasetDict
 import os
 from functools import partial
 
+SUPPORTED_EXTENSIONS = ['txt', 'csv', 'json']
 class ArrowDataset:
     """
     Class for handling the conversion to Arrow format.
@@ -60,7 +61,6 @@ class ArrowDataset:
         })
         dataset_dict.save_to_disk(dataset_dict_path=f"data/arrow/{self.dataset_name}")  # Save the split dataset to disk
     
-
 # Usage
 # files_path = 'path_to_your_folder'
 # arrow_dataset = ArrowDataset(files_path)
@@ -69,4 +69,3 @@ class ArrowDataset:
 # if combined_dataset:
 #     print(combined_dataset)
 
-SUPPORTED_EXTENSIONS = ['txt', 'csv', 'json']
