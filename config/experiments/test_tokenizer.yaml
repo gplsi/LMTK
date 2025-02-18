@@ -1,0 +1,40 @@
+task: "tokenization"
+experiment_name: "news_corpus_tokenizer"
+
+tokenizer:
+  vocab_size: 32000
+  algorithm: "bpe"
+  special_tokens:
+    - "[PAD]"
+    - "[UNK]"
+    - "[CLS]"
+    - "[SEP]"
+    - "[MASK]"
+  training_params:
+    min_frequency: 2
+    character_coverage: 0.9995
+
+dataset:
+  source: "local"
+  nameOrPath: "data/raw/news_corpus"
+  format: "files"
+  file_config:
+    format: "txt"
+    encoding: "utf-8"
+  save_raw:
+    enabled: true
+    path: "data/processed/news_corpus_raw"
+
+processing:
+  max_length: 512
+  truncation: true
+  padding: "max_length"
+
+output:
+  save_tokenizer:
+    path: "models/tokenizer"
+    format: "json"
+  save_tokenized:
+    enabled: true
+    path: "data/tokenized/news_corpus"
+    format: "arrow"
