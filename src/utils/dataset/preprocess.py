@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 import psutil
 from huggingface_hub import HfApi, create_repo
 
-from src.utils._dataset_helpers import scan_directory
+from tasks.tokenization.dataset._dataset_helpers import scan_directory
 
 
 class DataHandler():

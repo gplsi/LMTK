@@ -1,18 +1,12 @@
 task: "tokenization"
 experiment_name: "news_corpus_val-es"
-verbose_level: 2
+verbose_level: 3
+
 tokenizer:
-  vocab_size: 32000
-  algorithm: "bpe"
-  special_tokens:
-    - "[PAD]"
-    - "[UNK]"
-    - "[CLS]"
-    - "[SEP]"
-    - "[MASK]"
-  training_params:
-    min_frequency: 2
-    character_coverage: 0.9995
+  name: "gpt2"  # Using GPT2 as example, replace with your preferred pre-trained tokenizer
+  context_length: 512
+  overlap: 128
+  task: "causal_pretraining"
 
 dataset:
   source: "local"
@@ -21,20 +15,6 @@ dataset:
   file_config:
     format: "txt"
     encoding: "utf-8"
-  save_raw:
-    enabled: true
-    path: "data/processed/news_corpus_raw"
-
-processing:
-  max_length: 512
-  truncation: true
-  padding: "max_length"
 
 output:
-  save_tokenizer:
-    path: "models/tokenizer"
-    format: "json"
-  save_tokenized:
-    enabled: true
-    path: "data/tokenized/news_corpus"
-    format: "arrow"
+  path: "data/tokenized/news_corpus"
