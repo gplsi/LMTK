@@ -1,8 +1,11 @@
+import pprint
+
+from box import Box
 
 # src/tasks/tokenization.py
-def execute(config):
+def execute(config: Box):
     print("Tokenizing with the following config:")
-    print(config)
+    pprint.pprint(config.items)
     
     # input dataset
     # - huggingface
