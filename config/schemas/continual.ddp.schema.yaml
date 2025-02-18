@@ -6,7 +6,7 @@ allOf:
   - type: object
     properties:
       
-      number_workers:
+      num_workers:
         type: integer
         default: 4
         description: "Number of CPU workers for data loading"
@@ -17,6 +17,6 @@ allOf:
         default: "nccl"
         description: "DDP backend to use"
     required:
-      - number_workers
+      - num_workers
       - backend
       

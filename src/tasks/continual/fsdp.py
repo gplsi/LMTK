@@ -13,15 +13,11 @@ from lightning.fabric.strategies import FSDPStrategy
 from pytorch_lightning.loggers import WandbLogger
 
 # Importando utilidades personalizadas
-from utils.speed_monitor import SpeedMonitorFabric as Monitor
-from utils.logger import step_csv_logger
+from speed_monitor import SpeedMonitorFabric as Monitor
+from logger import step_csv_logger
+from src.tasks.continual.utils import *
 from models.models_class import FabricGeneration
 
-
-# Configurar loggers
-hparams = {k: v for k, v in locals().items() if isinstance(v, (int, float, str)) and not k.startswith("_")}
-#logger = step_csv_logger("out", config.model_name, flush_logs_every_n_steps=args['log_iter_interval'])
-#wandb_logger = WandbLogger(entity=args['entity'], project=args['project'], log_model=args['log_model'])
 
 def set_loggers(config):
     logger = step_csv_logger(config.output_dir, config.model_name, flush_logs_every_n_steps=config.log_iter_interval)
@@ -33,8 +29,6 @@ def setup(devices: int, config, resume: Union[bool, Path] = False) -> None:
     """
     Configura el entorno para el entrenamiento distribudo.
     """
-    
-    # Configurar la estrategia según el número de dispositivos y si se usa TPU
     if devices > 1:
         # Estrategia FSDP para distribución de los parámetros y gradientes
         strategy = FSDPStrategy(
@@ -47,47 +41,57 @@ def setup(devices: int, config, resume: Union[bool, Path] = False) -> None:
         )
     else:
         strategy = "auto"  # Uso automático de estrategia para 1 dispositivo
+        # TODO: Poner en formato de warning
+        print("Using automatic strategy for 1 device.")
 
     # Configurar Fabric con los dispositivos, estrategia, precisión y loggers
     logger, wandb_logger = set_loggers(config)
     fabric = L.Fabric(devices=devices, strategy=strategy, precision=config.precision, loggers=[logger, wandb_logger])
+    
+    hparams = {k: v for k, v in locals().items() if isinstance(v, (int, float, str)) and not k.startswith("_")}
     fabric.print(hparams)
     
     # Lanzar la función principal de entrenamiento
-    fabric.launch(main, resume, config)
+    fabric.launch(main, resume, config, hparams)
     
     
-def main(fabric, resume, config):
+def main(fabric, resume, config, hparams):
     """
     Función principal para entrenamiento de modelos grandes con técnicas de paralelismo distribuido.
     """
-    # Monitor para registrar el rendimiento
-    monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=args['log_iter_interval'])
+    # DETERMINISTIC RESULTS
+    if config.seed:
+        setup_environment(config.seed)
+        fabric.seed_everything(config.seed)
+    
+    # MONITORING
+    monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=config.log_iter_interval)
 
+
+    # OUTPUT DIR AND SYNC
     if fabric.global_rank == 0:
         config.output_dir.mkdir(parents=True, exist_ok=True)
-    fabric.barrier()  # Asegurarse de que todos los procesos esperen hasta que el directorio esté creado
+    fabric.barrier()
 
-    # Cargar el dataset
+
+    # DATASETS
     dataset = load_from_disk(config.train_data_dir)
     train_dataset = dataset["train"]
     train_dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
     validation_dataset = dataset["valid"]
     validation_dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
 
-    # Configurar los dataloaders
+
+    # DATALOADERS
     train_dataloader = DataLoader(train_dataset, batch_size=config.micro_batch_size, shuffle=True, num_workers=config.num_workers)
     validation_dataloader = DataLoader(validation_dataset, batch_size=config.eval_batch_size, shuffle=False, num_workers=config.num_workers)
 
-    # Configurar los dataloaders con Fabric
-    if validation_dataloader is None:
-        train_dataloader = fabric.setup_dataloaders(train_dataloader)
-    else:
-        train_dataloader, val_dataloader = fabric.setup_dataloaders(train_dataloader, validation_dataloader)
 
-    fabric.seed_everything(3407)  # Misma semilla para cada proceso
+    # FABRIC DATALOADERS SETUP
+    train_dataloader, validation_dataloader = fabric.setup_dataloaders(train_dataloader, validation_dataloader)
 
-    # Inicializar el modelo
+
+    # MODEL
     t0 = time.perf_counter()
     with fabric.init_module():
         model = FabricGeneration(config) 
@@ -96,22 +100,31 @@ def main(fabric, resume, config):
 
     fabric.print(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
 
-    # Configurar el optimizador
+
+    # OPTIMIZER
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.lr, weight_decay=config.weight_decay, betas=(config.beta1, config.beta2), foreach=True
     )
     optimizer = fabric.setup_optimizers(optimizer)
+    
+    
+    # SCHEDULER
+    scheduler = select_scheduler(optimizer, config.lr_scheduler, config.number_epochs, fabric.world_size, config.micro_batch_size, train_dataset, config.warmup_proportion, config.gradient_accumulation_steps)
 
-    # Definir el estado del entrenamiento
-    state = {"model": model, "optimizer": optimizer, "hparams": hparams, "iter_num": 0, "step_count": 0}
 
+    # STATE
+    state = {"model": model, "optimizer": optimizer, "hparams": hparams, "iter_num": 0, "step_count": 0, "scheduler": scheduler}
+
+
+    # RESUME
     if resume is True:
         resume = sorted(config.output_dir.glob("*.pth"))[-1]
     if resume:
         fabric.print(f"Resuming training from {resume}")
         fabric.load(resume, state)
 
-    # Comenzar el entrenamiento
+
+    # TRAINING
     train_time = time.perf_counter()
     train(fabric, state, train_dataloader, validation_dataloader, monitor, resume, config)
     fabric.print(f"Training time: {(time.perf_counter() - train_time):.2f}s")
@@ -126,22 +139,23 @@ def train(fabric, state, train_dataloader, validation_dataloader, monitor, resum
     """
     model = state["model"]
     optimizer = state["optimizer"]
-
+    scheduler = state["scheduler"]
     total_lengths = 0
     total_t0 = time.perf_counter()
     initial_iter = state["iter_num"]
     curr_iter = 0
     epochs = config.number_epochs
 
-    # Iterar sobre las épocas
+    # TRAINING LOOP
     for epoch in range(epochs):
         if fabric.global_rank == 0:
             print(f"Running Epoch {epoch + 1} of {epochs}")
         batch_iterator = tqdm(train_dataloader, mininterval=0, colour="blue") if fabric.global_rank == 0 else train_dataloader
-        eval_step_interval = initial_iter + int((len(batch_iterator) / 2) // config.gradient_accumulation_steps)
-
-        # Iterar sobre cada lote
+        
+        
         for step, batch in enumerate(batch_iterator):
+            
+            # GETTING TO THE RESUME POINT
             if resume:
                 if curr_iter < initial_iter:
                     curr_iter += 1
@@ -154,37 +168,48 @@ def train(fabric, state, train_dataloader, validation_dataloader, monitor, resum
             if state["iter_num"] >= config.max_iters:
                 break
 
-            # Determinar la tasa de aprendizaje actual
-            lr = get_lr(state["iter_num"], config.lr) if config.decay_lr else config.lr
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = lr
-
             iter_t0 = time.perf_counter()
             is_accumulating = (state["iter_num"] + 1) % config.gradient_accumulation_steps != 0
 
-            # Backpropagation con acumulación de gradientes
+
+            # FORWARD PASS
             with fabric.no_backward_sync(model, enabled=is_accumulating):
                 outputs, loss = model.training_step(batch, step)
                 fabric.backward(loss / config.gradient_accumulation_steps)
 
+
+            # BACKPROPAGATION
             if not is_accumulating:
                 # Log the gradient norms before clipping for monitoring
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
                 fabric.print(f"Gradient norm before clipping: {grad_norm:.4f}")
                 fabric.clip_gradients(model, optimizer, max_norm=config.grad_clip)
                 optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad()
                 state["step_count"] += 1
+                
+                if state["step_count"] % config.eval_steps == 0:
+                    fabric.barrier()
+                    val_loss = validate(fabric, model, validation_dataloader, config)
+                    fabric.log_dict({"metric/val_loss": val_loss.item()}, state["step_count"])
+                    fabric.log_dict({"metric/val_ppl": math.exp(val_loss.item())}, state["step_count"])
+                    fabric.barrier()
+                    
+                    checkpoint_path = config.output_dir / f"iter-{state['iter_num']:06d}-ckpt.pth"
+                    fabric.print(f"Saving checkpoint to {str(checkpoint_path)!r}")
+                    fabric.save(checkpoint_path, state)
+                    
 
             state["iter_num"] += 1
             total_lengths += batch["input_ids"].size(1)
             t1 = time.perf_counter()
 
-            # Imprimir estado del entrenamiento
+            # LOGS
             fabric.print(
                 f"iter {state['iter_num']} step {state['step_count']}: loss {loss.item():.4f}, iter time:"
                 f" {(t1 - iter_t0) * 1000:.2f}ms remaining time: "
-                f"{(t1 - total_t0) / (state['iter_num'] - initial_iter) * (config.max_iters] - state['iter_num']) / 3600:.2f} hours. "
+                f"{(t1 - total_t0) / (state['iter_num'] - initial_iter) * (config.max_iters - state['iter_num']) / 3600:.2f} hours. "
             )
 
             monitor.on_train_batch_end(
@@ -195,8 +220,9 @@ def train(fabric, state, train_dataloader, validation_dataloader, monitor, resum
                 lengths=total_lengths,
                 train_loss=loss.item()
             )
-
-        # Validación al final de cada época
+        
+        fabric.barrier()
+        # EPOCH END - VALIDATION
         t0 = time.perf_counter()
         val_loss = validate(fabric, model, validation_dataloader, config)
         t1 = time.perf_counter() - t0
@@ -206,22 +232,20 @@ def train(fabric, state, train_dataloader, validation_dataloader, monitor, resum
         fabric.log_dict({"metric/val_ppl": math.exp(val_loss.item())}, state["step_count"])
         fabric.barrier()
 
-        # Guardar checkpoint
+
+        # EPOCH END - SAVE CHECKPOINT
         checkpoint_path = config.output_dir / f"iter-{state['iter_num']:06d}-ckpt.pth"
         fabric.print(f"Saving checkpoint to {str(checkpoint_path)!r}")
         fabric.save(checkpoint_path, state)
 
 
 @torch.no_grad()
-def validate(fabric: L.Fabric, model: torch.nn.Module, val_dataloader: DataLoader, config) -> torch.Tensor:
-    """
-    Función de validación para evaluar el rendimiento del modelo.
-    """
+def validate(fabric: L.Fabric, model: torch.nn.Module, validation_dataloader: DataLoader, config) -> torch.Tensor:
     fabric.print("Validating ...")
     model.eval()
 
     losses = torch.zeros(config.eval_iters, device=fabric.device)
-    batch_iterator = tqdm(val_dataloader, desc=f"Running Epoch 1 of 1", mininterval=0, colour="green")
+    batch_iterator = tqdm(validation_dataloader, desc=f"Running Epoch 1 of 1", mininterval=0, colour="green")
 
     for k, val_data in enumerate(batch_iterator):
         if k >= config.eval_iters:
@@ -234,13 +258,3 @@ def validate(fabric: L.Fabric, model: torch.nn.Module, val_dataloader: DataLoade
     return out
 
 
-# Scheduler para el decay de la tasa de aprendizaje
-def get_lr(it, learning_rate, config):
-    if it < config.warmup_iters:
-        return learning_rate * it / config.warmup_iters
-    if it > config.lr_decay_iters:
-        return config.min_lr
-    decay_ratio = (it - config.warmup_iters) / (config.lr_decay_iters - config.warmup_iters)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
-    return config.min_lr + coeff * (learning_rate - config.min_lr)
