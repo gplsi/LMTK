@@ -1,6 +1,6 @@
 task: "tokenization"
-experiment_name: "news_corpus_tokenizer"
-
+experiment_name: "news_corpus_val-es"
+verbose_level: 2
 tokenizer:
   vocab_size: 32000
   algorithm: "bpe"
@@ -16,7 +16,7 @@ tokenizer:
 
 dataset:
   source: "local"
-  nameOrPath: "data/raw/news_corpus"
+  nameOrPath: "/workspace/data/raw/corpus-val-es"
   format: "files"
   file_config:
     format: "txt"

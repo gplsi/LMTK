@@ -22,8 +22,9 @@ def execute_task(config_path: str):
     task_module.execute(config)
     
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config', help='Path to experiment config')
-    args = parser.parse_args()
-    execute_task(args.config)
+    # import argparse
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('config', help='Path to experiment config')
+    # args = parser.parse_args()
+    # execute_task(args.config)
+    execute_task("config/experiments/test_tokenizer_local.yaml")
