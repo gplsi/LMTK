@@ -4,39 +4,126 @@ allOf:
   - $ref: "base.schema.yaml"
   - type: object
     properties:
-      vocab_size:
-        type: integer
-        minimum: 1000
-        maximum: 1000000000
-      special_tokens:
-        type: array
-        items:
-          type: string
-      dataset:
+      tokenizer:
         type: object
         properties:
-          path:
-            type: string
-          formats:
+          vocab_size:
+            type: integer
+            minimum: 1000
+            maximum: 1000000000
+          special_tokens:
             type: array
             items:
               type: string
+          algorithm:
+            type: string
+            enum: ["bpe", "wordpiece", "unigram", "sentencepiece"]
+          training_params:
+            type: object
+            properties:
+              min_frequency:
+                type: integer
+                minimum: 1
+              character_coverage:
+                type: number
+                minimum: 0
+                maximum: 1.0
         required:
-          - path
-          - formats
+          - vocab_size
+          - algorithm
+      
+      dataset:
+        type: object
+        properties:
+          source:
+            type: string
+            enum: ["huggingface", "local"]
+          nameOrPath:
+            type: string
+            description: "Dataset name for HuggingFace or local path"
+          format:
+            type: string
+            enum: ["dataset", "files"]
+          file_config:
+            type: object
+            properties:
+              format:
+                type: string
+                default: "any"
+                enum: ["csv", "txt", "json", "any"]
+              text_column:
+                type: string
+              encoding:
+                type: string
+                default: "utf-8"
+          save_raw:
+            type: object
+            properties:
+              enabled:
+                type: boolean
+              path:
+                type: string
+        required:
+          - source
+          - nameOrPath
+          - format
+
       processing:
         type: object
         properties:
           max_length:
             type: integer
             minimum: 1
-          normalization:
+          truncation:
+            type: boolean
+            default: true
+          padding:
             type: string
+            enum: ["max_length", "longest", "none"]
+            default: "max_length"
+          normalization:
+            type: object
+            properties:
+              lowercase:
+                type: boolean
+                default: true
+              strip_accents:
+                type: boolean
+                default: false
+              remove_punctuation:
+                type: boolean
+                default: false
+              custom_normalizer:
+                type: string
+                description: "Path to custom normalizer function"
         required:
           - max_length
-          - normalization
+
+      output:
+        type: object
+        properties:
+          save_tokenizer:
+            type: object
+            properties:
+              path:
+                type: string
+              format:
+                type: string
+                enum: ["json", "pickle"]
+          save_tokenized:
+            type: object
+            properties:
+              enabled:
+                type: boolean
+              path:
+                type: string
+              format:
+                type: string
+                enum: ["arrow", "parquet", "json"]
+        required:
+          - save_tokenizer
     required:
-      - vocab_size
-      - special_tokens
+      - tokenizer
       - dataset
       - processing
+      - output

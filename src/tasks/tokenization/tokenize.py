@@ -9,8 +9,6 @@ from src.utils._dataset_helpers import *
 """
 This script contains functions for tokenizing text data for language modeling tasks.
 """
-
-
 class BaseTokenizer(ABC):
     
     """
@@ -57,7 +55,6 @@ class BaseTokenizer(ABC):
 
 
 class Tokenize(BaseTokenizer):
-    
     """
     This is the main class for tokenizing, it will perform specific tokenization based on the desired task.
     Currently supports values in ['continual_pretraining']. kwargs expects the specific parameters for the 
