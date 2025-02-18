@@ -1,0 +1,179 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "continual.schema.yaml"
+description: "Main schema for training configuration"
+
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      # Devices arguments
+      devices:
+        type: integer
+        default: 4
+        description: "Number of devices to use"
+      tpu:
+        type: boolean
+        default: false
+        description: "If True, use TPU devices"
+
+      # Data arguments
+      train_data_dir:
+        type: string
+        default: "/data/tokenized_datasets_miquel_TTL"
+        description: "Path to the training and validation datasets"
+
+      # Model arguments
+      model_name:
+        type: string
+        default: "meta-llama/Meta-Llama-3-8B"
+        description: "Name or path of the model to load"
+      precision:
+        type: string
+        default: "bf16-true"
+        description: "Precision for the loaded model"
+
+      # Checkpoint arguments
+      resume:
+        type: boolean
+        default: false
+        description: "If True, resume training from a checkpoint"
+      checkpoint:
+        type: string
+        default: null
+        description: "Path to the checkpoint file for resume"
+
+      # Training arguments
+      number_epochs:
+        type: integer
+        default: 2
+        description: "Number of epochs to train"
+      micro_batch_size:
+        type: integer
+        default: 1
+        description: "Size of each data batch"
+
+      # Optimizer arguments
+      gradient_accumulation:
+        type: boolean
+        default: true
+        description: "If True, use gradient accumulation"
+
+      gradient_accumulation_steps:
+        type: integer
+        default: 64
+        description: "Number of gradient accumulation steps"
+      
+      grad_clip:
+        type: number
+        default: 1.0
+        description: "Gradient clipping value"
+      
+      max_step:
+        type: integer
+        default: 6145
+        description: "Number of total gradient accumulation steps"
+      
+      lr:
+        type: number
+        default: 2e-5
+        description: "Learning rate for the entire model"
+      
+      lr_decay:
+        type: boolean
+        default: true
+        description: "If True, apply learning rate decay"
+      
+      warmup_steps:
+        type: integer
+        default: 0
+        description: "Number of initial steps for LR warmup"
+      
+      weight_decay:
+        type: number
+        default: 0.01
+        description: "Weight decay factor"
+      
+      beta1:
+        type: number
+        default: 0.9
+        description: "Beta1 for the Adam optimizer"
+      
+      beta2:
+        type: number
+        default: 0.95
+        description: "Beta2 for the Adam optimizer"
+
+      # Output arguments
+      output_dir:
+        type: string
+        default: "/data/training_outputs"
+        description: "Path to the output directory"
+
+      # Training strategy arguments
+      parallelization_strategy:
+        type: string
+        enum: ["none", "ddp", "fsdp"]
+        default: "none"
+        description: "Which distributed training strategy to use"
+
+      # Parallelization config - details differ depending on strategy
+      parallelization_config:
+        type: object
+        default: {}
+        description: "Configuration object for the selected parallelization strategy"
+
+    required:
+      - devices
+      - tpu
+      - train_data_dir
+      - model_name
+      - precision
+      - resume
+      - number_epochs
+      - micro_batch_size
+      - gradient_accumulation_steps
+      - grad_clip
+      - max_step
+      - lr
+      - lr_decay
+      - warmup_steps
+      - weight_decay
+      - beta1
+      - beta2
+      - parallelization_strategy
+      - parallelization_config
+      - output_dir
+
+    # Conditionally apply FSDP schema if parallelization_strategy == "fsdp"
+    if:
+      properties:
+        parallelization_strategy:
+          const: "fsdp"
+    then:
+      properties:
+        parallelization_config:
+          # Merge the FSDP schema here
+          allOf:
+            - $ref: "continual.fsdp.schema.yaml"
+      required:
+        - parallelization_config
+    else:
+      # If not fsdp, no additional constraints on parallelization_config
+      properties: {}
+
+    # Conditionally apply DDP schema if parallelization_strategy == "ddp"ç
+    if:
+      properties:
+        parallelization_strategy:
+          const: "ddp"
+    then:
+      properties:
+        parallelization_config:
+          # Merge the DDP schema here
+          allOf:
+            - $ref: "continual.ddp.schema.yaml"
+      required:
+        - parallelization_config
+    else:
+      # If not ddp, no additional constraints on parallelization_config
+      properties: {}
