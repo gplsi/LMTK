@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from datasets import load_dataset, concatenate_datasets, Dataset, DatasetDict
 import os
+from functools import partial
 
 class ArrowDataset:
     """
@@ -12,9 +13,9 @@ class ArrowDataset:
         self.dataset_name = self.files_path.split('/')[-1]
         self.extension_files = self._group_files_by_extension()
         self.extension_to_method = {
-            'txt': self.process_txt_files,
-            'csv': self.process_csv_files,
-            'json': self.process_json_files,
+            'txt': partial(self.load_dataset_from_extension, 'text'),
+            'csv': partial(self.load_dataset_from_extension, 'csv'),
+            'json': partial(self.load_dataset_from_extension, 'json'),
             # Add more mappings as needed
         }
 
@@ -44,17 +45,9 @@ class ArrowDataset:
             print("No datasets to combine.")
             return None
 
-    def process_txt_files(self, files : list[str]):
+    def load_dataset_from_extension(self, data_extension: str, files : list[str]):
         # Load text files into a dataset
-        return load_dataset('text', data_files=files)
-
-    def process_csv_files(self, files: list[str]) -> Dataset:
-        # Load CSV files into a dataset
-        return load_dataset('csv', data_files=files)
-
-    def process_json_files(self, files: list[str]) -> Dataset:
-        # Load JSON files into a dataset
-        return load_dataset('json', data_files=files)
+        return load_dataset(data_extension, data_files=files)
     
     def combine_datasets(self, datasets: list[Dataset]) -> Dataset:
         return concatenate_datasets(datasets)
