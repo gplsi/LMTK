@@ -1,21 +1,20 @@
-from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Dict
-from datasets import load_dataset, load_from_disk, concatenate_datasets, Dataset, DatasetDict
+from datasets import (
+    load_dataset,
+    load_from_disk,
+    concatenate_datasets,
+    Dataset,
+    DatasetDict,
+)
 import os
 from functools import partial
 from enum import IntEnum
-
-SUPPORTED_EXTENSIONS = ["txt", "csv", "json"]
-
-class VerboseLevel(IntEnum):
-    NONE = 0
-    ERRORS = 1
-    WARNINGS = 2
-    INFO = 3
-    DEBUG = 4
+from src.utils.logging import VerboseLevel, get_logger
+from src.utils.dataset.utils import SUPPORTED_EXTENSIONS, scan_directory
 
 
-class DatasetHelper:
+class DatasetStorage:
     """
     Class for handling the conversion to Arrow format.
 
@@ -31,9 +30,7 @@ class DatasetHelper:
     """
 
     def __init__(self, verbose_level: VerboseLevel = VerboseLevel.DEBUG):
-        if (verbose_level < VerboseLevel.NONE) or (verbose_level > VerboseLevel.DEBUG):
-            raise ValueError("Invalid verbose level. Must be between None and Debug.")
-
+        self.logger = get_logger(__name__, level=verbose_level)
         self.verbose_level = verbose_level
         self.extension_to_method = {
             "txt": partial(self.__load_dataset_from_extension, "text"),
@@ -45,10 +42,6 @@ class DatasetHelper:
     def __load_dataset_from_extension(self, data_type: str, files: list[str]):
         # Load text files into a dataset
         return load_dataset(data_type, data_files=files)
-    
-    def __print(self, message: str, level: VerboseLevel = VerboseLevel.NONE):
-        if self.verbose_level >= level:
-            print(message)
 
     def _group_files_by_extension(self, files_path: str) -> dict:
         source_dict = scan_directory(files_path)
@@ -61,43 +54,50 @@ class DatasetHelper:
                 else:
                     extension_files[extension].append(os.path.join(files_path, file))
 
-        self.__print(
-            f"Grouped ({len(extension_files.keys())}) files by extensions: {extension_files.keys()}",
-            VerboseLevel.DEBUG,
+        self.logger.debug(
+            f"Grouped ({len(extension_files.keys())}) files by extensions: {extension_files.keys()}"
         )
         return extension_files
 
     def process_files(self, files_path: str, extension: str = None) -> Dataset:
         if not os.path.isdir(files_path):
             raise ValueError(f"Invalid directory path: {files_path}.")
-        
+
+        self.logger.info(
+            f"Processing files from '{files_path}' and grouping by file extension."
+        )
         datasets = []
         extension_files = self._group_files_by_extension(files_path)
         for extension, files in extension_files.items():
             if extension not in SUPPORTED_EXTENSIONS:
-                self.__print(
-                    f"Unsupported file extension: {extension}", VerboseLevel.WARNINGS
-                )
+                self.logger.warning(f"Unsupported file extension: {extension}")
                 continue
 
             process_method = self.extension_to_method.get(extension)
             if process_method:
                 datasets.append(process_method(files))
             else:
-                self.__print(
-                    f"Could not find Extension processing method for: '{extension}'",
-                    VerboseLevel.ERRORS,
+                self.logger.error(
+                    f"Could not find Extension processing method for: '{extension}'"
                 )
 
         if datasets and len(datasets) > 0:
             if len(datasets) == 1:
+                self.logger.info(
+                    f"Dataset successfully built from '{extension}' files."
+                )
                 return datasets[0]
-            
-            combined_dataset = concatenate_datasets([dataset['train'] for dataset in datasets])
+
+            self.logger.info(
+                f"Produced one dataset per file extension. Combining ({len(datasets)}) datasets into one."
+            )
+            combined_dataset = concatenate_datasets(
+                [dataset["train"] for dataset in datasets]
+            )
             return combined_dataset
         else:
-            self.__print("No datasets to combine.", VerboseLevel.WARNINGS)
-            return None
+            self.logger.error("No data found")
+            raise ValueError("No data found")
 
     def split(self, dataset: Dataset, split_ratio: float) -> None:
         split_dataset = dataset.train_test_split(test_size=split_ratio)
@@ -114,45 +114,32 @@ class DatasetHelper:
     def load_from_disk(self, path: str) -> Dataset:
         if not os.path.isdir(path):
             raise ValueError(f"Invalid directory path: {path}.")
-        
+
         return load_from_disk(path)
-    
+
     def load_from_hub(self, dataset_name: str, **kwargs) -> Dataset:
         return load_dataset(dataset_name, **kwargs)
 
-def scan_directory(path, extension: str = None) -> Dict:
-    """
-    Scans the given directory for text files and returns a dictionary of data sources and their files.
+    def save_to_disk(
+        self,
+        dataset: Dataset,
+        output_path: str,
+        max_shard_size: str | int | None = None,
+        num_shards: int | None = None,
+        num_proc: int | None = None,
+    ) -> Path:
+        """Save dataset to disk with proper error handling."""
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-    Args:
-        path (str): Path to the directory containing subfolders with text files.
-
-    Returns:
-        dict: A dictionary where keys are data sources (folder names) and values are lists of text file paths.
-    """
-    if (extension is not None) and (extension not in SUPPORTED_EXTENSIONS):
-        raise ValueError(f"Unsupported file extension: {extension}.")
-
-    data_sources = {}
-    for root, dirs, files in os.walk(path):
-        source = os.path.basename(root)
-        if extension is not None:
-            data_files = [
-                os.path.join(root, file)
-                for file in files
-                if file.endswith(f".{extension}")
-            ]  # Filter by extension
-        else:
-            data_files = [
-                os.path.join(root, file)
-                for file in files
-                if file.split(".")[-1] in SUPPORTED_EXTENSIONS
-            ]
-
-        if data_files:
-            data_sources[source] = data_files  # Exclude the root directory itself
-
-    return data_sources
+        self.logger.info(f"Saving dataset to '{path}'")
+        dataset.save_to_disk(
+            str(path),
+            max_shard_size=max_shard_size,
+            num_shards=num_shards,
+            num_proc=num_proc,
+        )
+        return path
 
 
 # Usage

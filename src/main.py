@@ -2,6 +2,7 @@ from box import Box
 import yaml
 from src.config.config_loader import ConfigValidator
 
+
 def execute_task(config_path: str):
     # Load the YAML file (to extract the task value)
     with open(config_path, "r") as f:
