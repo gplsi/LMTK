@@ -20,7 +20,6 @@ class DataHandler():
         self.dataset_dict = self.create_dataset_from_generator()
         
 
-
 def scan_directory(path):
     """
     Scans the given directory for text files and returns a dictionary of data sources and their files.
