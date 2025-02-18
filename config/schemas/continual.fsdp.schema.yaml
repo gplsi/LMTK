@@ -1,0 +1,36 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "continual.fsdp.schema.yaml"
+description: "Schema for FSDP experiments"
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      auto_wrap_policy:
+        type: string
+        enum: ["LlamaDecoderLayer"]
+        default: "LlamaDecoderLayer"
+        description: "Minimum sharding piece of the model with FSDP (class name or policy identifier), in Transformers is the class that defines each layer"
+      sharding_strategy:
+        type: string
+        enum: ["FULL_SHARD", "SHARD_GRAD_OP", "HYBRID_SHARD", "NO_SHARD"]
+        default: "FULL_SHARD"
+        description: "Which FSDP sharding strategy to use"
+      state_dict_type:
+        type: string
+        enum: ["full", "sharded", "local"]
+        default: "full"
+        description: "Type of state dict to save (FSDP checkpoint format)"
+      limit_all_gathers:
+        type: boolean
+        default: true
+        description: "Whether to limit all-gather calls (reduce network overhead)"
+      cpu_offload:
+        type: boolean
+        default: false
+        description: "Offload certain tensors to CPU during training"
+    required:
+      - auto_wrap_policy
+      - sharding_strategy
+      - state_dict_type
+      - limit_all_gathers
+      - cpu_offload

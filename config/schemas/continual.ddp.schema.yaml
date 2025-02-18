@@ -1,0 +1,22 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "continual.ddp.schema.yaml"
+description: "Schema for DDP experiments"
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      
+      number_workers:
+        type: integer
+        default: 4
+        description: "Number of CPU workers for data loading"
+      
+      backend:
+        type: string
+        enum: ["nccl", "gloo"]
+        default: "nccl"
+        description: "DDP backend to use"
+    required:
+      - number_workers
+      - backend
+      
