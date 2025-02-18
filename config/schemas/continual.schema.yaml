@@ -83,10 +83,10 @@ allOf:
         default: true
         description: "If True, apply learning rate decay"
       
-      warmup_steps:
-        type: integer
+      warmup_proportion:
+        type: number
         default: 0
-        description: "Number of initial steps for LR warmup"
+        description: "Proportion of training steps to warm up the learning rate"
       
       weight_decay:
         type: number
@@ -136,7 +136,7 @@ allOf:
       - max_step
       - lr
       - lr_decay
-      - warmup_steps
+      - warmup_proportion
       - weight_decay
       - beta1
       - beta2

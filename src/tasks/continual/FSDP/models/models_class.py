@@ -1,5 +1,5 @@
 import lightning as L
-from transformers import T5ForConditionalGeneration, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM
 import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
@@ -8,7 +8,6 @@ class FabricGeneration(L.LightningModule):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        model_type = args["model_type"]
         model_name = args["model_name"]
         if args['precision'] == 'bf16-true':
             torch_dtype = torch.bfloat16
@@ -20,16 +19,16 @@ class FabricGeneration(L.LightningModule):
         # Access Fabric and its attributes
         print(self.fabric.world_size)
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch):
         outputs = self.model(
             input_ids=batch['input_ids'],
             attention_mask=batch['attention_mask'],
             labels=batch['labels'],
         )
         loss = outputs.loss
-        return loss
+        return outputs, loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch):
         outputs = self.model(
             input_ids=batch['input_ids'],
             attention_mask=batch['attention_mask'],
@@ -38,7 +37,7 @@ class FabricGeneration(L.LightningModule):
         loss = outputs
         return outputs
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch):
         outputs = self.model(
             batch['input_ids'],
             batch['attention_mask'],
