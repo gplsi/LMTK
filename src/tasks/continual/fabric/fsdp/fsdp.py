@@ -13,10 +13,10 @@ from lightning.fabric.strategies import FSDPStrategy
 from pytorch_lightning.loggers import WandbLogger
 
 # Importando utilidades personalizadas
-from speed_monitor import SpeedMonitorFabric as Monitor
-from logger import step_csv_logger
+from src.tasks.continual.fabric.speed_monitor import SpeedMonitorFabric as Monitor
+from src.tasks.continual.fabric.logger import step_csv_logger
 from src.tasks.continual.utils import *
-from models.models_class import FabricGeneration
+from src.tasks.continual.distributed_model_classes import FabricGeneration
 
 
 def set_loggers(config):
