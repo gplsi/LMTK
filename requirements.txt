@@ -8,3 +8,5 @@ jsonschema
 python-box
 types-pyyaml
 scikit-learn
+lightning
+pytorch-lightning
