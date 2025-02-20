@@ -128,6 +128,13 @@ allOf:
         default: {}
         description: "Configuration object for the selected parallelization strategy"
 
+      # Logging arguments
+      logging_config:
+        type: string
+        enum: ["none", "wandb"]
+        default: "none"
+        description: "Which logging strategy to use"
+
     required:
       - devices
       - tpu
@@ -183,4 +190,20 @@ allOf:
         - parallelization_config
     else:
       # If not ddp, no additional constraints on parallelization_config
+      properties: {}
+
+    if:
+      properties:
+        logging_config:
+          const: "wandb"
+    then:
+      properties:
+        logging_config:
+          # Merge the logging schema here
+          allOf:
+            - $ref: "continual.logging.schema.yaml"
+      required:
+        - logging_config
+    else:
+      # If not wandb, no additional constraints on logging_config
       properties: {}
