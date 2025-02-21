@@ -104,6 +104,11 @@ class Fabric_FSDP():
                 )
     
     
+    def _gradient_clipping(self, fabric, model, optimizer):
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.grad_clip)
+        fabric.print(f"Gradient norm before clipping: {grad_norm:.4f}")
+        fabric.clip_gradients(model, optimizer, max_norm=self.config.grad_clip)
+    
     def _accumulate_training(self, fabric, model, batch, step):
         is_accumulating = (self.state["iter_num"] + 1) % self.config.gradient_accumulation_steps != 0
         
@@ -118,9 +123,7 @@ class Fabric_FSDP():
             scheduler = self.state["scheduler"]
             
             # Log the gradient norms before clipping for monitoring
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.grad_clip)
-            fabric.print(f"Gradient norm before clipping: {grad_norm:.4f}")
-            fabric.clip_gradients(model, optimizer, max_norm=self.config.grad_clip)
+            self._gradient_clipping(fabric, model, optimizer)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
@@ -136,17 +139,13 @@ class Fabric_FSDP():
         return outputs, loss
     
     def _normal_training(self, fabric, model, batch, step):
-        # FORWARD PASS
         outputs, loss = model.training_step(batch, step)
         fabric.backward(loss / self.config.gradient_accumulation_steps)
         
-        # BACKPROPAGATION
         optimizer = self.state["optimizer"]
         scheduler = self.state["scheduler"]
-        # Log the gradient norms before clipping for monitoring
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.grad_clip)
-        fabric.print(f"Gradient norm before clipping: {grad_norm:.4f}")
-        fabric.clip_gradients(model, optimizer, max_norm=self.config.grad_clip)
+        
+        self._gradient_clipping(fabric, model, optimizer)
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
@@ -163,8 +162,6 @@ class Fabric_FSDP():
     
     def _train(self, fabric):
         model = self.state["model"]
-        optimizer = self.state["optimizer"]
-        scheduler = self.state["scheduler"]
         self.total_lengths = 0
         self.train_total_t0 = time.perf_counter()
         self.initial_iter = self.state["iter_num"]
