@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 import itertools
 # Importando Lightning y otras librerías necesarias
 import lightning as L
-from lightning.fabric.strategies import FSDPStrategy
+from lightning.fabric.strategies import FSDPStrategy, DeepSpeedStrategy, DDPStrategy, DataParallelStrategy
 from pytorch_lightning.loggers import WandbLogger
 
 # Importando utilidades personalizadas
@@ -59,18 +59,22 @@ class Fabric_Abstract(ABC):
         fabric.save(checkpoint_path, self.state)
     
     
-    def _resuming(self, fabric) -> bool:
-        if self.resume:
-            if self.curr_iter < self.initial_iter:
-                self.curr_iter += 1
-                return True  # Skip this iteration
-            else:
-                self.resume = False
-                self.curr_iter = -1
-                fabric.barrier()
-                elapsed = time.perf_counter() - self.train_total_t0
-                fabric.print(f"Resume finished, taken {elapsed:.2f} seconds")
-        return False
+    def _get_resume_iterator(self, iterator, resume_iter):
+        """
+        Given an iterator (for one epoch) and the number of batches already processed (resume_iter),
+        return a tuple (new_iterator, updated_resume_iter).
+        
+        If resume_iter is greater than the number of batches in the iterator,
+        returns (None, resume_iter - number_of_batches) indicating the entire epoch should be skipped.
+        Otherwise, returns an iterator starting from resume_iter and resets resume_iter to 0.
+        """
+        epoch_batch_count = len(iterator)
+        if resume_iter >= epoch_batch_count:
+            return None, resume_iter - epoch_batch_count
+        elif resume_iter > 0:
+            return itertools.islice(iterator, resume_iter, None), 0
+        else:
+            return iterator, resume_iter
     
     def _load_resume(self, fabric):
         if self.resume is True:
@@ -165,7 +169,7 @@ class Fabric_Abstract(ABC):
         if self.state["step_count"] % self.config.eval_steps == 0:
             fabric.barrier()
             if 'valid' in self.dataloaders.keys():
-                    self._validate(fabric, model, self.dataloaders['valid'], self.config, self.monitor)
+                    self._validate(fabric)
                 
             if 'test' in self.dataloaders.keys():
                 #TODO: Implement test method
@@ -182,31 +186,24 @@ class Fabric_Abstract(ABC):
         self.total_lengths = 0
         self.train_total_t0 = time.perf_counter()
         self.initial_iter = self.state["iter_num"]
-        self.curr_iter = 0
         epochs = self.config.number_epochs
-
         self.model.train()
+        
+        
+        # resume_iter holds the number of batches already processed in total.
+        resume_iter = self.state["iter_num"]
         
         # TRAINING LOOP
         for epoch in range(epochs):
             if fabric.global_rank == 0:
                 print(f"Running Epoch {epoch + 1} of {epochs}")
             
-            batch_iterator = tqdm(self.dataloaders['train'], mininterval=0, colour="blue") if fabric.global_rank == 0 else self.dataloaders['train']
+            batch_iterator = tqdm(self.dataloaders['train'], mininterval=0, colour="blue") \
+            if fabric.global_rank == 0 else self.dataloaders['train']
             
-            # TODO: todo esto en una funcion
-            epoch_batch_count = len(self.dataloaders['train'])
-            if resume_iter >= epoch_batch_count:
-                # This entire epoch was already processed.
-                resume_iter -= epoch_batch_count
-                continue
-            elif resume_iter > 0:
-                # Slice the iterator to start from the resume batch.
-                batch_iterator = itertools.islice(batch_iterator, resume_iter, None)
-                resume_iter = 0  # Reset after the first partial epoch
-            
-            #batch_iterator = self._resuming(fabric, batch_iterator)
-            
+            batch_iterator, resume_iter = self._get_resume_iterator(batch_iterator, resume_iter)
+            if batch_iterator is None:
+                continue            
             
             for step, batch in enumerate(batch_iterator):
                 
@@ -241,7 +238,7 @@ class Fabric_Abstract(ABC):
 
 
     @torch.no_grad()
-    def _validate(self, fabric: L.Fabric) -> torch.Tensor:
+    def _validate(self, fabric: L.Fabric) -> None:
         t0 = time.perf_counter()
         self.model.eval()
 
@@ -373,42 +370,4 @@ class Fabric_Abstract(ABC):
 
         if fabric.device.type == "cuda":
             fabric.print(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
-    
-
-class FSDP(Fabric_Abstract):
-    def __init__(self, devices, config, resume=False):
-        super().__init__(devices, config, resume)
-        
-        self.devices = devices
-        self.config = config
-        self.resume = resume
-        
-    def _setup_strategy(self):
-        if self.devices > 1:
-            # FSDP strategy for multiple devices
-            strategy = FSDPStrategy(
-                sharding_strategy=self.config.sharding_strategy,
-                auto_wrap_policy=self.config.auto_wrap_policy,
-                activation_checkpointing_policy=self.config.auto_wrap_policy,
-                state_dict_type=self.config.state_dict_type,
-                limit_all_gathers=self.config.limit_all_gathers,
-                cpu_offload=self.config.cpu_offload,
-            )
-        else:
-            strategy = "auto"
-            # TODO: Poner en formato de warning
-            print("Using automatic strategy for 1 device.")
-            raise NotImplementedError("Automatic strategy is not yet implemented for 1 device.")
-    
-        return strategy            
-    
-    def setup(self) -> None:
-        strategy = self._setup_strategy()
-        loggers = self._set_loggers()
-        fabric = L.Fabric(devices=self.devices, strategy=strategy, precision=self.config.precision, loggers=[loggers])
-        
-        self.hparams = {k: v for k, v in locals().items() if isinstance(v, (int, float, str)) and not k.startswith("_")}
-        fabric.print(self.hparams)
-        
-        fabric.launch(self._pipeline, self.resume, self.config, self.hparams)
     
