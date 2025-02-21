@@ -6,7 +6,8 @@ import torch
 from torch.utils.data import DataLoader
 from datasets import load_from_disk
 from tqdm import tqdm
-
+from abc import ABC, abstractmethod
+import itertools
 # Importando Lightning y otras librerías necesarias
 import lightning as L
 from lightning.fabric.strategies import FSDPStrategy
@@ -20,39 +21,37 @@ from src.tasks.continual.distributed_model_classes import FabricGeneration
 
 
 
-class Fabric_FSDP():
+class Fabric_Abstract(ABC):
     def __init__(self, devices, config, resume=False):
-        
         self.devices = devices
         self.config = config
         self.resume = resume
-
-
-    def _set_loggers(self):
-        logger = step_csv_logger(self.config.output_dir, self.config.model_name, flush_logs_every_n_steps=self.config.log_iter_interval)
-        wandb_logger = WandbLogger(entity=self.config.wandb_entity, project=self.config.wandb_project, log_model=self.config.log_model)
-
-        return logger, wandb_logger
-
-
-    def _setup_strategy(self):
-        if self.devices > 1:
-            # FSDP strategy for multiple devices
-            strategy = FSDPStrategy(
-                sharding_strategy=self.config.sharding_strategy,
-                auto_wrap_policy=self.config.auto_wrap_policy,
-                activation_checkpointing_policy=self.config.auto_wrap_policy,
-                state_dict_type=self.config.state_dict_type,
-                limit_all_gathers=self.config.limit_all_gathers,
-                cpu_offload=self.config.cpu_offload,
-            )
-        else:
-            strategy = "auto"
-            # TODO: Poner en formato de warning
-            print("Using automatic strategy for 1 device.")
-            raise NotImplementedError("Automatic strategy is not yet implemented for 1 device.")
+        self.state = {}
+        self.dataset, self.dataloaders = self._load_fabric_datasets_dataloaders(self.config)
     
-        return strategy
+    @abstractmethod
+    def _setup_strategy(self):
+        pass
+    
+    @abstractmethod
+    def setup(self) -> None:
+        pass
+    
+    
+    def _set_loggers(self):
+        logger = step_csv_logger(self.config.output_dir, 
+                                self.config.model_name, 
+                                flush_logs_every_n_steps=self.config.log_iter_interval)
+        
+        if self.config.logging_config == "wandb":
+        
+            wandb_logger = WandbLogger(entity=self.config.wandb_entity, 
+                                    project=self.config.wandb_project, 
+                                    log_model=self.config.log_model)
+            
+            return logger, wandb_logger
+
+        return [logger]
     
     def _save(self, fabric) -> None:
         checkpoint_path = self.config.output_dir / f"iter-{self.state['iter_num']:06d}-ckpt.pth"
@@ -60,23 +59,17 @@ class Fabric_FSDP():
         fabric.save(checkpoint_path, self.state)
     
     
-    def _resuming(self) -> bool:
-        """
-        Checks if we are still skipping iterations to reach the resume point.
-        Returns True if the current batch should be skipped.
-        Once the resume point is reached, logs the resume finished message.
-        """
+    def _resuming(self, fabric) -> bool:
         if self.resume:
             if self.curr_iter < self.initial_iter:
                 self.curr_iter += 1
                 return True  # Skip this iteration
             else:
-                # Once reached, reset the resume state.
                 self.resume = False
                 self.curr_iter = -1
-                self.fabric.barrier()
+                fabric.barrier()
                 elapsed = time.perf_counter() - self.train_total_t0
-                self.fabric.print(f"Resume finished, taken {elapsed:.2f} seconds")
+                fabric.print(f"Resume finished, taken {elapsed:.2f} seconds")
         return False
     
     def _load_resume(self, fabric):
@@ -85,8 +78,8 @@ class Fabric_FSDP():
         if self.resume:
             fabric.print(f"Resuming training from {self.resume}")
             fabric.load(self.resume, self.state)
-    
-    
+            
+            
     def _train_logs(self, fabric, loss):
         fabric.print(
                     f"iter {self.state['iter_num']} step {self.state['step_count']}: loss {loss.item():.4f}, iter time:"
@@ -103,13 +96,19 @@ class Fabric_FSDP():
                     train_loss=loss.item()
                 )
     
-    
     def _gradient_clipping(self, fabric, model, optimizer):
+        """Clip gradients during training to avoid exploding gradients."""
+        
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.grad_clip)
         fabric.print(f"Gradient norm before clipping: {grad_norm:.4f}")
         fabric.clip_gradients(model, optimizer, max_norm=self.config.grad_clip)
     
+    
     def _accumulate_training(self, fabric, model, batch, step):
+        """
+            Accumulate gradients over multiple steps before backpropagating.
+            Automatically called by train method if gradient_accumulation_steps > 1.
+        """
         is_accumulating = (self.state["iter_num"] + 1) % self.config.gradient_accumulation_steps != 0
         
         # FORWARD PASS
@@ -131,14 +130,26 @@ class Fabric_FSDP():
             
             if self.state["step_count"] % self.config.eval_steps == 0:
                 fabric.barrier()
-                self._validate(fabric, model, self.dataloaders['valid'], self.config, self.monitor)
+                if 'valid' in self.dataloaders.keys():
+                    self._validate(fabric)
+                
+                if 'test' in self.dataloaders.keys():
+                    #TODO: Implement test method
+                    raise NotImplementedError("Test method not implemented.")
                 self._save(fabric)
                 
         self.state["iter_num"] += 1
         
         return outputs, loss
     
+    
     def _normal_training(self, fabric, model, batch, step):
+        
+        """
+        Performs the usual forward pass, backward pass and optimization step.
+        Automatically called by train method if gradient_accumulation_steps == 1.
+        """
+        
         outputs, loss = model.training_step(batch, step)
         fabric.backward(loss / self.config.gradient_accumulation_steps)
         
@@ -153,12 +164,18 @@ class Fabric_FSDP():
         
         if self.state["step_count"] % self.config.eval_steps == 0:
             fabric.barrier()
-            self._validate(fabric, model, self.dataloaders['valid'], self.config, self.monitor)
+            if 'valid' in self.dataloaders.keys():
+                    self._validate(fabric, model, self.dataloaders['valid'], self.config, self.monitor)
+                
+            if 'test' in self.dataloaders.keys():
+                #TODO: Implement test method
+                raise NotImplementedError("Test method not implemented.")            
             self._save(fabric)
         
         self.state["iter_num"] += 1
         
         return outputs, loss
+            
     
     def _train(self, fabric):
         model = self.state["model"]
@@ -176,9 +193,22 @@ class Fabric_FSDP():
                 print(f"Running Epoch {epoch + 1} of {epochs}")
             
             batch_iterator = tqdm(self.dataloaders['train'], mininterval=0, colour="blue") if fabric.global_rank == 0 else self.dataloaders['train']
+            
+            # TODO: todo esto en una funcion
+            epoch_batch_count = len(self.dataloaders['train'])
+            if resume_iter >= epoch_batch_count:
+                # This entire epoch was already processed.
+                resume_iter -= epoch_batch_count
+                continue
+            elif resume_iter > 0:
+                # Slice the iterator to start from the resume batch.
+                batch_iterator = itertools.islice(batch_iterator, resume_iter, None)
+                resume_iter = 0  # Reset after the first partial epoch
+            
+            #batch_iterator = self._resuming(fabric, batch_iterator)
+            
+            
             for step, batch in enumerate(batch_iterator):
-                if self._resuming():
-                    continue
                 
                 self.train_iter_t0 = time.perf_counter()
                 
@@ -191,13 +221,20 @@ class Fabric_FSDP():
                 self.total_lengths += batch["input_ids"].size(1)
                 self.train_t1 = time.perf_counter()
 
+
                 # LOGS
                 self._train_logs(fabric, loss)
                 
         
             # EPOCH END - VALIDATION
             fabric.barrier()
-            self._validate(fabric)
+            if 'valid' in self.dataloaders.keys():
+                    self._validate(fabric)
+                
+            if 'test' in self.dataloaders.keys():
+                #TODO: Implement test method
+                raise NotImplementedError("Test method not implemented.")
+
 
             # EPOCH END - SAVE CHECKPOINT
             self._save(fabric)
@@ -254,6 +291,7 @@ class Fabric_FSDP():
         
         return ((dataset), (dataloaders))
     
+    
     def _pipeline(self, fabric):
             # DETERMINISTIC RESULTS
         if self.config.seed:
@@ -269,26 +307,21 @@ class Fabric_FSDP():
             self.config.output_dir.mkdir(parents=True, exist_ok=True)
         fabric.barrier()
 
-
-        # DATALOADERS
-        dataset, dataloaders = self._load_fabric_datasets_dataloaders(self.config)
-
-
         # FABRIC DATALOADERS SETUP
-        self.dataloaders = fabric.setup_dataloaders(dataloaders)
+        self.dataloaders = fabric.setup_dataloaders(self.dataloaders)
         
 
         # MODEL
         t0 = time.perf_counter()
         with fabric.init_module():
-            model = FabricGeneration(self.config) 
-        self.model = fabric.setup(model)
+            self.model = FabricGeneration(self.config) 
+        self.model = fabric.setup(self.model)
         
         # GRADIENT CHECKPOINTING
         if self.config.gradient_checkpointing:
-            model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={})
+            self.model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={})
         else:
-            model.model.gradient_checkpointing_disable()
+            self.model.model.gradient_checkpointing_disable()
 
         fabric.print(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
 
@@ -296,7 +329,7 @@ class Fabric_FSDP():
         # OPTIMIZER
         optimizer = select_optimizer(
             self.config.optimizer, 
-            model, 
+            self.model, 
             self.config.lr, 
             self.config.weight_decay, 
             self.config.beta1, 
@@ -312,7 +345,7 @@ class Fabric_FSDP():
             self.config.number_epochs, 
             fabric.world_size, 
             self.config.micro_batch_size, 
-            dataset['train'], 
+            self.dataset['train'], 
             self.config.warmup_proportion, 
             self.config.gradient_accumulation_steps
         )
@@ -320,7 +353,7 @@ class Fabric_FSDP():
 
         # STATE
         self.state = {
-            "model": model, 
+            "model": self.model, 
             "optimizer": optimizer, 
             "hparams": self.hparams, 
             "iter_num": 0, 
@@ -340,15 +373,39 @@ class Fabric_FSDP():
 
         if fabric.device.type == "cuda":
             fabric.print(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
-            
+    
+
+class FSDP(Fabric_Abstract):
+    def __init__(self, devices, config, resume=False):
+        super().__init__(devices, config, resume)
+        
+        self.devices = devices
+        self.config = config
+        self.resume = resume
+        
+    def _setup_strategy(self):
+        if self.devices > 1:
+            # FSDP strategy for multiple devices
+            strategy = FSDPStrategy(
+                sharding_strategy=self.config.sharding_strategy,
+                auto_wrap_policy=self.config.auto_wrap_policy,
+                activation_checkpointing_policy=self.config.auto_wrap_policy,
+                state_dict_type=self.config.state_dict_type,
+                limit_all_gathers=self.config.limit_all_gathers,
+                cpu_offload=self.config.cpu_offload,
+            )
+        else:
+            strategy = "auto"
+            # TODO: Poner en formato de warning
+            print("Using automatic strategy for 1 device.")
+            raise NotImplementedError("Automatic strategy is not yet implemented for 1 device.")
+    
+        return strategy            
     
     def setup(self) -> None:
-        """
-        Environment configuration for distributed training with Fabric.
-        """
         strategy = self._setup_strategy()
-        logger, wandb_logger = self._set_loggers()
-        fabric = L.Fabric(devices=self.devices, strategy=strategy, precision=self.config.precision, loggers=[logger, wandb_logger])
+        loggers = self._set_loggers()
+        fabric = L.Fabric(devices=self.devices, strategy=strategy, precision=self.config.precision, loggers=[loggers])
         
         self.hparams = {k: v for k, v in locals().items() if isinstance(v, (int, float, str)) and not k.startswith("_")}
         fabric.print(self.hparams)
