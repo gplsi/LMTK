@@ -41,6 +41,11 @@ allOf:
         default: 4
         description: "Number of CPU workers for data loading"
     
+      gradient_checkpointing:
+        type: boolean
+        default: True
+        description: "Whether to use gradient checkpointing"
+
     required:
       - auto_wrap_policy
       - sharding_strategy
@@ -48,3 +53,4 @@ allOf:
       - limit_all_gathers
       - cpu_offload
       - num_workers
+      - gradient_checkpointing

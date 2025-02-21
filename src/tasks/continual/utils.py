@@ -10,7 +10,10 @@ AUTO_WRAPPER = {
     "llama": LlamaDecoderLayer,
 }
 
+
+# Scheduler for dealing with training with and without gradient accumulation
 def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, micro_batch_size, train_dataset, warmup_proportion, gradient_accumulation_steps=None):
+    
     def calculate_warmup_steps(number_epochs, world_size, micro_batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps=None):
         steps_per_epoch = len(train_dataset) // (micro_batch_size * world_size)
         total_steps = number_epochs * steps_per_epoch
@@ -42,6 +45,13 @@ def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, micro_b
     return scheduler
 
 
+def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:float, beta2:float):
+    optimizer = OPTIMIZERS[optimizer](model.parameters(), 
+                                                lr=lr, 
+                                                weight_decay=weight_decay,
+                                                betas=(beta1, beta2),
+                                                foreach=True)
+
 # For deterministic results, it will be used only if seed is provided
 def setup_environment(seed):
     torch.backends.cudnn.deterministic = True
@@ -50,3 +60,16 @@ def setup_environment(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    
+    
+    
+OPTIMIZERS = {
+    "adam": torch.optim.Adam,
+    "adamw": torch.optim.AdamW,
+    "sgd": torch.optim.SGD,
+    "adamax": torch.optim.Adamax,
+    "adagrad": torch.optim.Adagrad,
+    "adamw": torch.optim.AdamW,
+    "adadelta": torch.optim.Adadelta,
+    "rmsprop": torch.optim.RMSprop
+}
