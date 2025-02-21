@@ -27,10 +27,10 @@ def set_loggers(config):
 
 def setup(devices: int, config, resume: Union[bool, Path] = False) -> None:
     """
-    Configura el entorno para el entrenamiento distribudo.
+    Environment configuration for distributed training with Fabric.
     """
     if devices > 1:
-        # Estrategia FSDP para distribución de los parámetros y gradientes
+        # FSDP strategy for multiple devices
         strategy = FSDPStrategy(
             sharding_strategy=config.sharding_strategy,
             auto_wrap_policy=config.auto_wrap_policy,
@@ -40,25 +40,22 @@ def setup(devices: int, config, resume: Union[bool, Path] = False) -> None:
             cpu_offload=config.cpu_offload,
         )
     else:
-        strategy = "auto"  # Uso automático de estrategia para 1 dispositivo
+        strategy = "auto"
         # TODO: Poner en formato de warning
         print("Using automatic strategy for 1 device.")
-
-    # Configurar Fabric con los dispositivos, estrategia, precisión y loggers
+        raise NotImplementedError("Automatic strategy is not yet implemented for 1 device.")
+    
+    
     logger, wandb_logger = set_loggers(config)
     fabric = L.Fabric(devices=devices, strategy=strategy, precision=config.precision, loggers=[logger, wandb_logger])
     
     hparams = {k: v for k, v in locals().items() if isinstance(v, (int, float, str)) and not k.startswith("_")}
     fabric.print(hparams)
     
-    # Lanzar la función principal de entrenamiento
     fabric.launch(main, resume, config, hparams)
     
     
 def main(fabric, resume, config, hparams):
-    """
-    Función principal para entrenamiento de modelos grandes con técnicas de paralelismo distribuido.
-    """
     # DETERMINISTIC RESULTS
     if config.seed:
         setup_environment(config.seed)
@@ -96,7 +93,12 @@ def main(fabric, resume, config, hparams):
     with fabric.init_module():
         model = FabricGeneration(config) 
     model = fabric.setup(model)
-    model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={})
+    
+    # GRADIENT CHECKPOINTING
+    if config.gradient_checkpointing:
+        model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={})
+    else:
+        model.model.gradient_checkpointing_disable()
 
     fabric.print(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
 
@@ -134,9 +136,6 @@ def main(fabric, resume, config, hparams):
         
         
 def train(fabric, state, train_dataloader, validation_dataloader, monitor, resume, config):
-    """
-    Realiza el entrenamiento del modelo con las configuraciones dadas.
-    """
     model = state["model"]
     optimizer = state["optimizer"]
     scheduler = state["scheduler"]
@@ -191,10 +190,7 @@ def train(fabric, state, train_dataloader, validation_dataloader, monitor, resum
                 
                 if state["step_count"] % config.eval_steps == 0:
                     fabric.barrier()
-                    val_loss = validate(fabric, model, validation_dataloader, config)
-                    fabric.log_dict({"metric/val_loss": val_loss.item()}, state["step_count"])
-                    fabric.log_dict({"metric/val_ppl": math.exp(val_loss.item())}, state["step_count"])
-                    fabric.barrier()
+                    validate(fabric, model, validation_dataloader, config, monitor)
                     
                     checkpoint_path = config.output_dir / f"iter-{state['iter_num']:06d}-ckpt.pth"
                     fabric.print(f"Saving checkpoint to {str(checkpoint_path)!r}")
@@ -220,18 +216,10 @@ def train(fabric, state, train_dataloader, validation_dataloader, monitor, resum
                 lengths=total_lengths,
                 train_loss=loss.item()
             )
-        
-        fabric.barrier()
+    
         # EPOCH END - VALIDATION
-        t0 = time.perf_counter()
-        val_loss = validate(fabric, model, validation_dataloader, config)
-        t1 = time.perf_counter() - t0
-        monitor.eval_end(t1)
-        fabric.print(f"step {state['iter_num']}: val loss {val_loss:.4f}, val time: {t1 * 1000:.2f}ms")
-        fabric.log_dict({"metric/val_loss": val_loss.item()}, state["step_count"])
-        fabric.log_dict({"metric/val_ppl": math.exp(val_loss.item())}, state["step_count"])
         fabric.barrier()
-
+        validate(fabric, model, validation_dataloader, config, state, monitor)
 
         # EPOCH END - SAVE CHECKPOINT
         checkpoint_path = config.output_dir / f"iter-{state['iter_num']:06d}-ckpt.pth"
@@ -240,7 +228,8 @@ def train(fabric, state, train_dataloader, validation_dataloader, monitor, resum
 
 
 @torch.no_grad()
-def validate(fabric: L.Fabric, model: torch.nn.Module, validation_dataloader: DataLoader, config) -> torch.Tensor:
+def validate(fabric: L.Fabric, model: torch.nn.Module, validation_dataloader: DataLoader, config, state, monitor) -> torch.Tensor:
+    t0 = time.perf_counter()
     fabric.print("Validating ...")
     model.eval()
 
@@ -255,6 +244,13 @@ def validate(fabric: L.Fabric, model: torch.nn.Module, validation_dataloader: Da
 
     out = losses.mean()
     model.train()
-    return out
-
-
+    t1 = time.perf_counter() - t0
+    monitor.eval_end(t1)
+    
+    def fabric_eval_log(fabric, state, loss):
+        fabric.print(f"step {state['iter_num']}: val loss {loss:.4f}, val time: {t1 * 1000:.2f}ms")
+        fabric.log_dict({f"metric/val_loss": loss.item()}, state["step_count"])
+        fabric.log_dict({f"metric/val_ppl": math.exp(loss.item())}, state["step_count"])
+    
+    fabric_eval_log(fabric, state, out)
+    fabric.barrier()
