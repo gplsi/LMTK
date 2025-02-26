@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: "continual.fsdp.schema.yaml"
+$id: "pretraining.fsdp.schema.yaml"
 description: "Schema for FSDP experiments"
 
 allOf:

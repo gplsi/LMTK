@@ -8,8 +8,8 @@ from lightning.fabric.strategies import (
 )
 
 # Importando utilidades personalizadas
-from src.tasks.continual.utils import *
-from tasks.continual.fabric.base import FabricTrainerBase
+from src.tasks.pretraining.utils import *
+from tasks.pretraining.fabric.base import FabricTrainerBase
 from utils import inherit_init_params
 
 

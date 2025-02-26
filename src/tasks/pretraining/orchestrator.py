@@ -5,7 +5,7 @@ import torch
 from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
-from src.tasks.continual.fabric.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
+from src.tasks.pretraining.fabric.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
 from utils import inherit_init_params
 from utils.orchestrator import BaseOrchestrator
 
@@ -33,13 +33,13 @@ class ContinualOrchestrator(BaseOrchestrator):
     def fsdp(self, dataset):
         """Execute fsdp continual pretraining task."""
         self.logger.info("Starting FSDP continual pretraining task")
-        
         # TODO: Validate specific configuration
         
         trainer = FSDP(
             devices=self.devices,
             config=self.config,
-            checkpoint=self.config.get("checkpoint", None)
+            dataset=dataset,
+            checkpoint_path=self.config.get("checkpoint", None)
         )
         
         trainer.setup()
@@ -53,6 +53,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer = DistributedDataParallel(
             devices=self.devices,
             config=self.config,
+            dataset=dataset,
             checkpoint=self.config.get("checkpoint", None)
         )
         
@@ -67,6 +68,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer = DataParallel(
             devices=self.devices,
             config=self.config,
+            dataset=dataset,
             checkpoint=self.config.get("checkpoint", None)
         )
         
@@ -81,11 +83,34 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer = DeepSpeed(
             devices=self.devices,
             config=self.config,
+            dataset=dataset,
             checkpoint=self.config.get("checkpoint", None)
         )
         
         trainer.setup()
         self.logger.info("Deep Speed training finished")
+
+
+    def load_dataset(self) -> Dataset:
+        """Load dataset based on configuration."""
+        dataset_handler = DatasetStorage(
+            verbose_level=VerboseLevel(
+                self.config.get("verbose_level", VerboseLevel.INFO)
+            )
+        )
+        
+        self._validate__dataset_config()
+        
+
+        if self.config.dataset.source == "local":
+            self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")
+            
+            dataset = dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
+            return dataset
+        
+        elif self.config.dataset.source == "huggingface":
+            raise NotImplementedError("HuggingFace dataset loading not implemented yet")
+        raise ValueError(f"Invalid dataset source: {self.config.dataset.source}")
 
     def execute(self) -> None:
         """Execute the complete tokenization workflow."""

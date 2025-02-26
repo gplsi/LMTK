@@ -10,7 +10,7 @@ tokenizer:
 
 dataset:
   source: "local"
-  nameOrPath: "/workspace/data/raw/corpus-val-es"
+  nameOrPath: "/workspace/data/raw/corpus"
   format: "files"
   file_config:
     format: "txt"
@@ -18,3 +18,5 @@ dataset:
 
 output:
   path: "data/tokenized/news_corpus"
+
+test_size: 0.1

@@ -29,4 +29,8 @@ if __name__ == '__main__':
     #args = parser.parse_args()
     #execute_task(args.config)
     #execute_task("config/experiments/test_tokenizer_local.yaml")
+    
+    
+    # FOR CURRENT GPT-2 TESTING
     execute_task("config/experiments/test_tokenizer_local.yaml")
+    #execute_task("config/experiments/test_continual.yaml")
