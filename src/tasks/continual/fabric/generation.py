@@ -5,6 +5,11 @@ from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
 
 
+
+"""
+The LightningModules used for each case should be specified in this script
+"""
+
 # Base class for Generative models with Fabric
 class FabricGeneration(L.LightningModule):
     def __init__(self, args):
@@ -48,3 +53,8 @@ class FabricGeneration(L.LightningModule):
         loss = outputs.loss
         self.log("test_loss", loss.loss, prog_bar=True)
         return outputs
+
+
+
+# Base class for Classification models with Fabric
+# TODO: Add classification model
