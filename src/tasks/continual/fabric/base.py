@@ -16,11 +16,11 @@ from src.tasks.continual.fabric.logger import step_csv_logger
 from src.tasks.continual.utils import *
 from src.tasks.continual.fabric.generation import FabricGeneration
 from utils.logging import get_logger
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 
 
 class FabricTrainerBase(ABC):
-    def __init__(self, devices, config, dataset: Dataset, checkpoint_path: str = None):
+    def __init__(self, devices, config, dataset: DatasetDict, checkpoint_path: str = None):
         self.cli_logger = get_logger(__name__, config.verbose_level)
         
         if (dataset is None):
@@ -30,7 +30,8 @@ class FabricTrainerBase(ABC):
         self.config = config
         self.checkpoint_path = checkpoint_path
         self.state = {}
-        self.dataset, self.dataloaders = self._load_fabric_datasets_dataloaders(self.config)
+        self.dataset = dataset
+        self.dataloaders = self._load_fabric_datasets_dataloaders(self.config, self.dataset)
     
     @abstractmethod
     def _setup_strategy(self):
@@ -272,22 +273,75 @@ class FabricTrainerBase(ABC):
         fabric_eval_log(out)
         fabric.barrier()
     
-    
-    def _load_fabric_datasets_dataloaders(self, config):
-        if config.data_dir is None:
-            # TODO: Añadir funcionalidad para lidiar con datasets de HuggingFace
-            raise ValueError("train_data_dir must be specified.")
+    def _load_fabric_datasets_dataloaders(self, config, dataset: DatasetDict):
+        """
+        Load datasets and create dataloaders with proper error handling and validation.
         
-        else:
-            dataset = load_from_disk(config.data_dir)
+        Args:
+            config: Configuration object with batch_size and num_workers attributes
+            dataset: A DatasetDict containing different data splits
             
-            for split in dataset.keys():
-                dataset[split].set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+        Returns:
+            tuple: (dataset, dataloaders) with properly formatted data
+        """
+        if not isinstance(dataset, DatasetDict):
+            raise TypeError("Expected dataset to be a DatasetDict")
+        
+        # Validate config parameters
+        if not hasattr(config, 'batch_size') or not isinstance(config.batch_size, int) or config.batch_size <= 0:
+            raise ValueError("config.batch_size must be a positive integer")
+        
+        if not hasattr(config, 'num_workers') or not isinstance(config.num_workers, int) or config.num_workers < 0:
+            raise ValueError("config.num_workers must be a non-negative integer")
+        
+        # Validate dataset has expected keys
+        if not dataset.keys():
+            raise ValueError("Dataset is empty, no splits found")
+        
+        # Set format with error handling
+        required_columns = ["input_ids", "attention_mask", "labels"]
+        for split in dataset.keys():
+            # Check if all required columns exist in the dataset
+            missing_columns = [col for col in required_columns if col not in dataset[split].column_names]
+            if missing_columns:
+                raise ValueError(f"Missing required columns {missing_columns} in {split} split")
+            
+            try:
+                dataset[split].set_format(type="torch", columns=required_columns)
+            except Exception as e:
+                raise RuntimeError(f"Failed to set format for {split} split: {str(e)}")
+        
+        # Create dataloaders with error handling
         dataloaders = {}
         for split in dataset.keys():
-            dataloaders[split] = DataLoader(dataset[split], batch_size=config.batch_size, shuffle=(split == "train"), num_workers=config.num_workers)
+            try:
+                dataloaders[split] = DataLoader(
+                    dataset[split], 
+                    batch_size=config.batch_size, 
+                    shuffle=(split == "train"), 
+                    num_workers=config.num_workers,
+                    pin_memory=True,  # Better performance with GPU
+                    drop_last=False   # Keep all samples
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to create DataLoader for {split} split: {str(e)}")
         
-        return ((dataset), (dataloaders))
+        # Return as a dictionary for better readability
+        return {
+            "datasets": dataset,
+            "dataloaders": dataloaders
+        }
+
+    
+    # def _load_fabric_datasets_dataloaders(self, config, dataset: DatasetDict):
+    #     for split in dataset.keys():
+    #         dataset[split].set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])    
+        
+    #     dataloaders = {}
+    #     for split in dataset.keys():
+    #         dataloaders[split] = DataLoader(dataset[split], batch_size=config.batch_size, shuffle=(split == "train"), num_workers=config.num_workers)
+        
+    #     return ((dataset), (dataloaders))
     
     
     def _pipeline(self, fabric):
