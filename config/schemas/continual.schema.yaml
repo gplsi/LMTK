@@ -33,10 +33,6 @@ allOf:
         description: "Precision for the loaded model"
 
       # Checkpoint arguments
-      resume:
-        type: boolean
-        default: false
-        description: "If True, resume training from a checkpoint"
       checkpoint:
         type: string
         default: null
@@ -141,7 +137,6 @@ allOf:
       - train_data_dir
       - model_name
       - precision
-      - resume
       - number_epochs
       - micro_batch_size
       - gradient_accumulation_steps
