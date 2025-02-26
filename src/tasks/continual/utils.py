@@ -1,5 +1,6 @@
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 from transformers.optimization import get_constant_schedule, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
+from transformers.models.gpt2.modeling_gpt2 import GPT2Block
 import torch
 import numpy as np
 import random
@@ -8,7 +9,20 @@ import random
 
 AUTO_WRAPPER = {
     "llama": LlamaDecoderLayer,
+    "gpt2": GPT2Block
 }
+
+OPTIMIZERS = {
+    "adam": torch.optim.Adam,
+    "adamw": torch.optim.AdamW,
+    "sgd": torch.optim.SGD,
+    "adamax": torch.optim.Adamax,
+    "adagrad": torch.optim.Adagrad,
+    "adamw": torch.optim.AdamW,
+    "adadelta": torch.optim.Adadelta,
+    "rmsprop": torch.optim.RMSprop
+}
+
 
 # Scheduler for dealing with training with and without gradient accumulation
 def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, micro_batch_size, train_dataset, warmup_proportion, gradient_accumulation_steps=None):
@@ -60,13 +74,3 @@ def setup_environment(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     
-OPTIMIZERS = {
-    "adam": torch.optim.Adam,
-    "adamw": torch.optim.AdamW,
-    "sgd": torch.optim.SGD,
-    "adamax": torch.optim.Adamax,
-    "adagrad": torch.optim.Adagrad,
-    "adamw": torch.optim.AdamW,
-    "adadelta": torch.optim.Adadelta,
-    "rmsprop": torch.optim.RMSprop
-}

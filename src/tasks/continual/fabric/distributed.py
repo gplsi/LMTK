@@ -21,7 +21,7 @@ class FSDP(FabricTrainerBase):
             # FSDP strategy for multiple devices
             strategy = FSDPStrategy(
                 sharding_strategy=self.config.sharding_strategy,
-                auto_wrap_policy=self.config.auto_wrap_policy,
+                auto_wrap_policy=AUTO_WRAPPER[self.config.auto_wrap_policy],
                 activation_checkpointing_policy=self.config.auto_wrap_policy,
                 state_dict_type=self.config.state_dict_type,
                 limit_all_gathers=self.config.limit_all_gathers,
