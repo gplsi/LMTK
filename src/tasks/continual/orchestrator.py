@@ -30,7 +30,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         # TODO: Implement general configuration validation
         pass
 
-    def fsdp(self):
+    def fsdp(self, dataset):
         """Execute fsdp continual pretraining task."""
         self.logger.info("Starting FSDP continual pretraining task")
         
@@ -45,7 +45,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer.setup()
         self.logger.info("FSDP training finished")
         
-    def ddp(self):
+    def ddp(self, dataset):
         """Execute ddp continual pretraining task."""
         self.logger.info("Starting DDP continual pretraining task")
         # TODO: Validate specific configuration
@@ -59,7 +59,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer.setup()
         self.logger.info("DDP training finished")
         
-    def dp(self):
+    def dp(self, dataset):
         """Execute ddp continual pretraining task."""
         self.logger.info("Starting DP continual pretraining task")
         # TODO: Validate specific configuration
@@ -73,7 +73,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer.setup()
         self.logger.info("DP training finished")
 
-    def deep_speed(self):
+    def deep_speed(self, dataset):
         """Execute deep speed continual pretraining task."""
         self.logger.info("Starting Deep Speed continual pretraining task")
         # TODO: Validate specific configuration
@@ -93,17 +93,20 @@ class ContinualOrchestrator(BaseOrchestrator):
         try:
             # 1. Validate configuration
             self.validate_config()
+            
+            # 2. Load dataset
+            dataset = self.load_dataset()
 
             # Select specific continual method
             strategy = self.config.get("strategy", "fsdp")
             if strategy == "fsdp":
-                self.fsdp()
+                self.fsdp(dataset)
             elif strategy == "ddp":
-                self.ddp()
+                self.ddp(dataset)
             elif strategy == "deep_speed":
-                self.deep_speed()
+                self.deep_speed(dataset)
             elif strategy == "dp":
-                self.dp()
+                self.dp(dataset)
             else:
                 raise ValueError(f"Invalid parallelization strategy: {strategy}")
             
