@@ -5,19 +5,13 @@ from src.utils.logging import get_logger, set_logger_level
 from src.tasks.tokenization.tokenizer import CausalLMTokenizer
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
+from src.utils.orchestrator import BaseOrchestrator
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
+from utils import inherit_init_params
 
-
-class TokenizationOrchestrator:
+@inherit_init_params
+class TokenizationOrchestrator(BaseOrchestrator):
     """Orchestrates the tokenization workflow."""
-
-    def __init__(self, config: Box):
-        self.config = config
-        self.verbose_level = VerboseLevel(
-            self.config.get("verbose_level", VerboseLevel.INFO)
-        )
-        self.logger = get_logger(__name__, self.verbose_level)
-        self.storage = DatasetStorage(self.verbose_level)
 
     def validate_config(self) -> None:
         """Validate tokenization configuration."""

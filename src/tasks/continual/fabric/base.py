@@ -1,7 +1,5 @@
 import math
 import time
-from pathlib import Path
-from typing import Union
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_from_disk
@@ -10,22 +8,27 @@ from abc import ABC, abstractmethod
 import itertools
 # Importando Lightning y otras librerías necesarias
 import lightning as L
-from lightning.fabric.strategies import FSDPStrategy, DeepSpeedStrategy, DDPStrategy, DataParallelStrategy
 from pytorch_lightning.loggers import WandbLogger
 
 # Importando utilidades personalizadas
 from src.tasks.continual.fabric.speed_monitor import SpeedMonitorFabric as Monitor
 from src.tasks.continual.fabric.logger import step_csv_logger
 from src.tasks.continual.utils import *
-from src.tasks.continual.distributed_model_classes import FabricGeneration
-
+from src.tasks.continual.fabric.generation import FabricGeneration
+from utils.logging import get_logger
+from datasets import Dataset
 
 
 class FabricTrainerBase(ABC):
-    def __init__(self, devices, config, resume=False):
+    def __init__(self, devices, config, dataset: Dataset, checkpoint_path: str = None):
+        self.cli_logger = get_logger(__name__, config.verbose_level)
+        
+        if (dataset is None):
+            raise ValueError("Dataset must be provided for training.")
+        
         self.devices = devices
         self.config = config
-        self.resume = resume
+        self.checkpoint_path = checkpoint_path
         self.state = {}
         self.dataset, self.dataloaders = self._load_fabric_datasets_dataloaders(self.config)
     
@@ -54,9 +57,9 @@ class FabricTrainerBase(ABC):
         return [logger]
     
     def _save(self, fabric) -> None:
-        checkpoint_path = self.config.output_dir / f"iter-{self.state['iter_num']:06d}-ckpt.pth"
-        fabric.print(f"Saving checkpoint to {str(checkpoint_path)!r}")
-        fabric.save(checkpoint_path, self.state)
+        output_checkpoint_path = self.config.output_dir / f"iter-{self.state['iter_num']:06d}-ckpt.pth"
+        self.cli_logger.debug(f"Saving checkpoint to {str(output_checkpoint_path)!r}")
+        fabric.save(output_checkpoint_path, self.state)
     
     
     def _get_resume_iterator(self, iterator, resume_iter):
@@ -76,16 +79,14 @@ class FabricTrainerBase(ABC):
         else:
             return iterator, resume_iter
     
-    def _load_resume(self, fabric):
-        if self.resume is True:
-            self.resume = sorted(self.config.output_dir.glob("*.pth"))[-1]
-        if self.resume:
-            fabric.print(f"Resuming training from {self.resume}")
-            fabric.load(self.resume, self.state)
+    def _load_from_checkpoint(self, fabric):
+        if not self.checkpoint_path is None:
+            self.cli_logger.debug(f"Resuming training from '{self.checkpoint_path}'")
+            fabric.load(self.checkpoint_path, self.state)
             
             
-    def _train_logs(self, fabric, loss):
-        fabric.print(
+    def _train_logs(self, fabric: L.Fabric, loss):
+        self.cli_logger.info(
                     f"iter {self.state['iter_num']} step {self.state['step_count']}: loss {loss.item():.4f}, iter time:"
                     f" {(self.train_t1 - self.train_iter_t0) * 1000:.2f}ms remaining time: "
                     f"{(self.train_t1 - self.train_total_t0) / (self.state['iter_num'] - self.initial_iter) * (self.config.max_iters - self.state['iter_num']) / 3600:.2f} hours. "
@@ -100,15 +101,15 @@ class FabricTrainerBase(ABC):
                     train_loss=loss.item()
                 )
     
-    def _gradient_clipping(self, fabric, model, optimizer):
+    def _gradient_clipping(self, fabric: L.Fabric, model, optimizer):
         """Clip gradients during training to avoid exploding gradients."""
         
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.grad_clip)
-        fabric.print(f"Gradient norm before clipping: {grad_norm:.4f}")
+        self.cli_logger.info(f"Gradient norm before clipping: {grad_norm:.4f}")
         fabric.clip_gradients(model, optimizer, max_norm=self.config.grad_clip)
     
     
-    def _accumulate_training(self, fabric, model, batch, step):
+    def _accumulate_training(self, fabric: L.Fabric, model, batch, step):
         """
             Accumulate gradients over multiple steps before backpropagating.
             Automatically called by train method if gradient_accumulation_steps > 1.
@@ -118,7 +119,8 @@ class FabricTrainerBase(ABC):
         # FORWARD PASS
         with fabric.no_backward_sync(model, enabled=is_accumulating):
             outputs, loss = model.training_step(batch, step)
-            fabric.backward(loss / self.config.gradient_accumulation_steps)
+            real_loss = (loss / self.config.gradient_accumulation_steps) if is_accumulating else loss
+            fabric.backward(real_loss)
 
         # BACKPROPAGATION
         if not is_accumulating:
@@ -147,7 +149,7 @@ class FabricTrainerBase(ABC):
         return outputs, loss
     
     
-    def _normal_training(self, fabric, model, batch, step):
+    def _normal_training(self, fabric: L.Fabric, model, batch, step):
         
         """
         Performs the usual forward pass, backward pass and optimization step.
@@ -232,7 +234,6 @@ class FabricTrainerBase(ABC):
                 #TODO: Implement test method
                 raise NotImplementedError("Test method not implemented.")
 
-
             # EPOCH END - SAVE CHECKPOINT
             self._save(fabric)
 
@@ -264,7 +265,7 @@ class FabricTrainerBase(ABC):
         self.monitor.eval_end(t1)
         
         def fabric_eval_log(loss):
-            fabric.print(f"step {self.state['iter_num']}: val loss {loss:.4f}, val time: {elapsed_time * 1000:.2f}ms")
+            self.cli_logger.info(f"step {self.state['iter_num']}: val loss {loss:.4f}, val time: {elapsed_time * 1000:.2f}ms")
             fabric.log_dict({"metric/val_loss": loss.item()}, self.state["step_count"])
             fabric.log_dict({"metric/val_ppl": math.exp(loss.item())}, self.state["step_count"])
         
@@ -320,7 +321,7 @@ class FabricTrainerBase(ABC):
         else:
             self.model.model.gradient_checkpointing_disable()
 
-        fabric.print(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
+        self.cli_logger.info(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
 
 
         # OPTIMIZER
@@ -360,14 +361,14 @@ class FabricTrainerBase(ABC):
 
 
         # RESUME
-        self._load_resume(fabric)
+        self._load_from_checkpoint(fabric)
 
 
         # TRAINING
         train_time = time.perf_counter()
         self._train(fabric)
-        fabric.print(f"Training time: {(time.perf_counter() - train_time):.2f}s")
+        self.cli_logger.info(f"Training time: {(time.perf_counter() - train_time):.2f}s")
 
         if fabric.device.type == "cuda":
-            fabric.print(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
+            self.cli_logger.info(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
     
