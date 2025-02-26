@@ -10,9 +10,9 @@ allOf:
       
       auto_wrap_policy:
         type: string
-        enum: ["LlamaDecoderLayer"]
-        default: "LlamaDecoderLayer"
-        description: "Minimum sharding piece of the model with FSDP (class name or policy identifier), in Transformers is the class that defines each layer"
+        enum: ["llama", "gpt2"]
+        default: "llama"
+        description: "This string will automatically check the minimum layer of the sharded model for FSDP according to HuggingFace"
       
       sharding_strategy:
         type: string
