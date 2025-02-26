@@ -10,3 +10,5 @@ types-pyyaml
 scikit-learn
 lightning
 pytorch-lightning
+wandb
+flash-attn --no-build-isolation

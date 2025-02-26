@@ -9,6 +9,8 @@ import itertools
 # Importando Lightning y otras librerías necesarias
 import lightning as L
 from pytorch_lightning.loggers import WandbLogger
+import os
+
 
 # Importando utilidades personalizadas
 from src.tasks.pretraining.fabric.speed_monitor import SpeedMonitorFabric as Monitor
@@ -16,7 +18,7 @@ from src.tasks.pretraining.fabric.logger import step_csv_logger
 from src.tasks.pretraining.utils import *
 from src.tasks.pretraining.fabric.generation import FabricGeneration
 from utils.logging import get_logger
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 
 
 class FabricTrainerBase(ABC):
@@ -277,7 +279,7 @@ class FabricTrainerBase(ABC):
         fabric_eval_log(out)
         fabric.barrier()
     
-    def _load_fabric_datasets_dataloaders(self, config, dataset: Dataset):
+    def _load_fabric_datasets_dataloaders(self, config, dataset: Dataset|DatasetDict):
         """
         Load datasets and create dataloaders with proper error handling and validation.
         
@@ -288,8 +290,8 @@ class FabricTrainerBase(ABC):
         Returns:
             tuple: (dataset, dataloaders) with properly formatted data
         """
-        if not isinstance(dataset, Dataset):
-            raise TypeError("Expected dataset to be a Dataset")
+        if not isinstance(dataset, DatasetDict):
+            raise TypeError("Expected dataset to be a DatasetDict")
         
         # Validate config parameters
         if not hasattr(config, 'micro_batch_size') or not isinstance(config.micro_batch_size, int) or config.micro_batch_size <= 0:
@@ -299,7 +301,7 @@ class FabricTrainerBase(ABC):
             raise ValueError("config.num_workers must be a non-negative integer")
         
         # Validate dataset has expected keys
-        if not dataset.features.keys():
+        if not dataset.keys():
             raise ValueError("Dataset is empty, no splits found")
         
         # Set format with error handling
@@ -360,11 +362,11 @@ class FabricTrainerBase(ABC):
 
         # OUTPUT DIR AND SYNC
         if fabric.global_rank == 0:
-            self.config.output_dir.mkdir(parents=True, exist_ok=True)
+            os.makedirs(self.config.output_dir, exist_ok=True)
         fabric.barrier()
 
         # FABRIC DATALOADERS SETUP
-        self.dataloaders = fabric.setup_dataloaders(self.dataloaders)
+        self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
         
 
         # MODEL
