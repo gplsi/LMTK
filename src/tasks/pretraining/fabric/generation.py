@@ -5,7 +5,6 @@ from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
 
 
-
 """
 The LightningModules used for each case should be specified in this script
 """
@@ -19,9 +18,10 @@ class FabricGeneration(L.LightningModule):
         if args['precision'] == 'bf16-true':
             torch_dtype = torch.bfloat16
         
+        # TODO: Add support for attn implementation according to models
         self.model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch_dtype, 
-        use_cache=False, attn_implementation="flash_attention_2")
-
+        use_cache=False)
+       
     def on_train_start(self):
         # Access Fabric and its attributes
         print(self.fabric.world_size)

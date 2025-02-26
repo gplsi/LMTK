@@ -17,23 +17,23 @@ from utils import inherit_init_params
 class FSDP(FabricTrainerBase):
     def _setup_strategy(self):
         self.cli_logger.info("Setting up FSDP strategy.")
-        if self.devices > 1:
+        #if self.devices > 1:
             # FSDP strategy for multiple devices
-            strategy = FSDPStrategy(
-                sharding_strategy=self.config.sharding_strategy,
-                auto_wrap_policy=AUTO_WRAPPER[self.config.auto_wrap_policy],
-                activation_checkpointing_policy=self.config.auto_wrap_policy,
-                state_dict_type=self.config.state_dict_type,
-                limit_all_gathers=self.config.limit_all_gathers,
-                cpu_offload=self.config.cpu_offload,
-            )
-        else:
-            strategy = "auto"
-            # TODO: Poner en formato de warning
-            print("Using automatic strategy for 1 device.")
-            raise NotImplementedError(
-                "Automatic strategy is not yet implemented for 1 device."
-            )
+        strategy = FSDPStrategy(
+            sharding_strategy=self.config.sharding_strategy,
+            auto_wrap_policy=AUTO_WRAPPER[self.config.auto_wrap_policy],
+            activation_checkpointing_policy=self.config.auto_wrap_policy,
+            state_dict_type=self.config.state_dict_type,
+            limit_all_gathers=self.config.limit_all_gathers,
+            cpu_offload=self.config.cpu_offload,
+        )
+        # else:
+        #     strategy = "auto"
+        #     # TODO: Poner en formato de warning
+        #     print("Using automatic strategy for 1 device.")
+        #     raise NotImplementedError(
+        #         "Automatic strategy is not yet implemented for 1 device."
+        #     )
 
         return strategy
 
@@ -54,7 +54,7 @@ class FSDP(FabricTrainerBase):
         }
         self.cli_logger.debug(self.hparams)
 
-        fabric.launch(self._pipeline, self.resume, self.config, self.hparams)
+        fabric.launch(self._pipeline)
 
 
 @inherit_init_params

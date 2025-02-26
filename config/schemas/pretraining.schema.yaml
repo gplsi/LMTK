@@ -123,6 +123,12 @@ allOf:
         default: "none"
         description: "Which logging strategy to use"
 
+      # Seed arguments
+      seed:
+        type: [integer, 'null']
+        default: null
+        description: "Seed for reproducibility"
+
     required:
       - dataset
       - model_name
