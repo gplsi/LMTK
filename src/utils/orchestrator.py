@@ -30,11 +30,14 @@ class BaseOrchestrator(ABC):
         )
         
         self._validate__dataset_config()
+        
 
         if self.config.dataset.source == "local":
             if self.config.dataset.format == "dataset":
+                self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")
                 return dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
             elif self.config.dataset.format == "files":
+                self.logger.info(f"Loading dataset from files at dir '{self.config.dataset.nameOrPath}'")
                 return dataset_handler.process_files(
                     self.config.dataset.nameOrPath,
                     extension=self.config.dataset.file_config.format,

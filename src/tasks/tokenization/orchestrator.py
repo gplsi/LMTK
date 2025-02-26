@@ -24,27 +24,6 @@ class TokenizationOrchestrator(BaseOrchestrator):
         if not self.config.output or not self.config.output.path:
             raise ValueError("Output path must be provided")
 
-    def load_dataset(self) -> Dataset:
-        """Load dataset based on configuration."""
-        dataset_handler = DatasetStorage(
-            verbose_level=VerboseLevel(
-                self.config.get("verbose_level", VerboseLevel.INFO)
-            )
-        )
-
-        if self.config.dataset.source == "local":
-            if self.config.dataset.format == "dataset":
-                return dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
-            elif self.config.dataset.format == "files":
-                return dataset_handler.process_files(
-                    self.config.dataset.nameOrPath,
-                    extension=self.config.dataset.file_config.format,
-                )
-            raise ValueError(f"Invalid dataset format: {self.config.dataset.format}")
-        elif self.config.dataset.source == "huggingface":
-            raise NotImplementedError("HuggingFace dataset loading not implemented yet")
-        raise ValueError(f"Invalid dataset source: {self.config.dataset.source}")
-
     def tokenize_dataset(self, dataset: Dataset) -> Dataset:
         """Execute tokenization task."""
         tokenizer_config = TokenizerConfig(
