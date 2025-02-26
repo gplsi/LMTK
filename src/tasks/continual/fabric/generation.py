@@ -5,7 +5,6 @@ from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
 
 
-
 # Base class for Generative models with Fabric
 class FabricGeneration(L.LightningModule):
     def __init__(self, args):

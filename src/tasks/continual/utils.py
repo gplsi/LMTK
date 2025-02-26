@@ -10,7 +10,6 @@ AUTO_WRAPPER = {
     "llama": LlamaDecoderLayer,
 }
 
-
 # Scheduler for dealing with training with and without gradient accumulation
 def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, micro_batch_size, train_dataset, warmup_proportion, gradient_accumulation_steps=None):
     
@@ -60,8 +59,6 @@ def setup_environment(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    
-    
     
 OPTIMIZERS = {
     "adam": torch.optim.Adam,

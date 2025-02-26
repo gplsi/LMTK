@@ -2,9 +2,6 @@ from box import Box
 import pprint
 
 def execute(config: Box):
-    print("Training with the following config:")
-    pprint.pprint(config.items)
-    
     strategy = config.parallelization_strategy
     if strategy == "fsdp":
         # Import the Fabric class and its dependencies
