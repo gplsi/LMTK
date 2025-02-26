@@ -31,7 +31,11 @@ class FabricTrainerBase(ABC):
         self.checkpoint_path = checkpoint_path
         self.state = {}
         self.dataset = dataset
-        self.dataloaders = self._load_fabric_datasets_dataloaders(self.config, self.dataset)
+        
+        # Load datasets and create dataloaders
+        result = self._load_fabric_datasets_dataloaders(self.config, self.dataset)
+        self.datasets = result["datasets"]
+        self.dataloaders = result["dataloaders"]
     
     @abstractmethod
     def _setup_strategy(self):
