@@ -99,7 +99,8 @@ class DatasetStorage:
             self.logger.error("No data found")
             raise ValueError("No data found")
 
-    def split(self, dataset: Dataset, split_ratio: float) -> None:
+    def split(self, dataset: DatasetDict, split_ratio: float) -> None:
+        dataset = dataset["train"]
         split_dataset = dataset.train_test_split(test_size=split_ratio)
         dataset_dict = DatasetDict(
             {
@@ -107,9 +108,7 @@ class DatasetStorage:
                 "valid": split_dataset["test"],  # Renaming 'test' split to 'valid'
             }
         )
-        dataset_dict.save_to_disk(
-            dataset_dict_path=f"data/arrow/{self.dataset_name}"
-        )  # Save the split dataset to disk
+        return dataset_dict
 
     def load_from_disk(self, path: str) -> Dataset:
         if not os.path.isdir(path):

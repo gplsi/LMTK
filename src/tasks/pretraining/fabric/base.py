@@ -11,16 +11,16 @@ import lightning as L
 from pytorch_lightning.loggers import WandbLogger
 
 # Importando utilidades personalizadas
-from src.tasks.continual.fabric.speed_monitor import SpeedMonitorFabric as Monitor
-from src.tasks.continual.fabric.logger import step_csv_logger
-from src.tasks.continual.utils import *
-from src.tasks.continual.fabric.generation import FabricGeneration
+from src.tasks.pretraining.fabric.speed_monitor import SpeedMonitorFabric as Monitor
+from src.tasks.pretraining.fabric.logger import step_csv_logger
+from src.tasks.pretraining.utils import *
+from src.tasks.pretraining.fabric.generation import FabricGeneration
 from utils.logging import get_logger
-from datasets import Dataset, DatasetDict
+from datasets import Dataset
 
 
 class FabricTrainerBase(ABC):
-    def __init__(self, devices, config, dataset: DatasetDict, checkpoint_path: str = None):
+    def __init__(self, devices, config, dataset: Dataset, checkpoint_path: str = None):
         self.cli_logger = get_logger(__name__, config.verbose_level)
         
         if (dataset is None):
@@ -277,29 +277,29 @@ class FabricTrainerBase(ABC):
         fabric_eval_log(out)
         fabric.barrier()
     
-    def _load_fabric_datasets_dataloaders(self, config, dataset: DatasetDict):
+    def _load_fabric_datasets_dataloaders(self, config, dataset: Dataset):
         """
         Load datasets and create dataloaders with proper error handling and validation.
         
         Args:
             config: Configuration object with batch_size and num_workers attributes
-            dataset: A DatasetDict containing different data splits
+            dataset: A Huggingface Dataset containing different data splits
             
         Returns:
             tuple: (dataset, dataloaders) with properly formatted data
         """
-        if not isinstance(dataset, DatasetDict):
-            raise TypeError("Expected dataset to be a DatasetDict")
+        if not isinstance(dataset, Dataset):
+            raise TypeError("Expected dataset to be a Dataset")
         
         # Validate config parameters
-        if not hasattr(config, 'batch_size') or not isinstance(config.batch_size, int) or config.batch_size <= 0:
-            raise ValueError("config.batch_size must be a positive integer")
+        if not hasattr(config, 'micro_batch_size') or not isinstance(config.micro_batch_size, int) or config.micro_batch_size <= 0:
+            raise ValueError("config.micro_batch_size must be a positive integer")
         
         if not hasattr(config, 'num_workers') or not isinstance(config.num_workers, int) or config.num_workers < 0:
             raise ValueError("config.num_workers must be a non-negative integer")
         
         # Validate dataset has expected keys
-        if not dataset.keys():
+        if not dataset.features.keys():
             raise ValueError("Dataset is empty, no splits found")
         
         # Set format with error handling
@@ -321,7 +321,7 @@ class FabricTrainerBase(ABC):
             try:
                 dataloaders[split] = DataLoader(
                     dataset[split], 
-                    batch_size=config.batch_size, 
+                    batch_size=config.micro_batch_size, 
                     shuffle=(split == "train"), 
                     num_workers=config.num_workers,
                     pin_memory=True,  # Better performance with GPU
@@ -337,13 +337,13 @@ class FabricTrainerBase(ABC):
         }
 
     
-    # def _load_fabric_datasets_dataloaders(self, config, dataset: DatasetDict):
+    # def _load_fabric_datasets_dataloaders(self, config, dataset: Dataset):
     #     for split in dataset.keys():
     #         dataset[split].set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])    
         
     #     dataloaders = {}
     #     for split in dataset.keys():
-    #         dataloaders[split] = DataLoader(dataset[split], batch_size=config.batch_size, shuffle=(split == "train"), num_workers=config.num_workers)
+    #         dataloaders[split] = DataLoader(dataset[split], batch_size=config.micro_batch_size, shuffle=(split == "train"), num_workers=config.num_workers)
         
     #     return ((dataset), (dataloaders))
     

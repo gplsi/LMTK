@@ -69,7 +69,13 @@ allOf:
             description: "Path to save tokenized dataset"
         required:
           - path
-          
+
+      test_size:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: null
+    
     required:
       - tokenizer
       - dataset

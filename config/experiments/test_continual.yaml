@@ -1,17 +1,25 @@
-task: "continual"
+task: "pretraining"   # pretraining, tokenization
 experiment_name: "news_corpus_val-es"
 
 verbose_level: 4
 
-# Dataset dir
-train_data_dir: "data/tokenized/news_corpus"
+
+
+# Training data
+dataset:
+  source: "local"  # huggingface, local
+  nameOrPath: "/workspace/data/tokenized/tokenized_corpus"
+
+
+# Output dir
+output_dir: "output/"
 
 # Model
 model_name: "openai-community/gpt2"
 
 
 # Checkpointing
-checkpoint: null
+
 
 # Model precision
 precision: "bf16-true"
@@ -28,7 +36,7 @@ grad_clip: 1.0
 
 
 # Optimizer parameters
-lr: 2e-5      
+lr: 0.00002      
 lr_decay: true
 weight_decay: 0.01
 beta1: 0.9

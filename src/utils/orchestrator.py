@@ -35,13 +35,25 @@ class BaseOrchestrator(ABC):
         if self.config.dataset.source == "local":
             if self.config.dataset.format == "dataset":
                 self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")
-                return dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
+                dataset = dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
+                
+                if self.config.test_size:
+                    self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
+                dataset = dataset_handler.split(dataset, split_ratio=self.config.test_size)
+                
+                return dataset
+            
             elif self.config.dataset.format == "files":
                 self.logger.info(f"Loading dataset from files at dir '{self.config.dataset.nameOrPath}'")
-                return dataset_handler.process_files(
+                dataset= dataset_handler.process_files(
                     self.config.dataset.nameOrPath,
                     extension=self.config.dataset.file_config.format,
                 )
+                if self.config.test_size:
+                    self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
+                dataset = dataset_handler.split(dataset, split_ratio=self.config.test_size)
+                
+                return dataset
             raise ValueError(f"Invalid dataset format: {self.config.dataset.format}")
         elif self.config.dataset.source == "huggingface":
             raise NotImplementedError("HuggingFace dataset loading not implemented yet")

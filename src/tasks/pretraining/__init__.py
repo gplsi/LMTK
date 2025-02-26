@@ -1,5 +1,5 @@
 from box import Box
-from src.tasks.continual.orchestrator import ContinualOrchestrator
+from src.tasks.pretraining.orchestrator import ContinualOrchestrator
 
 # src/tasks/continual.py
 def execute(config: Box):
