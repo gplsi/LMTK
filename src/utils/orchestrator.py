@@ -23,13 +23,14 @@ class BaseOrchestrator(ABC):
 
     def load_dataset(self) -> Dataset:
         """Load dataset based on configuration."""
+        self._validate__dataset_config()
+        
         dataset_handler = DatasetStorage(
             verbose_level=VerboseLevel(
                 self.config.get("verbose_level", VerboseLevel.INFO)
-            )
+            ),
+            enable_txt_samples= self.config.dataset.use_txt_as_samples or False
         )
-        
-        self._validate__dataset_config()
 
         if self.config.dataset.source == "local":
             if self.config.dataset.format == "dataset":

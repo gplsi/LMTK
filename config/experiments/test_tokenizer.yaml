@@ -18,6 +18,7 @@ dataset:
   source: "local"
   nameOrPath: "data/raw/news_corpus"
   format: "files"
+  use_txt_as_samples: true
   file_config:
     format: "txt"
     encoding: "utf-8"
