@@ -2,12 +2,10 @@ task: "pretraining"   # pretraining, tokenization
 experiment_name: "news_corpus_val-es"
 verbose_level: 4
 
-
 # Training data
 dataset:
   source: "local"  # huggingface, local
   nameOrPath: "/workspace/data/tokenized/news_corpus"
-
 
 # Output dir
 output_dir: "output/"
@@ -54,7 +52,7 @@ log_model: false
 log_iter_interval: 10
 
 # Distributed_strategy
-parallelization_strategy: "ddp"
+parallelization_strategy: "fsdp"
 
 # FSDP specific parameters
 auto_wrap_policy: "llama"
@@ -65,5 +63,3 @@ cpu_offload: false
 num_workers: 4
 gradient_checkpointing: true
 
-#Seed
-seed: null
