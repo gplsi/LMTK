@@ -30,7 +30,6 @@ class BaseOrchestrator(ABC):
         )
         
         self._validate__dataset_config()
-        
 
         if self.config.dataset.source == "local":
             if self.config.dataset.format == "dataset":
