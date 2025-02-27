@@ -13,7 +13,7 @@ dataset:
 output_dir: "output/"
 
 # Model
-model_name: "openai-community/gpt2"
+model_name: "meta-llama/Llama-3.2-1B"
 
 # Model precision
 precision: "bf16-true"
@@ -21,7 +21,7 @@ static_graph: false
 
 # Training parameters
 number_epochs: 1
-batch_size: 16
+batch_size: 4
 
 # Validation parameters
 validate_on_end: false
@@ -48,7 +48,7 @@ warmup_proportion: 0.06
 logging_config: "wandb"
 
 # Wandb logging specific parameters
-wandb_project: "prueba_continual_framework"
+wandb_project: "prueba_llama-3.2-1B_ddp__titan"
 wandb_entity: "gplsi_continual"
 log_model: false
 log_iter_interval: 10
@@ -57,7 +57,7 @@ log_iter_interval: 10
 parallelization_strategy: "ddp"
 
 # FSDP specific parameters
-auto_wrap_policy: "gpt2"
+auto_wrap_policy: "llama"
 sharding_strategy: "FULL_SHARD"
 state_dict_type: "sharded"
 limit_all_gathers: true
