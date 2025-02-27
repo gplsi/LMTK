@@ -12,6 +12,7 @@ dataset:
   source: "local"
   nameOrPath: "/workspace/data/raw/corpus"
   format: "files"
+  use_txt_as_samples: true
   file_config:
     format: "txt"
     encoding: "utf-8"

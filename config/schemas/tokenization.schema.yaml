@@ -49,6 +49,11 @@ allOf:
               encoding:
                 type: string
                 default: "utf-8"
+
+          use_txt_as_samples:
+            type: boolean
+            default: false
+
           save_raw:
             type: object
             properties:

@@ -29,9 +29,10 @@ class DatasetStorage:
 
     """
 
-    def __init__(self, verbose_level: VerboseLevel = VerboseLevel.DEBUG):
+    def __init__(self, verbose_level: VerboseLevel = VerboseLevel.DEBUG, enable_txt_samples: bool = False):
         self.logger = get_logger(__name__, level=verbose_level)
         self.verbose_level = verbose_level
+        self.enable_txt_samples = enable_txt_samples
         self.extension_to_method = {
             "txt": partial(self.__load_dataset_from_extension, "text"),
             "csv": partial(self.__load_dataset_from_extension, "csv"),
@@ -40,8 +41,47 @@ class DatasetStorage:
         }
 
     def __load_dataset_from_extension(self, data_type: str, files: list[str]):
-        # Load text files into a dataset
+        """
+        Load dataset from files with the specified extension.
+        
+        Args:
+            data_type (str): The type of data to load (e.g., 'text', 'csv', 'json').
+            files (list[str]): List of file paths to load.
+        
+        Returns:
+            Dataset: The loaded dataset.
+        """
+        if data_type == "text" and self.enable_txt_samples:
+            return self.__load_text_files_as_samples(files)
+        
+        # Default behavior: use Hugging Face's built-in loaders
         return load_dataset(data_type, data_files=files)
+    
+    def __load_text_files_as_samples(self, files: list[str]):
+        """
+        Load text files as individual samples, where each file is a single sample.
+        
+        Args:
+            files (list[str]): List of text file paths to load.
+        
+        Returns:
+            Dataset: A dataset where each file is a single sample.
+        """
+        data = []
+        for i, file_path in enumerate(files):
+            try:
+                with open(file_path, 'r') as f:
+                    content = f.read().replace('\n\n', '\n')  # Basic preprocessing
+                
+                data.append({
+                    'text': content
+                })
+            except Exception as e:
+                self.logger.error(f"Error loading file {file_path}: {e}")
+        
+        # Create a Dataset from the list of dictionaries and wrap in a DatasetDict
+        dataset = Dataset.from_list(data)
+        return DatasetDict({"train": dataset})
 
     def _group_files_by_extension(self, files_path: str) -> dict:
         source_dict = scan_directory(files_path)
@@ -60,6 +100,16 @@ class DatasetStorage:
         return extension_files
 
     def process_files(self, files_path: str, extension: str = None) -> Dataset:
+        """
+        Process files from a directory and create a dataset.
+        
+        Args:
+            files_path (str): Path to the directory containing files.
+            extension (str, optional): Specific file extension to process.
+        
+        Returns:
+            Dataset: The processed dataset.
+        """
         if not os.path.isdir(files_path):
             raise ValueError(f"Invalid directory path: {files_path}.")
 
