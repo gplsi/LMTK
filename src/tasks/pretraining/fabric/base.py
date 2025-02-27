@@ -725,7 +725,7 @@ class FabricTrainerBase(ABC):
         self.cli_logger.info(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
         # OPTIMIZER
         optimizer = select_optimizer(
-            self.config.optimizer, 
+            self.config.get("optimizer", "adamw"), 
             self.model, 
             self.config.lr, 
             self.config.weight_decay, 
