@@ -1,0 +1,17 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "pretraining.ddp.schema.yaml"
+description: "Schema for DeepSpeed experiments"
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      
+      zero_stage:
+        type: integer
+        enum : [0, 1, 2, 3]
+        default: 2
+        description: "Zero stage to use"
+      
+    required:
+      - zero_stage
+      

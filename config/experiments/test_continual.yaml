@@ -24,9 +24,9 @@ number_epochs: 1
 batch_size: 16
 
 # Validation parameters
-validate_on_end: true
-validate_after_epoch: true
-validate_after_k_steps: 5
+validate_on_end: false
+validate_after_epoch: false
+validate_after_k_steps: null
 
 # Gradient parameters
 gradient_accumulation: true
