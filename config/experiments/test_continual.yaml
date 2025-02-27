@@ -1,8 +1,6 @@
 task: "pretraining"   # pretraining, tokenization
 experiment_name: "news_corpus_val-es"
-
 verbose_level: 4
-
 
 
 # Training data
@@ -17,23 +15,23 @@ output_dir: "output/"
 # Model
 model_name: "openai-community/gpt2"
 
-
-# Checkpointing
-
-
 # Model precision
 precision: "bf16-true"
+static_graph: false
 
 # Training parameters
 number_epochs: 1
-micro_batch_size: 1
+batch_size: 16
 
+# Validation parameters
+validate_on_end: true
+validate_after_epoch: true
+validate_after_k_steps: 5
 
 # Gradient parameters
 gradient_accumulation: true
-gradient_accumulation_steps: 64
+gradient_accumulation_steps: 4
 grad_clip: 1.0
-
 
 # Optimizer parameters
 lr: 0.00002      
@@ -42,11 +40,9 @@ weight_decay: 0.01
 beta1: 0.9
 beta2: 0.999
 
-
 # Scheduler parameters
 lr_scheduler: "warmup_linear"
 warmup_proportion: 0.06   
-
 
 # Logging
 logging_config: "wandb"
@@ -57,14 +53,13 @@ wandb_entity: "gplsi_continual"
 log_model: false
 log_iter_interval: 10
 
-
 # Distributed_strategy
-parallelization_strategy: "fsdp"
+parallelization_strategy: "ddp"
 
 # FSDP specific parameters
 auto_wrap_policy: "gpt2"
 sharding_strategy: "FULL_SHARD"
-state_dict_type: "full"
+state_dict_type: "sharded"
 limit_all_gathers: true
 cpu_offload: false
 num_workers: 4

@@ -1,7 +1,7 @@
 # Cross-platform Makefile for Continual Pretraining Framework
 PROJECT_NAME = continual-pretrain
 CONFIG_PATH = config
-DOCKER_RUN = docker run --rm -v "$(CURDIR)":/workspace
+DOCKER_RUN = docker run -v "$(CURDIR)":/workspace
 GPU_DEVICES ?= all  # Can specify "0", "0,1" or "none" for CPU-only
 
 .PHONY: help build validate tokenize train dev-shell clean
@@ -14,10 +14,10 @@ help:
 	@echo   "clean       - Clean build artifacts"
 
 build:
-	docker build -t $(PROJECT_NAME) -f docker/Dockerfile .
+	docker build -t $(PROJECT_NAME) --network=host -f docker/dockerfile .
 	
 container:
-	$(DOCKER_RUN) --name gplsi_continual_pretraining_framework -it --gpus '"device=$(GPU_DEVICES)"' $(PROJECT_NAME) bash
+	$(DOCKER_RUN) --name gplsi_continual_pretraining_framework -it --network=host --gpus '"device=$(GPU_DEVICES)"' $(PROJECT_NAME) bash
 
 clean:
 	-@find . -name "*.pyc" -delete 2> /dev/null

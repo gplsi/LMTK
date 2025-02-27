@@ -54,7 +54,7 @@ class ContinualOrchestrator(BaseOrchestrator):
             devices=self.devices,
             config=self.config,
             dataset=dataset,
-            checkpoint=self.config.get("checkpoint", None)
+            checkpoint_path=self.config.get("checkpoint", None)
         )
         
         trainer.setup()
@@ -69,7 +69,7 @@ class ContinualOrchestrator(BaseOrchestrator):
             devices=self.devices,
             config=self.config,
             dataset=dataset,
-            checkpoint=self.config.get("checkpoint", None)
+            checkpoint_path=self.config.get("checkpoint", None)
         )
         
         trainer.setup()
@@ -84,7 +84,7 @@ class ContinualOrchestrator(BaseOrchestrator):
             devices=self.devices,
             config=self.config,
             dataset=dataset,
-            checkpoint=self.config.get("checkpoint", None)
+            checkpoint_path=self.config.get("checkpoint", None)
         )
         
         trainer.setup()
@@ -113,8 +113,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         raise ValueError(f"Invalid dataset source: {self.config.dataset.source}")
 
     def execute(self) -> None:
-        """Execute the complete tokenization workflow."""
-        self.logger.info("Starting tokenization workflow")
+        self.logger.info("Starting training pipeline")
         try:
             # 1. Validate configuration
             self.validate_config()
@@ -123,7 +122,7 @@ class ContinualOrchestrator(BaseOrchestrator):
             dataset = self.load_dataset()
 
             # Select specific continual method
-            strategy = self.config.get("strategy", "fsdp")
+            strategy = self.config.get("parallelization_strategy", "fsdp")
             if strategy == "fsdp":
                 self.fsdp(dataset)
             elif strategy == "ddp":
@@ -138,5 +137,5 @@ class ContinualOrchestrator(BaseOrchestrator):
             self.logger.info("Continual Pretraining completed successfully")
 
         except Exception as e:
-            self.logger.error(f"Tokenization workflow failed: {str(e)}")
+            self.logger.error(f"Continual Pretraining pipeline failed: {str(e)}")
             raise
