@@ -101,6 +101,9 @@ class DatasetStorage:
 
     def split(self, dataset: DatasetDict, split_ratio: float) -> None:
         dataset = dataset["train"]
+        if split_ratio == 0:
+            dataset_dict = DatasetDict({"train": dataset})
+            return dataset_dict
         split_dataset = dataset.train_test_split(test_size=split_ratio)
         dataset_dict = DatasetDict(
             {
