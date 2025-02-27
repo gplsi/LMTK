@@ -39,10 +39,26 @@ allOf:
         type: integer
         default: 2
         description: "Number of epochs to train"
-      micro_batch_size:
+
+      batch_size:
         type: integer
         default: 1
         description: "Size of each data batch"
+        
+      validate_after_epoch:
+        type: boolean
+        default: true
+        description: "If True, validate after each epoch"
+      
+      validate_on_end:
+        type: boolean
+        default: true
+        description: "If True, validate at the end of training"
+      
+      validate_after_k_steps:
+        type: [integer, 'null']
+        default: null
+        description: "Number of steps to validate after"
 
       # Optimizer arguments
       gradient_accumulation:
@@ -69,7 +85,6 @@ allOf:
         type: boolean
         default: true
         description: "If True, apply learning rate decay"
-      
 
       weight_decay:
         type: number
@@ -134,7 +149,7 @@ allOf:
       - model_name
       - precision
       - number_epochs
-      - micro_batch_size
+      - batch_size
       - gradient_accumulation_steps
       - grad_clip
       - lr

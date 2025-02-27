@@ -9,7 +9,8 @@ from lightning.fabric.strategies import (
 
 # Importando utilidades personalizadas
 from src.tasks.pretraining.utils import *
-from tasks.pretraining.fabric.base import FabricTrainerBase
+from src.tasks.pretraining.fabric.base import FabricTrainerBase
+from tasks.pretraining.fabric.wrappers.fsdp_config import resolve_fsdp_config
 from utils import inherit_init_params
 
 
@@ -17,45 +18,33 @@ from utils import inherit_init_params
 class FSDP(FabricTrainerBase):
     def _setup_strategy(self):
         self.cli_logger.info("Setting up FSDP strategy.")
-        #if self.devices > 1:
+        if self.devices > 1:
+            # Resolve FSDP configuration with sensible defaults
+            fsdp_config = resolve_fsdp_config(
+                config=self.config.__dict__,
+                model_name=self.config.model_name
+            )
+            
             # FSDP strategy for multiple devices
-        strategy = FSDPStrategy(
-            sharding_strategy=self.config.sharding_strategy,
-            auto_wrap_policy=AUTO_WRAPPER[self.config.auto_wrap_policy],
-            activation_checkpointing_policy=self.config.auto_wrap_policy,
-            state_dict_type=self.config.state_dict_type,
-            limit_all_gathers=self.config.limit_all_gathers,
-            cpu_offload=self.config.cpu_offload,
-        )
-        # else:
-        #     strategy = "auto"
-        #     # TODO: Poner en formato de warning
-        #     print("Using automatic strategy for 1 device.")
-        #     raise NotImplementedError(
-        #         "Automatic strategy is not yet implemented for 1 device."
-        #     )
-
-        return strategy
-
-    def setup(self) -> None:
-        strategy = self._setup_strategy()
-        loggers = self._set_loggers()
-        fabric = L.Fabric(
-            devices=self.devices,
-            strategy=strategy,
-            precision=self.config.precision,
-            loggers=[loggers],
-        )
-
-        self.hparams = {
-            k: v
-            for k, v in locals().items()
-            if isinstance(v, (int, float, str)) and not k.startswith("_")
-        }
-        self.cli_logger.debug(self.hparams)
-
-        fabric.launch(self._pipeline)
-
+            self.strategy = FSDPStrategy(
+                sharding_strategy=fsdp_config["sharding_strategy"],
+                auto_wrap_policy=fsdp_config["auto_wrap_policy"],
+                activation_checkpointing_policy=fsdp_config["activation_checkpointing"],
+                activation_checkpointing=fsdp_config["activation_checkpointing"],
+                state_dict_type=fsdp_config["state_dict_type"],
+                limit_all_gathers=fsdp_config["limit_all_gathers"],
+                cpu_offload=fsdp_config["cpu_offload"],
+                
+            )
+            
+            self.cli_logger.info(f"Using auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
+            if fsdp_config["activation_checkpointing"]:
+                self.cli_logger.info(f"Using activation_checkpointing: {fsdp_config['activation_checkpointing']}")
+        else:
+            self.strategy = "auto"
+            self.cli_logger.warning("Using automatic strategy for 1 device.")
+            
+        return self.strategy
 
 @inherit_init_params
 class DeepSpeed(FabricTrainerBase):
@@ -74,26 +63,7 @@ class DeepSpeed(FabricTrainerBase):
                 "Automatic strategy is not yet implemented for 1 device."
             )
         return strategy
-
-    def setup(self) -> None:
-        strategy = self._setup_strategy()
-        loggers = self._set_loggers()
-        fabric = L.Fabric(
-            devices=self.devices,
-            strategy=strategy,
-            precision=self.config.precision,
-            loggers=[loggers],
-        )
-
-        self.hparams = {
-            k: v
-            for k, v in locals().items()
-            if isinstance(v, (int, float, str)) and not k.startswith("_")
-        }
-        self.cli_logger.debug(self.hparams)
-        fabric.launch(self._pipeline, self.resume, self.config, self.hparams)
-
-
+    
 @inherit_init_params
 class DistributedDataParallel(FabricTrainerBase):
     def _setup_strategy(self):
@@ -101,46 +71,14 @@ class DistributedDataParallel(FabricTrainerBase):
         if self.devices > 1:
             # Configure DDPStrategy with common parameters:
             strategy = DDPStrategy(
-                find_unused_parameters=(
-                    self.config.find_unused_parameters
-                    if hasattr(self.config, "find_unused_parameters")
-                    else False
-                ),
-                process_group_backend=(
-                    self.config.process_group_backend
-                    if hasattr(self.config, "process_group_backend")
-                    else "nccl"
-                ),
-                static_graph=(
-                    self.config.static_graph
-                    if hasattr(self.config, "static_graph")
-                    else True
-                ),
+                find_unused_parameters=self.config.get("find_unused_parameters", False),
+                process_group_backend=self.config.get("process_group_backend", "nccl"),
+                static_graph=self.config.get("static_graph", True),
                 # You can add additional parameters here if needed.
             )
         else:
             strategy = "auto"
         return strategy
-
-    def setup(self) -> None:
-        strategy = self._setup_strategy()
-        loggers = (
-            self._set_loggers()
-        )  # Ensure _set_loggers returns a list of logger objects.
-        fabric = L.Fabric(
-            devices=self.devices,
-            strategy=strategy,
-            precision=self.config.precision,
-            loggers=loggers,
-        )
-        self.hparams = {
-            k: v
-            for k, v in locals().items()
-            if isinstance(v, (int, float, str)) and not k.startswith("_")
-        }
-        self.cli_logger.debug(self.hparams)
-        fabric.launch(self._pipeline, self.resume, self.config, self.hparams)
-
 
 @inherit_init_params
 class DataParallel(FabricTrainerBase):
@@ -156,22 +94,3 @@ class DataParallel(FabricTrainerBase):
         else:
             strategy = "auto"
         return strategy
-
-    def setup(self) -> None:
-        strategy = self._setup_strategy()
-        loggers = (
-            self._set_loggers()
-        )  # Ensure _set_loggers returns a list of logger objects.
-        fabric = L.Fabric(
-            devices=self.devices,
-            strategy=strategy,
-            precision=self.config.precision,
-            loggers=loggers,
-        )
-        self.hparams = {
-            k: v
-            for k, v in locals().items()
-            if isinstance(v, (int, float, str)) and not k.startswith("_")
-        }
-        self.cli_logger.debug(self.hparams)
-        fabric.launch(self._pipeline, self.resume, self.config, self.hparams)

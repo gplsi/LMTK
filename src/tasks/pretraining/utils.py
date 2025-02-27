@@ -24,10 +24,10 @@ OPTIMIZERS = {
 
 
 # Scheduler for dealing with training with and without gradient accumulation
-def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, micro_batch_size, train_dataset, warmup_proportion, gradient_accumulation_steps=None):
+def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, batch_size, train_dataset, warmup_proportion, gradient_accumulation_steps=None):
     
-    def calculate_warmup_steps(number_epochs, world_size, micro_batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps=None):
-        steps_per_epoch = len(train_dataset) // (micro_batch_size * world_size)
+    def calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps=None):
+        steps_per_epoch = len(train_dataset) // (batch_size * world_size)
         total_steps = number_epochs * steps_per_epoch
         if gradient_accumulation_steps:
             total_steps = total_steps // gradient_accumulation_steps
@@ -38,14 +38,14 @@ def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, micro_b
         scheduler = get_constant_schedule(optimizer)
 
     elif lr_scheduler == 'warmup_constant':
-        warmup_steps, _ = calculate_warmup_steps(number_epochs, world_size, micro_batch_size, warmup_proportion, train_dataset)
+        warmup_steps, _ = calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset)
         scheduler = get_constant_schedule_with_warmup(
             optimizer, 
             num_warmup_steps=warmup_steps
         )
 
     elif lr_scheduler == 'warmup_linear':
-        warmup_steps, total_steps = calculate_warmup_steps(number_epochs, world_size, micro_batch_size, warmup_proportion, train_dataset)  
+        warmup_steps, total_steps = calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset)  
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=warmup_steps,
