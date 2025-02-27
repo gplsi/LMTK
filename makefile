@@ -14,7 +14,7 @@ help:
 	@echo   "clean       - Clean build artifacts"
 
 build:
-	docker build -t $(PROJECT_NAME) --network=host -f docker/dockerfile .
+	docker build -t $(PROJECT_NAME) --network=host -f docker/Dockerfile .
 	
 container:
 	$(DOCKER_RUN) --name gplsi_continual_pretraining_framework -it --network=host --gpus '"device=$(GPU_DEVICES)"' $(PROJECT_NAME) bash
