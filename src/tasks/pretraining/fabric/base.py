@@ -22,9 +22,8 @@ from src.tasks.pretraining.utils import *
 from src.tasks.pretraining.fabric.generation import FabricGeneration
 from utils.logging import get_logger
 
-# if torch.cuda.is_expandable_segments_supported():
-#     import os
-#     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class FabricTrainerBase(ABC):
     def __init__(self, devices, config, dataset: Dataset, checkpoint_path: str = None):
