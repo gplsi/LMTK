@@ -245,12 +245,16 @@ class FabricTrainerBase(ABC):
         fabric.barrier()
     
     def _load_fabric_datasets_dataloaders(self, config, dataset: Dataset | DatasetDict):
-        if not isinstance(dataset, DatasetDict):
-            raise TypeError("Expected dataset to be a DatasetDict")
+        if not isinstance(dataset, DatasetDict|Dataset):
+            raise TypeError("Expected dataset to be a DatasetDict or Dataset")
         if not hasattr(config, 'batch_size') or not isinstance(config.batch_size, int) or config.batch_size <= 0:
             raise ValueError("config.batch_size must be a positive integer")
         if not hasattr(config, 'num_workers') or not isinstance(config.num_workers, int) or config.num_workers < 0:
             raise ValueError("config.num_workers must be a non-negative integer")
+        
+        # TODO: reformat this logic to be more maintainable
+        if isinstance(dataset, Dataset):
+            dataset = DatasetDict({"train": dataset})
         if not dataset.keys():
             raise ValueError("Dataset is empty, no splits found")
         required_columns = ["input_ids", "attention_mask", "labels"]
