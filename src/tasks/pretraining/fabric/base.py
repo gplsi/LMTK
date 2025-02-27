@@ -22,9 +22,9 @@ from src.tasks.pretraining.utils import *
 from src.tasks.pretraining.fabric.generation import FabricGeneration
 from utils.logging import get_logger
 
-import os
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
+# if torch.cuda.is_expandable_segments_supported():
+#     import os
+#     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class FabricTrainerBase(ABC):
     def __init__(self, devices, config, dataset: Dataset, checkpoint_path: str = None):
@@ -286,7 +286,7 @@ class FabricTrainerBase(ABC):
     
     def _pipeline(self, fabric):
         # DETERMINISTIC RESULTS
-        if self.config.seed:
+        if self.config.get("seed", None) is not None:
             setup_environment(self.config.seed)
             fabric.seed_everything(self.config.seed)
 

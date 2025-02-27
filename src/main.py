@@ -33,4 +33,4 @@ if __name__ == '__main__':
     
     # FOR CURRENT GPT-2 TESTING
     #execute_task("config/experiments/test_tokenizer_local.yaml")
-    execute_task("config/experiments/test_continual.yaml")
+    # execute_task("config/experiments/test_continual.yaml")
