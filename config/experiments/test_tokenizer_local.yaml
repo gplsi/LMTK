@@ -3,9 +3,9 @@ experiment_name: "news_corpus_val-es"
 verbose_level: 4
 
 tokenizer:
-  name: "gpt2"  # Using GPT2 as example, replace with your preferred pre-trained tokenizer
-  context_length: 512
-  overlap: 128
+  name: "meta-llama/Llama-3.2-1B"  # Using GPT2 as example, replace with your preferred pre-trained tokenizer
+  context_length: 1024
+  overlap: 256
   task: "causal_pretraining"
 
 dataset:
@@ -19,4 +19,4 @@ dataset:
 output:
   path: "data/tokenized/news_corpus"
 
-test_size: 0.1
+test_size: 0
