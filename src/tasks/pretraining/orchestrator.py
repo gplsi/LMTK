@@ -1,6 +1,6 @@
 # src/tasks/tokenization.py
 from box import Box
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 import torch
 from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
@@ -106,6 +106,9 @@ class ContinualOrchestrator(BaseOrchestrator):
             self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")
             
             dataset = dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
+            # TODO: IMPROVE THIS FOR MAINTAINABILITY
+            if isinstance(dataset, Dataset):
+                dataset = DatasetDict({"train": dataset})
             return dataset
         
         elif self.config.dataset.source == "huggingface":
