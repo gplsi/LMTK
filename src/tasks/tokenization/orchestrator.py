@@ -48,7 +48,6 @@ class TokenizationOrchestrator(BaseOrchestrator):
             # 2. Load dataset
             dataset = self.load_dataset()
             
-
             # 3. Tokenize dataset
             tokenized_dataset = self.tokenize_dataset(dataset)
 
