@@ -18,7 +18,6 @@ OPTIMIZERS = {
     "sgd": torch.optim.SGD,
     "adamax": torch.optim.Adamax,
     "adagrad": torch.optim.Adagrad,
-    "adamw": torch.optim.AdamW,
     "adadelta": torch.optim.Adadelta,
     "rmsprop": torch.optim.RMSprop
 }
@@ -64,6 +63,8 @@ def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:f
                                                 weight_decay=weight_decay,
                                                 betas=(beta1, beta2),
                                                 foreach=True)
+    
+    return optimizer
 
 # For deterministic results, it will be used only if seed is provided
 def setup_environment(seed):
