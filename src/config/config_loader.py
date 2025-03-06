@@ -4,12 +4,12 @@ from box import Box
 from jsonschema import Draft7Validator, RefResolver
 
 class ConfigValidator:
-    def __init__(self, schema_dir="config/schemas"):
+    def __init__(self, schema_dir="config/schemas") -> None:
         self.schema_dir = Path(schema_dir).resolve()  # Ensure absolute path
         self.schema_store = {}
         self._load_all_schemas()
 
-    def _load_all_schemas(self):
+    def _load_all_schemas(self) -> None:
         """Load schemas with proper URI identifiers"""
         for schema_path in self.schema_dir.rglob("*.schema.yaml"):
             with open(schema_path, 'r') as f:

@@ -192,12 +192,3 @@ class DatasetStorage:
             num_proc=num_proc,
         )
         return path
-
-
-# Usage
-# files_path = 'path_to_your_folder'
-# arrow_dataset = ArrowDataset(files_path)
-# combined_dataset = arrow_dataset.process_files()
-
-# if combined_dataset:
-#     print(combined_dataset)
