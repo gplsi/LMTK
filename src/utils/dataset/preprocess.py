@@ -4,8 +4,10 @@ import argparse
 from datasets import load_dataset, DatasetDict, Dataset, Features, Value
 from huggingface_hub import create_repo
 from src.utils.dataset.utils import scan_directory
+from typing import Dict, Generator
 
-def data_generator(txt_files_dict):
+
+def data_generator(txt_files_dict: Dict) -> Generator[str]:
     """
     Generator function to yield each text file's complete content along with its metadata.
     

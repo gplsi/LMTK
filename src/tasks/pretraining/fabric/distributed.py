@@ -16,7 +16,7 @@ from utils import inherit_init_params
 
 @inherit_init_params
 class FSDP(FabricTrainerBase):
-    def _setup_strategy(self):
+    def _setup_strategy(self) -> FSDPStrategy:
         self.cli_logger.info("Setting up FSDP strategy.")
         if self.devices > 1:
             # Resolve FSDP configuration with sensible defaults
@@ -48,7 +48,7 @@ class FSDP(FabricTrainerBase):
 
 @inherit_init_params
 class DeepSpeed(FabricTrainerBase):
-    def _setup_strategy(self):
+    def _setup_strategy(self) -> DeepSpeedStrategy:
         self.cli_logger.info("Setting up DeepSpeed strategy.")
         if self.devices > 1:
             # Pass DeepSpeed-specific parameters from your config
@@ -66,7 +66,7 @@ class DeepSpeed(FabricTrainerBase):
     
 @inherit_init_params
 class DistributedDataParallel(FabricTrainerBase):
-    def _setup_strategy(self):
+    def _setup_strategy(self) -> DDPStrategy:
         self.cli_logger.info("Setting up DDP strategy.")
         if self.devices > 1:
             # Configure DDPStrategy with common parameters:
@@ -82,7 +82,7 @@ class DistributedDataParallel(FabricTrainerBase):
 
 @inherit_init_params
 class DataParallel(FabricTrainerBase):
-    def _setup_strategy(self):
+    def _setup_strategy(self) -> DataParallelStrategy:
         self.cli_logger.info("Setting up DP strategy.")
         if self.devices > 1:
             strategy = DataParallelStrategy(

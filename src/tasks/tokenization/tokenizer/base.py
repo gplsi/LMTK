@@ -9,7 +9,7 @@ from src.utils.logging import get_logger
 class BaseTokenizer(ABC):
     """Base tokenizer class implementing common functionality."""
     
-    def __init__(self, config: TokenizerConfig):
+    def __init__(self, config: TokenizerConfig) -> None:
         self.config = config
         self.logger = get_logger(__name__, config.verbose_level)
         self._tokenizer: Optional[PreTrainedTokenizer] = None

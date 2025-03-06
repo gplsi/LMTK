@@ -31,7 +31,7 @@ class CustomFormatter(logging.Formatter):
     }
     RESET = '\033[0m'
     
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         color = self.COLORS.get(record.levelno)
         record.levelname = f'{color}{record.levelname}{self.RESET}'
         record.msg = f'{color}{record.msg}{self.RESET}'
@@ -83,7 +83,7 @@ def get_logger(
     
     return logger
 
-def set_logger_level(logger: logging.Logger, level: VerboseLevel):
+def set_logger_level(logger: logging.Logger, level: VerboseLevel) -> logging.Logger:
     """
     Set the verbosity level of an existing logger.
     

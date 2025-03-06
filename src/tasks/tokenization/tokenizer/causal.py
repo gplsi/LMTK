@@ -1,6 +1,7 @@
 # src/tokenization/causal.py
 from typing import Dict, List, Optional, Union
-from datasets import Dataset, Features, Sequence, Value
+from datasets import Features, Sequence, Value
+from datasets import Dataset as HFDataset
 import os
 from datasets import DatasetDict, Dataset
 from src.tasks.tokenization.tokenizer.base import BaseTokenizer
@@ -10,7 +11,7 @@ from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 class CausalLMTokenizer(BaseTokenizer):
     """Tokenizer for causal language modeling tasks."""
     
-    def __init__(self, config: TokenizerConfig):
+    def __init__(self, config: TokenizerConfig) -> None:
         super().__init__(config)
         self._features = Features({
             "input_ids": Sequence(Value("int32")),
@@ -18,7 +19,7 @@ class CausalLMTokenizer(BaseTokenizer):
             "labels": Sequence(Value("int32"))
         })
     
-    def tokenize(self, dataset: Dataset) -> Dataset:
+    def tokenize(self, dataset: Union[HFDataset, DatasetDict]) -> HFDataset:
         """Tokenize dataset for causal language modeling."""
         self.logger.info("Initializing tokenizer")
         self._initialize_tokenizer()

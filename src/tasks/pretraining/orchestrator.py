@@ -1,6 +1,6 @@
 # src/tasks/tokenization.py
 from box import Box
-from datasets import Dataset, DatasetDict
+from datasets import DatasetDict
 import torch
 from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
@@ -8,11 +8,12 @@ from src.utils.dataset import DatasetStorage
 from src.tasks.pretraining.fabric.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
 from utils import inherit_init_params
 from utils.orchestrator import BaseOrchestrator
+from datasets import Dataset as HFDataset
 
 class ContinualOrchestrator(BaseOrchestrator):
     """Orchestrates the continual pretraining workflow."""
 
-    def __init__(self, config: Box):
+    def __init__(self, config: Box) -> None:
         super().__init__(config)
         
         # get all devices available in torch so we can set them to torch modules
@@ -30,7 +31,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         # TODO: Implement general configuration validation
         pass
 
-    def fsdp(self, dataset):
+    def fsdp(self, dataset: HFDataset) -> None:
         """Execute fsdp continual pretraining task."""
         self.logger.info("Starting FSDP continual pretraining task")
         # TODO: Validate specific configuration
@@ -45,7 +46,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer.setup()
         self.logger.info("FSDP training finished")
         
-    def ddp(self, dataset):
+    def ddp(self, dataset: HFDataset) -> None:
         """Execute ddp continual pretraining task."""
         self.logger.info("Starting DDP continual pretraining task")
         # TODO: Validate specific configuration
@@ -60,7 +61,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer.setup()
         self.logger.info("DDP training finished")
         
-    def dp(self, dataset):
+    def dp(self, dataset: HFDataset) -> None:
         """Execute ddp continual pretraining task."""
         self.logger.info("Starting DP continual pretraining task")
         # TODO: Validate specific configuration
@@ -75,7 +76,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         trainer.setup()
         self.logger.info("DP training finished")
 
-    def deep_speed(self, dataset):
+    def deep_speed(self, dataset: HFDataset) -> None:
         """Execute deep speed continual pretraining task."""
         self.logger.info("Starting Deep Speed continual pretraining task")
         # TODO: Validate specific configuration
@@ -91,7 +92,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         self.logger.info("Deep Speed training finished")
 
 
-    def load_dataset(self) -> Dataset:
+    def load_dataset(self) -> HFDataset:
         """Load dataset based on configuration."""
         dataset_handler = DatasetStorage(
             verbose_level=VerboseLevel(
@@ -107,7 +108,7 @@ class ContinualOrchestrator(BaseOrchestrator):
             
             dataset = dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
             # TODO: IMPROVE THIS FOR MAINTAINABILITY
-            if isinstance(dataset, Dataset):
+            if isinstance(dataset, HFDataset):
                 dataset = DatasetDict({"train": dataset})
             return dataset
         

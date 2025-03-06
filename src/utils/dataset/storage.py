@@ -4,9 +4,9 @@ from datasets import (
     load_dataset,
     load_from_disk,
     concatenate_datasets,
-    Dataset,
     DatasetDict,
 )
+from datasets import Dataset as HFDataset
 import os
 from functools import partial
 from enum import IntEnum
@@ -29,7 +29,7 @@ class DatasetStorage:
 
     """
 
-    def __init__(self, verbose_level: VerboseLevel = VerboseLevel.DEBUG, enable_txt_samples: bool = False):
+    def __init__(self, verbose_level: VerboseLevel = VerboseLevel.DEBUG, enable_txt_samples: bool = False) -> None:
         self.logger = get_logger(__name__, level=verbose_level)
         self.verbose_level = verbose_level
         self.enable_txt_samples = enable_txt_samples
@@ -40,7 +40,7 @@ class DatasetStorage:
             # Add more mappings as needed
         }
 
-    def __load_dataset_from_extension(self, data_type: str, files: list[str]):
+    def __load_dataset_from_extension(self, data_type: str, files: list[str]) -> HFDataset:
         """
         Load dataset from files with the specified extension.
         
@@ -49,7 +49,7 @@ class DatasetStorage:
             files (list[str]): List of file paths to load.
         
         Returns:
-            Dataset: The loaded dataset.
+            HFDataset: The loaded Huggingface dataset.
         """
         if data_type == "text" and self.enable_txt_samples:
             return self.__load_text_files_as_samples(files)
@@ -57,7 +57,7 @@ class DatasetStorage:
         # Default behavior: use Hugging Face's built-in loaders
         return load_dataset(data_type, data_files=files)
     
-    def __load_text_files_as_samples(self, files: list[str]):
+    def __load_text_files_as_samples(self, files: list[str]) -> DatasetDict:
         """
         Load text files as individual samples, where each file is a single sample.
         
@@ -80,7 +80,7 @@ class DatasetStorage:
                 self.logger.error(f"Error loading file {file_path}: {e}")
         
         # Create a Dataset from the list of dictionaries and wrap in a DatasetDict
-        dataset = Dataset.from_list(data)
+        dataset = HFDataset.from_list(data)
         return DatasetDict({"train": dataset})
 
     def _group_files_by_extension(self, files_path: str) -> dict:
@@ -99,7 +99,7 @@ class DatasetStorage:
         )
         return extension_files
 
-    def process_files(self, files_path: str, extension: str = None) -> Dataset:
+    def process_files(self, files_path: str, extension: str = None) -> HFDataset:
         """
         Process files from a directory and create a dataset.
         
@@ -163,18 +163,18 @@ class DatasetStorage:
         )
         return dataset_dict
 
-    def load_from_disk(self, path: str) -> Dataset:
+    def load_from_disk(self, path: str) -> HFDataset:
         if not os.path.isdir(path):
             raise ValueError(f"Invalid directory path: {path}.")
 
         return load_from_disk(path)
 
-    def load_from_hub(self, dataset_name: str, **kwargs) -> Dataset:
+    def load_from_hub(self, dataset_name: str, **kwargs) -> HFDataset:
         return load_dataset(dataset_name, **kwargs)
 
     def save_to_disk(
         self,
-        dataset: Dataset,
+        dataset: HFDataset,
         output_path: str,
         max_shard_size: str | int | None = None,
         num_shards: int | None = None,

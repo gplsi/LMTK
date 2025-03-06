@@ -4,6 +4,7 @@ from transformers.models.gpt2.modeling_gpt2 import GPT2Block
 import torch
 import numpy as np
 import random
+from datasets import Dataset as HFDataset
 
 # TODO: Add more wrappers for other models, and make clear the keys for the wrappers
 
@@ -24,7 +25,7 @@ OPTIMIZERS = {
 
 
 # Scheduler for dealing with training with and without gradient accumulation
-def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, batch_size, train_dataset, warmup_proportion, gradient_accumulation_steps=None):
+def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number_epochs: int, world_size: int, batch_size: int, train_dataset: HFDataset, warmup_proportion:float, gradient_accumulation_steps:int=None) -> torch.optim.lr_scheduler.LambdaLR:
     
     def calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps=None):
         steps_per_epoch = len(train_dataset) // (batch_size * world_size)
@@ -57,7 +58,7 @@ def select_scheduler(optimizer, lr_scheduler, number_epochs, world_size, batch_s
     return scheduler
 
 
-def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:float, beta2:float):
+def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:float, beta2:float) -> torch.optim.Optimizer:
     optimizer = OPTIMIZERS[optimizer](model.parameters(), 
                                                 lr=lr, 
                                                 weight_decay=weight_decay,
@@ -67,7 +68,7 @@ def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:f
     return optimizer
 
 # For deterministic results, it will be used only if seed is provided
-def setup_environment(seed):
+def setup_environment(seed: int) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     random.seed(seed)

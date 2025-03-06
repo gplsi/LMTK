@@ -3,7 +3,7 @@ from asyncio import Queue
 from typing import Dict, List
 import numpy as np
 
-def build_causal_lm_outputs(outputs: Dict[str, List]) -> Dict[str, List]:
+def build_causal_lm_outputs(outputs: Dict[str, List]) -> Dict[str, np.ndarray]:
     return {
         "input_ids": np.asarray(outputs["input_ids"], dtype=np.int32),
         "attention_mask": np.asarray(outputs["attention_mask"], dtype=np.int32),

@@ -3,12 +3,12 @@ from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
 from abc import ABC
-from datasets import Dataset
+from datasets import Dataset as HFDataset
 
 class BaseOrchestrator(ABC):
     """Base Orchestrator Class"""
 
-    def __init__(self, config: Box):
+    def __init__(self, config: Box) -> None:
         self.config = config
         self.verbose_level = VerboseLevel(
             self.config.get("verbose_level", VerboseLevel.INFO)
@@ -21,7 +21,7 @@ class BaseOrchestrator(ABC):
         if not self.config.dataset:
             raise ValueError("Dataset configuration must be provided")
 
-    def load_dataset(self) -> Dataset:
+    def load_dataset(self) -> HFDataset:
         """Load dataset based on configuration."""
         self._validate__dataset_config()
         

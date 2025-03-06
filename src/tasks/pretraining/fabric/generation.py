@@ -1,3 +1,4 @@
+from typing import Tuple
 import lightning as L
 from transformers import AutoModelForCausalLM
 import torch
@@ -13,7 +14,7 @@ The LightningModules used for each case should be specified in this script
 
 # Base class for Generative models with Fabric
 class FabricGeneration(L.LightningModule):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__()
         self.cli_logger = get_logger(__name__, kwargs.get("verbose_level", VerboseLevel.DEBUG))
         self.args = kwargs
@@ -42,43 +43,47 @@ class FabricGeneration(L.LightningModule):
         self.cli_logger.debug("Strategy: %s", self.fabric.strategy)
         self.cli_logger.debug("-"*20)
 
-    def training_step(self, batch, *args):
+    def training_step(self, batch: Tuple[torch.Tensor, ...], *args) -> dict:
         outputs = self.model(
             input_ids=batch['input_ids'],
             attention_mask=batch['attention_mask'],
             labels=batch['labels'],
         )
+        loss = outputs.loss
+        self.cli_logger.debug("Train_loss", loss.loss, prog_bar=True)
         return {
             "loss":outputs.loss,
             "outputs":outputs,
         }
 
-    def validation_step(self, batch, *args):
+    def validation_step(self, batch: Tuple[torch.Tensor, ...], *args) -> dict:
         outputs = self.model(
             input_ids=batch['input_ids'],
             attention_mask=batch['attention_mask'],
             labels=batch['labels'],
         )
+        loss = outputs.loss
+        self.cli_logger.debug("Validation_loss", loss.loss, prog_bar=True)
         return {
-            "loss":outputs.loss,
+            "loss":loss,
             "outputs":outputs,
         }
 
-    def test_step(self, batch, *args):
+    def test_step(self, batch: Tuple[torch.Tensor, ...], *args) -> dict:
         outputs = self.model(
             batch['input_ids'],
             batch['attention_mask'],
             labels=batch['labels'],
         )
         loss = outputs.loss
-        self.cli_logger.debug("test_loss", loss.loss, prog_bar=True)
+        self.cli_logger.debug("Test_loss", loss.loss, prog_bar=True)
         return {
             "loss":outputs.loss,
             "outputs":outputs,
         }
 
 
-# Base class for Classification models with Fabric
+
 # TODO: Add classification model
 
 

@@ -1,6 +1,6 @@
 # src/tasks/tokenization.py
-from box import Box
-from datasets import Dataset, DatasetDict
+from datasets import DatasetDict
+from datasets import Dataset as HFDataset
 from src.utils.logging import get_logger, set_logger_level
 from src.tasks.tokenization.tokenizer import CausalLMTokenizer
 from src.utils.logging import VerboseLevel
@@ -24,7 +24,7 @@ class TokenizationOrchestrator(BaseOrchestrator):
         if not self.config.output or not self.config.output.path:
             raise ValueError("Output path must be provided")
 
-    def tokenize_dataset(self, dataset: Dataset) -> Dataset:
+    def tokenize_dataset(self, dataset: HFDataset) -> HFDataset:
         """Execute tokenization task."""
         tokenizer_config = TokenizerConfig(
             context_length=self.config.tokenizer.context_length,

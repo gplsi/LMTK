@@ -1,5 +1,5 @@
 from lightning.fabric.loggers import CSVLogger
-from typing import Any, Type, TypeVar
+from typing import Any, Dict, Type, TypeVar
 from types import MethodType
 
 T = TypeVar("T")
@@ -8,7 +8,7 @@ T = TypeVar("T")
 def step_csv_logger(*args: Any, cls: Type[T] = CSVLogger, **kwargs: Any) -> T:
     logger = cls(*args, **kwargs)
 
-    def merge_by(dicts, key):
+    def merge_by(dicts: Dict[Dict], key: str) -> Dict:
         from collections import defaultdict
 
         out = defaultdict(dict)
