@@ -14,7 +14,7 @@ apply_all_patches(force=False)
 # Continue with the rest of the imports and code
 import argparse
 from box import Box
-from src.config.config_loader import ConfigLoader
+from src.config.config_loader import ConfigValidator
 import yaml
 
 def execute_task(config_path: str):
