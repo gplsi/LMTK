@@ -23,6 +23,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        # Install PyTorch CPU version first to avoid build issues
+        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
         pip install -r requirements.txt
     
     - name: Ensure test fixtures directories exist
@@ -38,54 +40,12 @@ jobs:
         # exit-zero treats all errors as warnings
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     
-    - name: Test with pytest (Unit Tests)
+    - name: Test with pytest (CPU only tests)
       run: |
         # Set CI environment variable to allow tests to detect they're running in CI
         export CI=true
-        pytest tests/unit -v
-    
-    - name: Test with pytest (Integration Tests)
-      run: |
-        export CI=true
-        pytest tests/integration -v
+        pytest -v -m "not requires_gpu" tests/
     
     - name: Check test coverage
       run: |
-        pytest --cov=src tests/
-        
-  test-distributed:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        parallelization-strategy: ["ddp", "fsdp"]
-        
-    steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.9
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Ensure test fixtures directories exist
-      run: |
-        mkdir -p tests/fixtures/data/sample_text
-        mkdir -p tests/fixtures/data/tokenized_dataset
-    
-    - name: Create distributed test config
-      run: |
-        python -c "import yaml; \
-        config = yaml.safe_load(open('config/experiments/test_config.yaml', 'r')); \
-        config['parallelization_strategy'] = '${{ matrix.parallelization-strategy }}'; \
-        config['backend'] = 'gloo' if '${{ matrix.parallelization-strategy }}' == 'ddp' else config.get('backend'); \
-        yaml.dump(config, open('distributed_test_config.yaml', 'w'))"
-    
-    - name: Run distributed tests
-      env:
-        CI: true
-      run: |
-        python -m pytest tests/integration/test_pretraining_pipeline.py::TestPretrainingPipeline::test_pretraining_with_${{ matrix.parallelization-strategy }} -v
+        pytest --cov=src --cov-report=term-missing -m "not requires_gpu" tests/
