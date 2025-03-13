@@ -12,6 +12,12 @@ allOf:
         default: 2
         description: "Zero stage to use"
       
+
+      zero_optimization:
+        type: boolean
+        default: true
+        description: "If True, use Zero optimization"
+
     required:
       - zero_stage
-      
+      - zero_optimization
