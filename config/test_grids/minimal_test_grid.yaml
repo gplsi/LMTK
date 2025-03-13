@@ -1,0 +1,31 @@
+# Minimal test parameter grid
+# This file defines a minimal set of configurations for quick testing
+
+# Model configurations
+model_name:
+  - "gpt2"  # Using small model for quick testing
+
+# Precision options (only one option to keep tests fast)
+precision:
+  - "16-mixed"
+
+# Parallelization strategies (minimal selection)
+parallelization_strategy:
+  - "none"
+  - "fsdp"  # Include at least one distributed strategy
+
+# Optimization options (only test with it enabled)
+gradient_checkpointing:
+  - true
+
+# Learning rate scheduler (just one)
+lr_scheduler:
+  - "linear"
+
+# Dataset configurations
+dataset.source:
+  - "local"
+
+# Data size for fast tests
+batch_size:
+  - 2

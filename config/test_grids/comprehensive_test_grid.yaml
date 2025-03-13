@@ -1,0 +1,38 @@
+# Comprehensive test parameter grid
+# This file defines configurations to test various feature combinations
+
+# Model configurations
+model_name:
+  - "gpt2"  # Using small models for testing
+
+# Precision options
+precision:
+  - "16-mixed"
+  - "bf16-mixed" 
+  - "32-true"
+
+# Parallelization strategies
+parallelization_strategy:
+  - "none"
+  - "fsdp"
+  - "ddp"
+
+# Optimization options
+gradient_checkpointing:
+  - true
+  - false
+
+# Learning rate schedulers
+lr_scheduler:
+  - "linear"
+  - "cosine"
+  - "warmup_linear"
+
+# Dataset configurations
+dataset.source:
+  - "local"
+
+# Data size test for scaling behavior
+batch_size:
+  - 2
+  - 4
