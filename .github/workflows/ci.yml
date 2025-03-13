@@ -25,6 +25,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
+    - name: Ensure test fixtures directories exist
+      run: |
+        mkdir -p tests/fixtures/data/sample_text
+        mkdir -p tests/fixtures/data/tokenized_dataset
+    
     - name: Lint with flake8
       run: |
         pip install flake8
@@ -35,10 +40,13 @@ jobs:
     
     - name: Test with pytest (Unit Tests)
       run: |
+        # Set CI environment variable to allow tests to detect they're running in CI
+        export CI=true
         pytest tests/unit -v
     
     - name: Test with pytest (Integration Tests)
       run: |
+        export CI=true
         pytest tests/integration -v
     
     - name: Check test coverage
@@ -63,16 +71,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
-    - name: Run distributed tests
+    - name: Ensure test fixtures directories exist
       run: |
-        # Create distributed test config based on matrix parameters
-        python -c "
-import yaml
-config = yaml.safe_load(open('config/experiments/test_config.yaml', 'r'))
-config['parallelization_strategy'] = '${{ matrix.parallelization-strategy }}'
-if '${{ matrix.parallelization-strategy }}' == 'ddp':
-    config['backend'] = 'gloo'
-yaml.dump(config, open('distributed_test_config.yaml', 'w'))
-        "
-        # Run tests with 2 processes to simulate distributed environment
+        mkdir -p tests/fixtures/data/sample_text
+        mkdir -p tests/fixtures/data/tokenized_dataset
+    
+    - name: Create distributed test config
+      run: |
+        python -c "import yaml; \
+        config = yaml.safe_load(open('config/experiments/test_config.yaml', 'r')); \
+        config['parallelization_strategy'] = '${{ matrix.parallelization-strategy }}'; \
+        config['backend'] = 'gloo' if '${{ matrix.parallelization-strategy }}' == 'ddp' else config.get('backend'); \
+        yaml.dump(config, open('distributed_test_config.yaml', 'w'))"
+    
+    - name: Run distributed tests
+      env:
+        CI: true
+      run: |
         python -m pytest tests/integration/test_pretraining_pipeline.py::TestPretrainingPipeline::test_pretraining_with_${{ matrix.parallelization-strategy }} -v

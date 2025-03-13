@@ -1,0 +1,49 @@
+# Performance Benchmark Test Grid
+# This configuration is for consistent performance testing across GPU configurations
+
+# Fixed model configuration
+model_name:
+  - "gpt2"  # Use consistent model for benchmarking
+
+# Mixed precision modes
+precision:
+  - "16-mixed"
+  - "bf16-mixed"
+
+# Test all distributed strategies
+parallelization_strategy:
+  - "fsdp"
+  - "ddp"
+
+# Test different sharding approaches
+sharding_strategy:
+  - "FULL_SHARD"
+  - "SHARD_GRAD_OP"
+
+# Memory optimization testing
+gradient_checkpointing:
+  - true
+  - false
+
+# Batch size scaling tests
+batch_size:
+  - 4
+  - 8
+  - 16  # Test scaling behavior
+  - 32  # Only for multi-GPU configs
+
+# Fixed settings for consistent measurements
+backend: "nccl"
+num_workers: 4
+lr_scheduler: "cosine"
+warmup_proportion: 0.1
+
+# Test duration settings
+number_epochs: 1
+max_steps: 100  # Limit test duration
+log_every_n_steps: 10
+
+# Measurement settings
+profile_memory: true
+measure_throughput: true
+measure_gpu_stats: true
