@@ -31,6 +31,7 @@ validate_after_k_steps: null
 # Gradient parameters
 gradient_accumulation: true
 gradient_accumulation_steps: 4
+gradient_checkpointing: true
 grad_clip: 1.0
 
 # Optimizer parameters
@@ -59,4 +60,4 @@ parallelization_strategy: "fsdp"
 # Deep Speed specific parameters
 zero_stage: 3
 zero_optimization: true
-gradient_checkpointing: true
+

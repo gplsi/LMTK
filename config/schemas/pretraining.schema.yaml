@@ -65,6 +65,11 @@ allOf:
         default: null
         description: "Number of steps to validate after"
 
+      gradient_checkpointing:
+        type: boolean
+        default: true
+        description: "If True, use gradient checkpointing"
+
       # Optimizer arguments
       gradient_accumulation:
         type: boolean
@@ -156,6 +161,7 @@ allOf:
       - number_epochs
       - batch_size
       - gradient_accumulation_steps
+      - gradient_checkpointing
       - grad_clip
       - lr
       - lr_decay
@@ -167,6 +173,7 @@ allOf:
       - parallelization_strategy
       - output_dir
       - num_workers
+      
 
 
 
