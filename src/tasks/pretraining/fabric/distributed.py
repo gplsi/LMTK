@@ -180,7 +180,9 @@ class DeepSpeed(FabricTrainerBase):
         # Create output directory for checkpoints and logs on the main process
         if fabric.global_rank == 0:
             os.makedirs(self.config.output_dir, exist_ok=True)
-        fabric.barrier()
+        
+        # Use safe_barrier instead of fabric.barrier() to handle NVML errors
+        safe_barrier(fabric, self.cli_logger)
 
         # Setup Fabric data loaders
         self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
