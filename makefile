@@ -37,6 +37,7 @@ test: test-unit test-integration
 test-unit:
 	@echo "Running unit tests (CPU only)..."
 <<<<<<< HEAD
+<<<<<<< HEAD
 	$(DOCKER_RUN) $(PROJECT_NAME) pytest -v -m "not requires_gpu" tests/unit
 
 test-integration:
@@ -48,15 +49,22 @@ test-all:
 	$(DOCKER_RUN) $(PROJECT_NAME) pytest --cov=src --cov-report=term-missing -v -m "not requires_gpu" tests/
 =======
 	CI=true pytest tests/unit -v -m "not requires_gpu"
+=======
+	$(DOCKER_RUN) $(PROJECT_NAME) pytest -v -m "not requires_gpu" tests/unit
+>>>>>>> a51282d (Add comprehensive configuration and developer guides with schema validation details)
 
 test-integration:
 	@echo "Running integration tests (CPU only)..."
-	CI=true pytest tests/integration -v -m "not requires_gpu"
+	$(DOCKER_RUN) $(PROJECT_NAME) pytest -v -m "not requires_gpu" tests/integration
 
 test-all:
 	@echo "Running all CPU tests with coverage report..."
+<<<<<<< HEAD
 	CI=true pytest --cov=src --cov-report=term-missing -v -m "not requires_gpu" tests/
 >>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
+=======
+	$(DOCKER_RUN) $(PROJECT_NAME) pytest --cov=src --cov-report=term-missing -v -m "not requires_gpu" tests/
+>>>>>>> a51282d (Add comprehensive configuration and developer guides with schema validation details)
 
 test-grid:
 	@echo "Running parameterized tests with grid config..."
@@ -65,10 +73,14 @@ test-grid:
 		exit 1; \
 	fi
 <<<<<<< HEAD
+<<<<<<< HEAD
 	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=$(TEST_TYPE) --param-file=$(GRID)
 =======
 	CI=true python scripts/run_parameterized_tests.py --test-type=$(TEST_TYPE) --param-file=$(GRID)
 >>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
+=======
+	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=$(TEST_TYPE) --param-file=$(GRID)
+>>>>>>> a51282d (Add comprehensive configuration and developer guides with schema validation details)
 
 # GPU testing targets
 test-gpu:
@@ -101,6 +113,7 @@ test-perf:
 test-minimal:
 	@echo "Running minimal test grid..."
 <<<<<<< HEAD
+<<<<<<< HEAD
 	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=unit --param-file=config/test_grids/minimal_test_grid.yaml
 
 test-comprehensive:
@@ -113,3 +126,10 @@ test-comprehensive:
 	@echo "Running comprehensive test grid..."
 	CI=true python scripts/run_parameterized_tests.py --test-type=all --param-file=config/test_grids/comprehensive_test_grid.yaml
 >>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
+=======
+	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=unit --param-file=config/test_grids/minimal_test_grid.yaml
+
+test-comprehensive:
+	@echo "Running comprehensive test grid..."
+	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=all --param-file=config/test_grids/comprehensive_test_grid.yaml
+>>>>>>> a51282d (Add comprehensive configuration and developer guides with schema validation details)
