@@ -1,6 +1,6 @@
 task: "pretraining"   # pretraining, tokenization
 experiment_name: "news_corpus_val-es"
-verbose_level: 4
+verbose_level: 1
 
 # Training data
 dataset:
