@@ -12,7 +12,6 @@ allOf:
         default: 2
         description: "Zero stage to use"
       
-
       zero_optimization:
         type: boolean
         default: true

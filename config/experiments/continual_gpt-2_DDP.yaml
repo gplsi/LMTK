@@ -29,6 +29,7 @@ validate_after_k_steps: null
 # Gradient parameters
 gradient_accumulation: true
 gradient_accumulation_steps: 4
+gradient_checkpointing: true
 grad_clip: 1.0
 
 # Optimizer parameters
@@ -57,4 +58,4 @@ parallelization_strategy: "ddp"
 # DDP specific parameters
 backend: "nccl"
 num_workers: 4
-gradient_checkpointing: true
+
