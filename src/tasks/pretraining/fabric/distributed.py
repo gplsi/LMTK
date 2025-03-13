@@ -159,7 +159,9 @@ class DeepSpeed(FabricTrainerBase):
             "prescale_gradients": True,     # Pre-scale gradients for better numerical stability
             "gradient_predivide_factor": 1.0,  # Pre-divide gradients for improved performance
             "steps_per_print": self.config.get("log_iter_interval", 100),  # Match logging interval
-            "communication_data_type": self.config.get("communication_data_type", "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"),  # Use most efficient data type
+            # Use the correct format for communication_data_type that DeepSpeed expects
+            "communication_data_type": self.config.get("communication_data_type", 
+                "bf16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "fp16"),
         })
         
         # Add memory optimization if needed
