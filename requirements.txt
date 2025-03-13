@@ -12,6 +12,7 @@ lightning
 pytorch-lightning
 wandb==0.17
 <<<<<<< HEAD
+<<<<<<< HEAD
 pydantic==1.10.11
 # PyTorch - CI will override this with CPU-specific installation
 torch>=2.0.0
@@ -26,7 +27,13 @@ pytest-timeout
 hypothesis
 =======
 flash-attn
+=======
+>>>>>>> 5a32446 (```)
 pydantic==1.10.11
+# PyTorch - CI will override this with CPU-specific installation
+torch>=2.0.0
+# Optional - flash attention (GPU only)
+# flash-attn
 # Testing dependencies
 pytest
 pytest-cov

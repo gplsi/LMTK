@@ -236,18 +236,61 @@ The test environment will:
 
 ## Continuous Integration
 
-Tests are separated into two workflows:
-1. **CPU Tests**: Run on every PR and push
-   - Unit tests
-   - Integration tests
-   - Basic functionality
-   - Configuration validation
+Our testing strategy separates tests into two categories:
 
-2. **GPU Tests**: Run in a controlled environment
-   - Distributed training tests
-   - Performance tests
-   - Multi-GPU synchronization tests
-   - Mixed precision operations
+1. **CI/CD Pipeline Tests** - Automatically run on GitHub:
+   - CPU-only tests that can be safely mocked
+   - Unit tests for individual components
+   - Integration tests with appropriate mocks
+   - Configuration validation tests 
+   - No GPU requirements or hardware acceleration
+
+2. **Manual GPU Tests** - Triggered by users with GPU access:
+   - Tests that genuinely require GPU hardware
+   - Distributed training tests (FSDP, DDP)
+   - Performance benchmarks
+   - Multi-GPU scaling tests
+
+### Running CI Tests
+
+These tests run automatically in GitHub Actions on every push and PR:
+
+```bash
+# Run all CI-compatible tests (CPU only)
+make test
+
+# Run specific CI test categories
+make test-unit
+make test-integration
+```
+
+### Running Manual GPU Tests 
+
+These tests must be manually triggered by users with appropriate hardware:
+
+```bash
+# Basic GPU tests
+make test-gpu
+
+# Distributed training tests
+make test-distributed-gpu
+
+# Performance benchmark tests
+make test-perf GPUS=2  # Specify number of GPUs
+```
+
+### GitHub Actions Workflows
+
+Two workflow files are provided:
+
+1. **ci.yml** - Automatic CI pipeline for CPU-only tests
+2. **gpu-tests.yml** - Manual workflow for GPU tests (requires self-hosted runner with GPU)
+
+To set up a self-hosted GPU runner:
+1. Configure a machine with GPU(s)
+2. Install GitHub Actions runner software
+3. Register it as a self-hosted runner in your repository
+4. Update the `runs-on` field in gpu-tests.yml to target your runner
 
 ## Creating Mock Data
 

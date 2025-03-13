@@ -49,6 +49,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        # Install PyTorch CPU version first to avoid build issues
+        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
         pip install -r requirements.txt
     
     - name: Ensure test fixtures directories exist
@@ -64,19 +66,15 @@ jobs:
         # exit-zero treats all errors as warnings
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     
-    - name: Test with pytest (Unit Tests)
+    - name: Test with pytest (CPU only tests)
       run: |
         # Set CI environment variable to allow tests to detect they're running in CI
         export CI=true
-        pytest tests/unit -v
-    
-    - name: Test with pytest (Integration Tests)
-      run: |
-        export CI=true
-        pytest tests/integration -v
+        pytest -v -m "not requires_gpu" tests/
     
     - name: Check test coverage
       run: |
+<<<<<<< HEAD
         pytest --cov=src tests/
         
   test-distributed:
@@ -130,3 +128,6 @@ yaml.dump(config, open('distributed_test_config.yaml', 'w'))
 =======
         python -m pytest tests/integration/test_pretraining_pipeline.py::TestPretrainingPipeline::test_pretraining_with_${{ matrix.parallelization-strategy }} -v
 >>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
+=======
+        pytest --cov=src --cov-report=term-missing -m "not requires_gpu" tests/
+>>>>>>> 5a32446 (```)
