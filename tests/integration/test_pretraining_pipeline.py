@@ -15,6 +15,9 @@ from datasets import Dataset
 
 from src.tasks.pretraining import execute
 
+# Import GPU requirement marker from conftest
+from tests.conftest import requires_gpu
+
 
 @pytest.mark.integration
 class TestPretrainingPipeline:
@@ -85,7 +88,10 @@ class TestPretrainingPipeline:
     @patch("lightning.fabric.Fabric")
     @patch("transformers.AutoModelForCausalLM.from_pretrained")
     @patch("src.tasks.pretraining.orchestrator.ContinualOrchestrator.load_dataset")
-    def test_pretraining_with_fsdp(self, mock_load_dataset, mock_model_from_pretrained, mock_fabric):
+    @patch("torch.cuda.device_count", return_value=2)  # Mock GPU count
+    @patch("torch.cuda.is_available", return_value=True)  # Force GPU availability
+    def test_pretraining_with_fsdp(self, mock_cuda_available, mock_device_count, 
+                                  mock_load_dataset, mock_model_from_pretrained, mock_fabric):
         """Test pretraining with FSDP strategy"""
         # Create mock instances
         mock_fabric_instance = MagicMock()
@@ -134,6 +140,59 @@ class TestPretrainingPipeline:
             execute(config)
             
             # Verify FSDP setup
+            mock_fabric.assert_called()
+            mock_fabric_instance.launch.assert_called()
+    
+    @patch("lightning.fabric.Fabric")
+    @patch("transformers.AutoModelForCausalLM.from_pretrained")
+    @patch("src.tasks.pretraining.orchestrator.ContinualOrchestrator.load_dataset")
+    @patch("torch.cuda.device_count", return_value=2)  # Mock GPU count
+    @patch("torch.cuda.is_available", return_value=True)  # Force GPU availability
+    def test_pretraining_with_ddp(self, mock_cuda_available, mock_device_count, 
+                                 mock_load_dataset, mock_model_from_pretrained, mock_fabric):
+        """Test pretraining with DDP strategy"""
+        # Create mock instances
+        mock_fabric_instance = MagicMock()
+        mock_fabric.return_value = mock_fabric_instance
+        
+        mock_model = MagicMock()
+        mock_model_from_pretrained.return_value = mock_model
+        
+        mock_dataset = MagicMock()
+        mock_load_dataset.return_value = mock_dataset
+        
+        # Create config for DDP test
+        config = Box({
+            "task": "pretraining",
+            "output_dir": str(self.output_dir),
+            "model_name": "gpt2",
+            "precision": "16-mixed",
+            "number_epochs": 1,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 1,
+            "grad_clip": 1.0,
+            "lr": 1e-5,
+            "lr_decay": True,
+            "lr_scheduler": "cosine",
+            "warmup_proportion": 0.1,
+            "weight_decay": 0.01,
+            "beta1": 0.9,
+            "beta2": 0.999,
+            "dataset": {
+                "source": "local",
+                "nameOrPath": str(self.input_dir)
+            },
+            "parallelization_strategy": "ddp",
+            "backend": "gloo",  # Using gloo backend for testing
+            "num_workers": 1,
+            "logging_config": "none"
+        }, box_dots=True)
+        
+        # Execute pretraining with DDP
+        with patch("src.tasks.pretraining.orchestrator.ContinualOrchestrator.train"):
+            execute(config)
+            
+            # Verify DDP setup
             mock_fabric.assert_called()
             mock_fabric_instance.launch.assert_called()
     

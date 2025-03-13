@@ -1,0 +1,46 @@
+# GPU Test Parameter Grid
+# This file defines configurations specifically for GPU testing
+
+# Model configurations
+model_name:
+  - "gpt2"  # Using small model for testing
+
+# Precision options for GPU
+precision:
+  - "16-mixed"
+  - "bf16-mixed" 
+  - "32-true"
+
+# Parallelization strategies (GPU-specific)
+parallelization_strategy:
+  - "fsdp"
+  - "ddp"
+
+# FSDP specific options
+sharding_strategy:
+  - "FULL_SHARD"
+  - "SHARD_GRAD_OP"
+
+# Optimization options
+gradient_checkpointing:
+  - true
+  - false
+
+# Learning rate schedulers
+lr_scheduler:
+  - "cosine"
+  - "linear"
+
+# GPU-specific batch sizes
+batch_size:
+  - 4
+  - 8
+
+# Backend options
+backend:
+  - "nccl"  # NVIDIA's GPU-optimized backend
+
+# Performance optimization
+num_workers:
+  - 2
+  - 4
