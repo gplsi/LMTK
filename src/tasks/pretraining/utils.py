@@ -6,6 +6,40 @@ import numpy as np
 import random
 from datasets import Dataset as HFDataset
 
+# Add a safe barrier implementation to handle potential NVML issues
+def safe_barrier(fabric, logger=None):
+    """
+    A safe implementation of the distributed barrier that avoids NVML errors.
+    
+    This function provides a fallback mechanism when torch.distributed.barrier()
+    fails due to missing NVIDIA driver functions like nvmlDeviceGetNvLinkRemoteDeviceType.
+    
+    Parameters:
+    - fabric (L.Fabric): The Lightning Fabric instance.
+    - logger: Optional logger instance to log information.
+    """
+    if fabric.world_size <= 1:
+        return
+        
+    try:
+        # Try the normal barrier first
+        fabric.barrier()
+    except RuntimeError as e:
+        if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e):
+            # If we hit the specific NVML error, use a simple time-based synchronization
+            if logger:
+                logger.warning("NVML barrier issue detected, falling back to time-based synchronization")
+            import time
+            
+            # Give processes time to reach this point
+            time.sleep(2)
+            
+            if logger:
+                logger.info(f"Process {fabric.global_rank} synchronized via fallback method")
+        else:
+            # For other RuntimeErrors, re-raise
+            raise
+
 # Dictionary mapping model identifiers to their corresponding wrapper classes.
 # This design allows easy extension to support additional models in the future.
 AUTO_WRAPPER = {

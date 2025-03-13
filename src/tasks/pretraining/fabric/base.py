@@ -272,7 +272,10 @@ class FabricTrainerBase(ABC):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 
-            fabric.barrier()
+            # Use safe_barrier instead of direct barrier call
+            from src.tasks.pretraining.utils import safe_barrier
+            safe_barrier(fabric, self.cli_logger)
+                
             if 'valid' in self.dataloaders.keys():
                 self._validate(fabric)
                 
@@ -394,7 +397,10 @@ class FabricTrainerBase(ABC):
             fabric.log_dict({"metric/val_ppl": math.exp(loss.item())}, self.state["step_count"])
         
         fabric_eval_log(out)
-        fabric.barrier()
+        
+        # Use safe_barrier instead of direct barrier call
+        from src.tasks.pretraining.utils import safe_barrier
+        safe_barrier(fabric, self.cli_logger)
     
     def _load_fabric_datasets_dataloaders(self, config: Box, dataset: Union[HFDataset, DatasetDict]) -> dict[DatasetDict, Union[dict[str, DataLoader], DataLoader]]:
         """
@@ -475,7 +481,10 @@ class FabricTrainerBase(ABC):
         # Create output directory for checkpoints and logs on the main process.
         if fabric.global_rank == 0:
             os.makedirs(self.config.output_dir, exist_ok=True)
-        fabric.barrier()
+        
+        # Use safe_barrier instead of direct barrier call to handle NVML issues
+        from src.tasks.pretraining.utils import safe_barrier
+        safe_barrier(fabric, self.cli_logger)
 
         # Setup Fabric data loaders.
         self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
@@ -535,4 +544,3 @@ class FabricTrainerBase(ABC):
         self.cli_logger.info(f"Training time: {(time.perf_counter() - train_time):.2f}s")
         if fabric.device.type == "cuda":
             self.cli_logger.info(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
-        
