@@ -13,3 +13,10 @@ pytorch-lightning
 wandb==0.17
 flash-attn
 pydantic==1.10.11
+# Testing dependencies
+pytest
+pytest-cov
+pytest-mock
+pytest-xdist
+pytest-timeout
+hypothesis
