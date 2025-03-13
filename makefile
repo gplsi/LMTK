@@ -36,6 +36,7 @@ test: test-unit test-integration
 
 test-unit:
 	@echo "Running unit tests (CPU only)..."
+<<<<<<< HEAD
 	$(DOCKER_RUN) $(PROJECT_NAME) pytest -v -m "not requires_gpu" tests/unit
 
 test-integration:
@@ -45,6 +46,17 @@ test-integration:
 test-all:
 	@echo "Running all CPU tests with coverage report..."
 	$(DOCKER_RUN) $(PROJECT_NAME) pytest --cov=src --cov-report=term-missing -v -m "not requires_gpu" tests/
+=======
+	CI=true pytest tests/unit -v -m "not requires_gpu"
+
+test-integration:
+	@echo "Running integration tests (CPU only)..."
+	CI=true pytest tests/integration -v -m "not requires_gpu"
+
+test-all:
+	@echo "Running all CPU tests with coverage report..."
+	CI=true pytest --cov=src --cov-report=term-missing -v -m "not requires_gpu" tests/
+>>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
 
 test-grid:
 	@echo "Running parameterized tests with grid config..."
@@ -52,7 +64,11 @@ test-grid:
 		echo "Usage: make test-grid GRID=config/test_grids/minimal_test_grid.yaml"; \
 		exit 1; \
 	fi
+<<<<<<< HEAD
 	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=$(TEST_TYPE) --param-file=$(GRID)
+=======
+	CI=true python scripts/run_parameterized_tests.py --test-type=$(TEST_TYPE) --param-file=$(GRID)
+>>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
 
 # GPU testing targets
 test-gpu:
@@ -84,8 +100,16 @@ test-perf:
 # Extra test targets for specific scenarios
 test-minimal:
 	@echo "Running minimal test grid..."
+<<<<<<< HEAD
 	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=unit --param-file=config/test_grids/minimal_test_grid.yaml
 
 test-comprehensive:
 	@echo "Running comprehensive test grid..."
 	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=all --param-file=config/test_grids/comprehensive_test_grid.yaml
+=======
+	CI=true python scripts/run_parameterized_tests.py --test-type=unit --param-file=config/test_grids/minimal_test_grid.yaml
+
+test-comprehensive:
+	@echo "Running comprehensive test grid..."
+	CI=true python scripts/run_parameterized_tests.py --test-type=all --param-file=config/test_grids/comprehensive_test_grid.yaml
+>>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)

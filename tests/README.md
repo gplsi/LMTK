@@ -29,6 +29,7 @@ Our testing approach follows these principles:
 2. **Configuration Combinations**: Test various configuration combinations to ensure robustness
 3. **Mock Data**: Use small, mock datasets to keep tests fast and reliable
 4. **Proper Isolation**: Each test should be isolated and not depend on other tests
+5. **Environment-Specific Testing**: GPU tests run only in appropriate environments
 
 ## Test Directory Structure
 
@@ -70,8 +71,10 @@ tests/
    - Tokenization pipeline
    - Pretraining pipeline with different strategies
 
-3. **Parameterized Tests**: Tests across multiple configuration combinations
-   - Test grid configurations under `/config/test_grids/`
+3. **GPU-Specific Tests**: Tests requiring GPU hardware
+   - Distributed training (FSDP, DDP)
+   - Mixed precision operations
+   - Multi-GPU synchronization
 
 ## Running Tests
 
@@ -79,9 +82,10 @@ tests/
 >>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
 
 ```bash
-# Run all tests
+# Run CPU-only tests
 make test
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 # Run specific test suite
 make test SUITE=unit
@@ -167,14 +171,35 @@ Run parameterized tests:
 python scripts/run_parameterized_tests.py --grid minimal_test_grid.yaml
 =======
 # Run only unit tests
+=======
+# Run only unit tests (CPU)
+>>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
 make test-unit
 
-# Run only integration tests
+# Run only integration tests (CPU)
 make test-integration
 
-# Run all tests with coverage report
+# Run all tests with coverage report (CPU)
 make test-all
 ```
+
+### GPU Test Environment
+
+GPU tests are run in a controlled environment using Docker with NVIDIA container runtime:
+
+```bash
+# Run GPU-specific tests
+make test-gpu
+
+# Run distributed training tests with real GPUs
+make test-distributed-gpu
+```
+
+Requirements for GPU testing:
+- NVIDIA GPU with CUDA support
+- NVIDIA Container Runtime installed
+- Docker with GPU support configured
+- Appropriate drivers and CUDA toolkit
 
 ### Parameterized Testing
 
@@ -184,38 +209,45 @@ For testing multiple configuration combinations:
 # Run tests with a specific parameter grid
 make test-grid GRID=config/test_grids/minimal_test_grid.yaml
 
-# Run the minimal test grid (faster)
+# Run the minimal test grid (CPU only)
 make test-minimal
 
-# Run the comprehensive test grid (more thorough but slower)
+# Run the comprehensive test grid (CPU only)
 make test-comprehensive
 ```
 
-### Custom Test Commands
+### Writing GPU Tests
 
-For more control, you can use the parameterized test script directly:
+When writing tests that require GPU:
 
-```bash
-python scripts/run_parameterized_tests.py --test-type=unit --test-pattern="tokenization" --param-file=config/test_grids/minimal_test_grid.yaml
+```python
+from tests.conftest import requires_gpu
+
+@requires_gpu
+def test_gpu_feature():
+    # This test will only run when GPUs are available
+    pass
 ```
 
-## Creating New Tests
-
-When adding new features, please follow these guidelines:
-
-1. **Add Unit Tests**: For each new component/function
-2. **Add Integration Tests**: If the component interacts with others
-3. **Update Parameter Grids**: If adding configurable parameters
-4. **Use Fixtures**: Leverage existing fixtures in `conftest.py`
+The test environment will:
+1. Skip GPU tests when running in CI or CPU-only mode
+2. Run GPU tests in a proper containerized environment with GPU access
+3. Use real GPU operations for distributed training tests
 
 ## Continuous Integration
 
-The project includes GitHub Actions workflows in `.github/workflows/ci.yml` that run tests automatically:
+Tests are separated into two workflows:
+1. **CPU Tests**: Run on every PR and push
+   - Unit tests
+   - Integration tests
+   - Basic functionality
+   - Configuration validation
 
-- On every push to the main branch
-- On every pull request to the main branch
-- Tests run with different Python versions (3.8, 3.9, 3.10)
-- Includes separate workflow for distributed tests
+2. **GPU Tests**: Run in a controlled environment
+   - Distributed training tests
+   - Performance tests
+   - Multi-GPU synchronization tests
+   - Mixed precision operations
 
 ## Creating Mock Data
 
@@ -231,11 +263,33 @@ data_dir = create_mock_text_data()
 dataset_dir = create_mock_tokenized_dataset()
 ```
 
-Or use the fixtures directly in tests:
+## Best Practices
 
+<<<<<<< HEAD
 ```python
 def test_example(mock_text_data, mock_tokenized_dataset):
     # Test using the mock data...
     pass
 >>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
 ```
+=======
+1. **Test Environment**:
+   - CPU tests: Use CI and local development
+   - GPU tests: Use dedicated test environment with proper hardware
+   - Distributed tests: Use multi-GPU setup in containerized environment
+
+2. **Test Organization**:
+   - Mark GPU tests with @requires_gpu
+   - Keep CPU and GPU tests separate
+   - Use appropriate fixtures for each environment
+
+3. **Test Data**:
+   - Use small datasets for GPU tests
+   - Mock heavy operations in CPU tests
+   - Use real data only when necessary
+
+4. **Performance Testing**:
+   - Run performance tests only in GPU environment
+   - Use consistent hardware for benchmarking
+   - Document hardware requirements
+>>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
