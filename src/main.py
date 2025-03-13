@@ -1,7 +1,20 @@
-from box import Box
-import yaml
-from src.config.config_loader import ConfigValidator
+# Add NVML patching at the earliest possible point
+import os
+import sys
 
+# Set critical environment variables
+os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
+os.environ["NCCL_P2P_DISABLE"] = "1"
+
+# Import and apply our PyTorch patches
+from src.utils.torch_patches import apply_all_patches
+apply_all_patches()
+
+# Continue with the rest of the imports and code
+import argparse
+from box import Box
+from src.config.config_loader import ConfigLoader
+import yaml
 
 def execute_task(config_path: str):
     # Load the YAML file (to extract the task value)
