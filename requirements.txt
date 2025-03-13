@@ -1,3 +1,7 @@
+# PyTorch - CI will override this with CPU-specific installation
+torch>=2.0.0
+deepspeed
+#############
 transformers
 datasets
 evaluate
@@ -12,8 +16,6 @@ lightning
 pytorch-lightning
 wandb==0.17
 pydantic==1.10.11
-# PyTorch - CI will override this with CPU-specific installation
-torch>=2.0.0
 # Optional - flash attention (GPU only)
 # flash-attn
 # Testing dependencies
