@@ -1,14 +1,15 @@
-# Add NVML patching at the earliest possible point
+# Apply performance optimizations and conditional NVML patches
 import os
 import sys
 
-# Set critical environment variables
-os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
-os.environ["NCCL_P2P_DISABLE"] = "1"
+# Import and conditionally apply our PyTorch patches
+from src.utils.torch_patches import apply_all_patches, configure_deepspeed_performance
 
-# Import and apply our PyTorch patches
-from src.utils.torch_patches import apply_all_patches
-apply_all_patches()
+# Always apply performance optimizations
+configure_deepspeed_performance()
+
+# Only apply NVML patches if needed (will auto-detect)
+apply_all_patches(force=False)
 
 # Continue with the rest of the imports and code
 import argparse

@@ -152,6 +152,33 @@ class DeepSpeed(FabricTrainerBase):
             if hasattr(self.config, param):
                 ds_config[param] = getattr(self.config, param)
         
+        # Add performance optimizations for DeepSpeed
+        # These settings improve training speed and are compatible with our NVML workarounds
+        ds_config.update({
+            "wall_clock_breakdown": False,  # Disable timing breakdowns for better performance
+            "prescale_gradients": True,     # Pre-scale gradients for better numerical stability
+            "gradient_predivide_factor": 1.0,  # Pre-divide gradients for improved performance
+            "steps_per_print": self.config.get("log_iter_interval", 100),  # Match logging interval
+            "communication_data_type": self.config.get("communication_data_type", "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"),  # Use most efficient data type
+        })
+        
+        # Add memory optimization if needed
+        if hasattr(self.config, "memory_efficient_linear") and self.config.memory_efficient_linear:
+            if "zero_optimization" not in ds_config:
+                ds_config["zero_optimization"] = {}
+            ds_config["zero_optimization"]["memory_efficient_linear"] = True
+            
+        # Configure communication optimizations
+        if self.devices > 1:
+            ds_config["comms_logger"] = {
+                "enabled": False,  # Disable comms logging for better performance
+                "verbose": False,
+                "prof_all": False
+            }
+            if torch.cuda.device_count() > 1:
+                # Use NCCL for multi-GPU communication
+                ds_config["communication_backend"] = "nccl"
+        
         # Initialize DeepSpeed strategy with the configured settings
         strategy = DeepSpeedStrategy(config=ds_config)
         
