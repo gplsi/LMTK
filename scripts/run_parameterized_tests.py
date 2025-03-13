@@ -11,7 +11,10 @@ import tempfile
 from pathlib import Path
 import yaml
 import sys
+<<<<<<< HEAD
 import torch
+=======
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
 
 
 def create_test_config(output_path, **kwargs):
@@ -42,7 +45,11 @@ def create_test_config(output_path, **kwargs):
     return output_path
 
 
+<<<<<<< HEAD
 def run_tests_with_config(config_path, test_type="unit", test_pattern=None, gpu_only=False):
+=======
+def run_tests_with_config(config_path, test_type="unit", test_pattern=None):
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
     """Run tests using the specified configuration."""
     # Set environment variable so tests can access the config
     os.environ["TEST_CONFIG_PATH"] = str(config_path)
@@ -59,12 +66,15 @@ def run_tests_with_config(config_path, test_type="unit", test_pattern=None, gpu_
     
     if test_pattern:
         cmd.append(f"-k {test_pattern}")
+<<<<<<< HEAD
 
     # Add GPU marker if needed
     if gpu_only:
         cmd.append("-m requires_gpu")
     elif not torch.cuda.is_available():
         cmd.append("-m not requires_gpu")
+=======
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
     
     cmd.append("-v")
     
@@ -80,6 +90,7 @@ def run_tests_with_config(config_path, test_type="unit", test_pattern=None, gpu_
     return result.returncode == 0
 
 
+<<<<<<< HEAD
 def run_parameterized_tests(param_grid, test_type="unit", test_pattern=None, gpu_only=False):
     """Run tests with all combinations of parameters from the parameter grid."""
     # Check if we're trying to run GPU tests without GPU
@@ -87,6 +98,10 @@ def run_parameterized_tests(param_grid, test_type="unit", test_pattern=None, gpu
         print("ERROR: GPU tests requested but no GPU is available")
         return False
 
+=======
+def run_parameterized_tests(param_grid, test_type="unit", test_pattern=None):
+    """Run tests with all combinations of parameters from the parameter grid."""
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
     # Generate all combinations of parameters
     keys = param_grid.keys()
     values = list(param_grid.values())
@@ -106,7 +121,11 @@ def run_parameterized_tests(param_grid, test_type="unit", test_pattern=None, gpu
             create_test_config(config_path, **params)
             
             # Run the tests
+<<<<<<< HEAD
             success = run_tests_with_config(config_path, test_type, test_pattern, gpu_only)
+=======
+            success = run_tests_with_config(config_path, test_type, test_pattern)
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
             results.append((params, success))
     
     # Print summary
@@ -139,8 +158,11 @@ if __name__ == "__main__":
                         help="Pattern to select specific tests")
     parser.add_argument("--param-file", type=str, default=None,
                         help="YAML file containing parameter grid")
+<<<<<<< HEAD
     parser.add_argument("--gpu-only", action="store_true",
                         help="Run only GPU tests marked with requires_gpu")
+=======
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
     args = parser.parse_args()
     
     # Define default parameter grid for comprehensive testing
@@ -158,5 +180,9 @@ if __name__ == "__main__":
             param_grid = yaml.safe_load(f)
     
     # Run the tests
+<<<<<<< HEAD
     success = run_parameterized_tests(param_grid, args.test_type, args.test_pattern, args.gpu_only)
+=======
+    success = run_parameterized_tests(param_grid, args.test_type, args.test_pattern)
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
     sys.exit(0 if success else 1)

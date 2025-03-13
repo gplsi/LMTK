@@ -27,5 +27,10 @@ hypothesis
 =======
 flash-attn
 pydantic==1.10.11
-deepspeed
->>>>>>> 0a487b3 (Add DeepSpeed support and enhance configuration for pretraining experiments. Currently tested in local until got out of memory for zero stage 1,2,3.)
+# Testing dependencies
+pytest
+pytest-cov
+pytest-mock
+pytest-xdist
+pytest-timeout
+hypothesis

@@ -13,6 +13,7 @@ from box import Box
 from tests.fixtures.configs import get_base_config, get_tokenizer_config, get_pretraining_config
 from tests.fixtures.data_fixtures import create_mock_text_data, create_mock_tokenized_dataset, MockGPT2
 
+<<<<<<< HEAD
 # Check if CUDA is available and create a skip marker for GPU-only tests
 has_gpu = torch.cuda.is_available()
 requires_gpu = pytest.mark.skipif(not has_gpu, reason="Test requires GPU")
@@ -20,6 +21,8 @@ requires_gpu = pytest.mark.skipif(not has_gpu, reason="Test requires GPU")
 # Check for CI environment to conditionally run certain tests
 is_ci = os.environ.get('CI', 'false').lower() == 'true'
 
+=======
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
 @pytest.fixture(scope="session")
 def base_config():
     """Base configuration fixture"""
@@ -92,6 +95,7 @@ def mock_hf_dataset(monkeypatch):
             return len(self.data["input_ids"])
     
     monkeypatch.setattr("datasets.load_dataset", lambda *args, **kwargs: MockDataset())
+<<<<<<< HEAD
     monkeypatch.setattr("datasets.load_from_disk", lambda *args, **kwargs: MockDataset())
 @pytest.fixture
 def mock_device():
@@ -104,3 +108,6 @@ def mock_cuda_device_count(monkeypatch):
     if not has_gpu:
         monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
         monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+=======
+    monkeypatch.setattr("datasets.load_from_disk", lambda *args, **kwargs: MockDataset())
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)

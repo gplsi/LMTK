@@ -15,9 +15,12 @@ from datasets import Dataset
 
 from src.tasks.pretraining import execute
 
+<<<<<<< HEAD
 # Import GPU requirement marker from conftest
 from tests.conftest import requires_gpu
 
+=======
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
 
 @pytest.mark.integration
 class TestPretrainingPipeline:
@@ -88,10 +91,14 @@ class TestPretrainingPipeline:
     @patch("lightning.fabric.Fabric")
     @patch("transformers.AutoModelForCausalLM.from_pretrained")
     @patch("src.tasks.pretraining.orchestrator.ContinualOrchestrator.load_dataset")
+<<<<<<< HEAD
     @patch("torch.cuda.device_count", return_value=2)  # Mock GPU count
     @patch("torch.cuda.is_available", return_value=True)  # Force GPU availability
     def test_pretraining_with_fsdp(self, mock_cuda_available, mock_device_count, 
                                   mock_load_dataset, mock_model_from_pretrained, mock_fabric):
+=======
+    def test_pretraining_with_fsdp(self, mock_load_dataset, mock_model_from_pretrained, mock_fabric):
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
         """Test pretraining with FSDP strategy"""
         # Create mock instances
         mock_fabric_instance = MagicMock()
@@ -143,6 +150,7 @@ class TestPretrainingPipeline:
             mock_fabric.assert_called()
             mock_fabric_instance.launch.assert_called()
     
+<<<<<<< HEAD
     @patch("lightning.fabric.Fabric")
     @patch("transformers.AutoModelForCausalLM.from_pretrained")
     @patch("src.tasks.pretraining.orchestrator.ContinualOrchestrator.load_dataset")
@@ -196,6 +204,8 @@ class TestPretrainingPipeline:
             mock_fabric.assert_called()
             mock_fabric_instance.launch.assert_called()
     
+=======
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
     @patch("src.config.config_loader.ConfigValidator.validate")
     def test_pretraining_from_config_file(self, mock_validate):
         """Test pretraining from a config file using the main entry point"""
