@@ -1,63 +1,114 @@
 """
 Utility module for patching PyTorch CUDA functions to handle NVML compatibility issues.
 
-This module provides patched versions of PyTorch CUDA functions that might
-cause errors due to missing NVML library functions or version mismatches.
-It will only apply the patches if necessary, preserving optimal performance
-when no NVML issues are detected.
+This module provides comprehensive patching of PyTorch's tensor creation and CUDA functions
+to handle NVML compatibility issues that occur during distributed training with DeepSpeed.
 """
 
 import os
 import sys
-from functools import wraps
 import logging
+from functools import wraps
 
+# Set up a logger for this module
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-def test_for_nvml_issues():
+# Apply critical environment variables immediately to prevent NVML issues
+os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
+os.environ["NCCL_P2P_DISABLE"] = "1"
+
+# Optimize DeepSpeed performance
+os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"
+# Disable NVML initialization completely
+os.environ["NCCL_IGNORE_DISABLED_P2P"] = "1"
+os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
+
+def patch_deepspeed():
     """
-    Test whether the system has NVML-related issues.
-    
-    Returns:
-        bool: True if NVML issues are detected, False otherwise
+    Apply patches to DeepSpeed to avoid NVML-related errors during initialization.
     """
-    if not torch.cuda.is_available():
-        logger.info("CUDA not available, no need for NVML patches")
-        return False
-    
     try:
-        # Try to perform a simple barrier operation that would fail with NVML issues
-        import torch.distributed as dist
-        if not dist.is_initialized():
-            logger.info("Distributed not initialized, skipping NVML test")
-            return False
+        import deepspeed
+        from deepspeed.accelerator import get_accelerator
+
+        # Patch DeepSpeed's device detection to avoid NVML calls
+        original_get_accelerator = deepspeed.accelerator.get_accelerator
         
-        # Try a simple empty tensor creation on CUDA
-        device = torch.device("cuda")
-        torch.empty(1, device=device)
-        logger.info("No NVML issues detected, running with native performance")
-        return False
-    except RuntimeError as e:
-        if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e):
-            logger.warning("NVML compatibility issues detected, applying patches")
-            return True
-        logger.info("No specific NVML issues detected in test")
-        return False
-    except Exception:
-        # Some other error, not NVML related
-        return False
+        @wraps(original_get_accelerator)
+        def safe_get_accelerator():
+            try:
+                return original_get_accelerator()
+            except RuntimeError as e:
+                if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e):
+                    logger.warning("NVML issue detected in DeepSpeed accelerator, using safe fallback")
+                    # Return a simpler CUDA accelerator implementation
+                    from deepspeed.accelerator.cuda_accelerator import CUDA_Accelerator
+                    return CUDA_Accelerator()
+                raise
+        
+        # Replace the function
+        deepspeed.accelerator.get_accelerator = safe_get_accelerator
+        logger.info("Successfully patched DeepSpeed accelerator")
+        
+    except ImportError:
+        logger.warning("DeepSpeed not available, skipping DeepSpeed-specific patches")
 
-def patch_torch_distributed():
+def patch_torch_cuda():
     """
-    Apply patches to torch.distributed to avoid NVML-related errors.
+    Patch PyTorch's CUDA functions to handle NVML-related errors.
+    """
+    import torch
     
-    This function patches the torch.distributed.barrier function to handle
-    NVML-related errors gracefully, allowing distributed training to work
-    even with NVIDIA driver/NVML version mismatches.
-    """
-    try:
-        import torch.distributed
+    # Patch device creation
+    original_device = torch.device
+    
+    @wraps(original_device)
+    def safe_device(device_type, *args, **kwargs):
+        try:
+            return original_device(device_type, *args, **kwargs)
+        except RuntimeError as e:
+            if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e):
+                logger.warning(f"NVML error in device creation: {str(e)}")
+                # For 'cuda' devices, create a basic device without NVML features
+                if device_type == 'cuda':
+                    logger.info("Using simplified CUDA device creation")
+                    result = original_device('cuda')
+                    return result
+            raise
+            
+    torch.device = safe_device
+    
+    # Patch tensor creation functions
+    for func_name in ['empty', 'zeros', 'ones', 'full', 'rand', 'randn']:
+        if not hasattr(torch, func_name):
+            continue
+            
+        original_func = getattr(torch, func_name)
+        
+        @wraps(original_func)
+        def make_safe_func(orig_f, fname):
+            def safe_tensor_func(*args, **kwargs):
+                try:
+                    return orig_f(*args, **kwargs)
+                except RuntimeError as e:
+                    if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e):
+                        logger.warning(f"NVML error in {fname} tensor creation, using fallback path")
+                        # Create on CPU first, then move to the original device if specified
+                        if 'device' in kwargs and kwargs['device'] is not None and str(kwargs['device']).startswith('cuda'):
+                            original_device = kwargs['device']
+                            kwargs['device'] = 'cpu'
+                            tensor = orig_f(*args, **kwargs)
+                            return tensor.to(original_device)
+                    raise
+            return safe_tensor_func
+            
+        setattr(torch, func_name, make_safe_func(original_func, func_name))
+        logger.info(f"Patched torch.{func_name} successfully")
 
+    # Patch distributed module if available
+    if hasattr(torch, 'distributed') and hasattr(torch.distributed, 'barrier'):
         original_barrier = torch.distributed.barrier
         
         @wraps(original_barrier)
@@ -70,116 +121,25 @@ def patch_torch_distributed():
                     import time
                     time.sleep(2)
                     return None
-                else:
-                    raise
+                raise
         
-        # Replace the original barrier with our safe version
         torch.distributed.barrier = safe_barrier
-        logger.info("Successfully patched torch.distributed.barrier")
-        
-    except ImportError:
-        logger.warning("torch.distributed not available, skipping patch")
-        pass
+        logger.info("Patched torch.distributed.barrier successfully")
 
-def patch_torch_tensor_creation():
+def apply_all_patches():
     """
-    Apply patches to torch.empty and related functions to avoid NVML errors during tensor creation.
-    
-    This is particularly important for DeepSpeed which uses these functions during model initialization.
+    Apply all patches necessary to fix NVML-related issues.
     """
     try:
         import torch
-        
-        original_empty = torch.empty
-        
-        @wraps(original_empty)
-        def safe_empty(*args, **kwargs):
-            try:
-                return original_empty(*args, **kwargs)
-            except RuntimeError as e:
-                if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e):
-                    logger.warning("NVML error detected during tensor creation, retrying with different device order")
-                    # Try to use a different device allocation strategy
-                    if 'device' in kwargs and kwargs['device'].type == 'cuda':
-                        # Keep track of original device
-                        original_device = kwargs['device']
-                        # First create on CPU
-                        kwargs['device'] = 'cpu'
-                        tensor = original_empty(*args, **kwargs)
-                        # Then move to original device
-                        return tensor.to(original_device)
-                    else:
-                        raise
-                else:
-                    raise
-        
-        # Replace the original tensor creation functions
-        torch.empty = safe_empty
-        logger.info("Successfully patched torch.empty")
-        
+        if torch.cuda.is_available():
+            patch_torch_cuda()
+            patch_deepspeed()
+            logger.info("Applied all PyTorch and DeepSpeed NVML-related patches")
+        else:
+            logger.info("CUDA not available, no patches applied")
     except ImportError:
-        logger.warning("torch not available, skipping tensor creation patch")
-        pass
+        logger.warning("PyTorch not found, patches will not be applied")
 
-def apply_all_patches(force=False):
-    """
-    Apply all available patches to handle NVML-related issues.
-    
-    Args:
-        force (bool): If True, apply patches regardless of NVML test results
-    """
-    import torch
-    
-    # Check if we need to apply patches
-    needs_patches = force
-    
-    if not needs_patches:
-        try:
-            needs_patches = test_for_nvml_issues()
-        except Exception as e:
-            logger.warning(f"Error testing for NVML issues: {e}. Applying patches as precaution.")
-            needs_patches = True
-    
-    if needs_patches:
-        # Set critical environment variables for NVML issues
-        os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
-        os.environ["NCCL_P2P_DISABLE"] = "1"
-        
-        # Apply function patches
-        patch_torch_distributed()
-        patch_torch_tensor_creation()
-        
-        logger.info("Applied PyTorch NVML compatibility patches")
-    else:
-        logger.info("No NVML patches applied, using native performance")
-        
-    # Always configure DeepSpeed for optimal performance
-    configure_deepspeed_performance()
-
-def configure_deepspeed_performance():
-    """
-    Configure DeepSpeed for optimal performance regardless of NVML status.
-    
-    This applies performance-enhancing settings that don't interfere with NVML compatibility.
-    """
-    # Set environment variables for DeepSpeed performance
-    os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"  # Optimize CUDA connection handling
-    os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"    # Better error handling in NCCL
-    
-    # Enable faster GPU direct access if available
-    if os.path.exists("/usr/local/cuda/lib64/libcudart.so"):
-        os.environ["NCCL_IB_DISABLE"] = "0"          # Use InfiniBand if available
-        os.environ["NCCL_NET_GDR_LEVEL"] = "2"       # Enable GPU Direct RDMA
-    
-    logger.info("Applied DeepSpeed performance optimizations")
-
-# Import torch here to avoid circular imports during the patching
-try:
-    import torch
-except ImportError:
-    logger.warning("PyTorch not found, patches will be applied on demand if needed")
-
-# Apply patches automatically when the module is imported
-if __name__ != "__main__":
-    logging.basicConfig(level=logging.INFO)
-    apply_all_patches(force=False)  # Only apply if needed
+# Apply patches automatically on import
+apply_all_patches()

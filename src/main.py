@@ -1,21 +1,16 @@
-# Apply performance optimizations and conditional NVML patches
+# Apply PyTorch NVML patches at the very start, before any other imports
 import os
 import sys
 
-# Import and conditionally apply our PyTorch patches
-from src.utils.torch_patches import apply_all_patches, configure_deepspeed_performance
+# Import our patches first so they're applied before any PyTorch imports
+from src.utils.torch_patches import apply_all_patches
+# This will apply all patches since it's executed on import
 
-# Always apply performance optimizations
-configure_deepspeed_performance()
-
-# Only apply NVML patches if needed (will auto-detect)
-apply_all_patches(force=False)
-
-# Continue with the rest of the imports and code
+# Now continue with regular imports
 import argparse
 from box import Box
-from src.config.config_loader import ConfigValidator
 import yaml
+from src.config.config_loader import ConfigValidator
 
 def execute_task(config_path: str):
     # Load the YAML file (to extract the task value)
