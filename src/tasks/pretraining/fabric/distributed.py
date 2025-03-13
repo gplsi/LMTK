@@ -107,7 +107,11 @@ class DeepSpeed(FabricTrainerBase):
         ds_config = {
             "train_batch_size": self.config.batch_size * self.devices,
             "zero_optimization": {
-                "stage": self.config.zero_stage
+                "stage": self.config.zero_stage,
+                "reduce_scatter": True,  # Enable reduce scatter for better performance
+                "overlap_comm": True,    # Overlap communication with computation
+                "contiguous_gradients": True,  # Reduce memory fragmentation
+                "reduce_bucket_size": 5e7  # Adjust bucket size for gradient reduction
             },
             "optimizer": {
                 "type": "AdamW",
@@ -152,14 +156,11 @@ class DeepSpeed(FabricTrainerBase):
             if hasattr(self.config, param):
                 ds_config[param] = getattr(self.config, param)
         
-        # Add performance optimizations for DeepSpeed
-        # These settings improve training speed and are compatible with our NVML workarounds
+        # Add performance optimizations for DeepSpeed that are compatible with ZeRO-3
         ds_config.update({
             "wall_clock_breakdown": False,  # Disable timing breakdowns for better performance
-            "prescale_gradients": True,     # Pre-scale gradients for better numerical stability
-            "gradient_predivide_factor": 1.0,  # Pre-divide gradients for improved performance
             "steps_per_print": self.config.get("log_iter_interval", 100),  # Match logging interval
-            # Use the correct format for communication_data_type that DeepSpeed expects
+            # Use the correct format for communication_data_type
             "communication_data_type": self.config.get("communication_data_type", 
                 "bf16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "fp16"),
         })
