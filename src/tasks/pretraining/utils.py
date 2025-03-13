@@ -5,8 +5,13 @@ import torch
 import numpy as np
 import random
 from datasets import Dataset as HFDataset
+import time
+import logging
 
-# Add a safe barrier implementation to handle potential NVML issues
+# Get a logger for this module
+logger = logging.getLogger(__name__)
+
+# Safe barrier implementation to handle potential NVML issues
 def safe_barrier(fabric, logger=None):
     """
     A safe implementation of the distributed barrier that avoids NVML errors.
@@ -25,19 +30,22 @@ def safe_barrier(fabric, logger=None):
         # Try the normal barrier first
         fabric.barrier()
     except RuntimeError as e:
-        if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e):
-            # If we hit the specific NVML error, use a simple time-based synchronization
+        if "nvmlDeviceGetNvLinkRemoteDeviceType" in str(e) or "NVML" in str(e) or "driver_api" in str(e):
+            # If we hit any NVML-related error, use a simple time-based synchronization
             if logger:
-                logger.warning("NVML barrier issue detected, falling back to time-based synchronization")
-            import time
+                logger.warning(f"NVML barrier issue detected: {str(e)}")
+                logger.warning("Falling back to time-based synchronization")
             
-            # Give processes time to reach this point
-            time.sleep(2)
+            # Sleep for a duration proportional to world size to ensure synchronization
+            sleep_time = 2 + (0.1 * fabric.world_size)
+            time.sleep(sleep_time)
             
             if logger:
                 logger.info(f"Process {fabric.global_rank} synchronized via fallback method")
         else:
             # For other RuntimeErrors, re-raise
+            if logger:
+                logger.error(f"Non-NVML barrier error: {str(e)}")
             raise
 
 # Dictionary mapping model identifiers to their corresponding wrapper classes.
