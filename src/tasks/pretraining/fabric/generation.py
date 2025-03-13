@@ -4,7 +4,6 @@ from transformers import AutoModelForCausalLM
 import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
-
 from utils.logging import VerboseLevel, get_logger
 
 """
@@ -35,6 +34,7 @@ class FabricGeneration(L.LightningModule):
                 - model_name (str): Identifier for the pre-trained model.
                 - precision (str): Model precision setting ('bf16-true' selects bfloat16, otherwise uses float32).
                 - verbose_level (Optional): Logging verbosity level.
+                - zero_stage (Optional): DeepSpeed ZeRO stage level.
         """
         super().__init__()
         # Initialize the logger with the module's name and provided verbosity level.
@@ -48,11 +48,19 @@ class FabricGeneration(L.LightningModule):
         else:
             torch_dtype = torch.float32
         
+        # Check if using DeepSpeed ZeRO-3, which requires ignore_mismatched_sizes=True
+        # due to parameter partitioning
+        ignore_mismatched = False
+        if kwargs.get("parallelization_strategy", "") == "deep_speed" and kwargs.get("zero_stage", 0) == 3:
+            self.cli_logger.info("Using DeepSpeed ZeRO Stage 3: Enabling ignore_mismatched_sizes=True")
+            ignore_mismatched = True
+        
         # Load the pre-trained causal language model without caching to support training.
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch_dtype,
-            use_cache=False
+            use_cache=False,
+            ignore_mismatched_sizes=ignore_mismatched
         )
        
     def on_train_start(self):
@@ -95,10 +103,10 @@ class FabricGeneration(L.LightningModule):
             labels=batch['labels'],
         )
         loss = outputs.loss
-        # Log the training loss for debugging, showing it on the progress bar.
-        self.cli_logger.debug("Train_loss", loss.loss, prog_bar=True)
+        # Log the training loss for debugging
+        self.cli_logger.debug(f"Train_loss: {loss.item()}")
         return {
-            "loss": outputs.loss,
+            "loss": loss,
             "outputs": outputs,
         }
 
@@ -124,7 +132,7 @@ class FabricGeneration(L.LightningModule):
         )
         loss = outputs.loss
         # Log the validation loss for progress monitoring.
-        self.cli_logger.debug("Validation_loss", loss.loss, prog_bar=True)
+        self.cli_logger.debug(f"Validation_loss: {loss.item()}")
         return {
             "loss": loss,
             "outputs": outputs,
@@ -152,9 +160,9 @@ class FabricGeneration(L.LightningModule):
         )
         loss = outputs.loss
         # Log the test loss for debugging purposes.
-        self.cli_logger.debug("Test_loss", loss.loss, prog_bar=True)
+        self.cli_logger.debug(f"Test_loss: {loss.item()}")
         return {
-            "loss": outputs.loss,
+            "loss": loss,
             "outputs": outputs,
         }
 

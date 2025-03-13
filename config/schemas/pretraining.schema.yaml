@@ -18,6 +18,11 @@ allOf:
             type: string
             description: "Dataset name for HuggingFace or local path"
 
+      num_workers:
+        type: integer
+        default: 4
+        description: "Number of workers for data loading"
+
       # Model arguments
       model_name:
         type: string
@@ -161,6 +166,7 @@ allOf:
       - beta2
       - parallelization_strategy
       - output_dir
+      - num_workers
 
 
 
