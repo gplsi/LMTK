@@ -1,7 +1,7 @@
 # Cross-platform Makefile for Continual Pretraining Framework
 PROJECT_NAME = continual-pretrain
 CONFIG_PATH = config
-DOCKER_RUN = docker run -v "$(CURDIR)":/workspace
+DOCKER_RUN = docker run --rm -v "$(CURDIR)":/workspace
 GPU_DEVICES ?= all  # Can specify "0", "0,1" or "none" for CPU-only
 
 .PHONY: help build validate tokenize train dev-shell clean test test-unit test-integration test-all test-grid test-gpu test-distributed-gpu test-perf
@@ -36,15 +36,15 @@ test: test-unit test-integration
 
 test-unit:
 	@echo "Running unit tests (CPU only)..."
-	CI=true pytest tests/unit -v -m "not requires_gpu"
+	$(DOCKER_RUN) $(PROJECT_NAME) pytest -v -m "not requires_gpu" tests/unit
 
 test-integration:
 	@echo "Running integration tests (CPU only)..."
-	CI=true pytest tests/integration -v -m "not requires_gpu"
+	$(DOCKER_RUN) $(PROJECT_NAME) pytest -v -m "not requires_gpu" tests/integration
 
 test-all:
 	@echo "Running all CPU tests with coverage report..."
-	CI=true pytest --cov=src --cov-report=term-missing -v -m "not requires_gpu" tests/
+	$(DOCKER_RUN) $(PROJECT_NAME) pytest --cov=src --cov-report=term-missing -v -m "not requires_gpu" tests/
 
 test-grid:
 	@echo "Running parameterized tests with grid config..."
@@ -52,7 +52,7 @@ test-grid:
 		echo "Usage: make test-grid GRID=config/test_grids/minimal_test_grid.yaml"; \
 		exit 1; \
 	fi
-	CI=true python scripts/run_parameterized_tests.py --test-type=$(TEST_TYPE) --param-file=$(GRID)
+	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=$(TEST_TYPE) --param-file=$(GRID)
 
 # GPU testing targets
 test-gpu:
@@ -84,8 +84,8 @@ test-perf:
 # Extra test targets for specific scenarios
 test-minimal:
 	@echo "Running minimal test grid..."
-	CI=true python scripts/run_parameterized_tests.py --test-type=unit --param-file=config/test_grids/minimal_test_grid.yaml
+	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=unit --param-file=config/test_grids/minimal_test_grid.yaml
 
 test-comprehensive:
 	@echo "Running comprehensive test grid..."
-	CI=true python scripts/run_parameterized_tests.py --test-type=all --param-file=config/test_grids/comprehensive_test_grid.yaml
+	$(DOCKER_RUN) $(PROJECT_NAME) python scripts/run_parameterized_tests.py --test-type=all --param-file=config/test_grids/comprehensive_test_grid.yaml
