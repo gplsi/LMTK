@@ -13,6 +13,7 @@ from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
 from abc import ABC
 from datasets import Dataset as HFDataset
+from typing import Optional
 
 
 class BaseOrchestrator(ABC):
@@ -24,7 +25,7 @@ class BaseOrchestrator(ABC):
     tracing purposes.
     """
 
-    def __init__(self, config: Box) -> None:
+    def __init__(self, config: Box, fabric_rank: Optional[int] = None) -> None:
         """
         Initialize the BaseOrchestrator instance with configuration details.
 
@@ -42,6 +43,7 @@ class BaseOrchestrator(ABC):
                                      * use_txt_as_samples (optional): A flag to enable text samples.
                                      * file_config: Additional file configurations when format is 'files'.
                           - test_size (optional): A float indicating the ratio to split the dataset for testing.
+            fabric_rank (Optional[int]): The process rank in distributed training. Used to filter logs.
         """
         self.config = config
 
@@ -50,8 +52,8 @@ class BaseOrchestrator(ABC):
             self.config.get("verbose_level", VerboseLevel.INFO)
         )
 
-        # Initialize and configure the module-level logger.
-        self.logger = get_logger(__name__, self.verbose_level)
+        # Initialize and configure the module-level logger with rank information if in distributed mode
+        self.logger = get_logger(__name__, self.verbose_level, rank=fabric_rank)
 
         # Instantiate the DatasetStorage utility for dataset operations.
         self.storage = DatasetStorage(self.verbose_level)

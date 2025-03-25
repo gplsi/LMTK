@@ -58,7 +58,12 @@ class FabricTrainerBase(ABC):
         Raises:
         - ValueError: If dataset is None.
         """
-        self.cli_logger = get_logger(__name__, config.verbose_level)
+        # Get local rank for distributed training
+        self.local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+        
+        # Initialize logger with rank information
+        self.cli_logger = get_logger(__name__, config.verbose_level, rank=self.local_rank)
+
         if dataset is None:
             raise ValueError("Dataset must be provided for training.")
         
@@ -176,6 +181,21 @@ class FabricTrainerBase(ABC):
             self.cli_logger.debug(f"Resuming training from '{self.checkpoint_path}'")
             fabric.load(self.checkpoint_path, self.state)
     
+    def _all_gather_mean(self, fabric: L.Fabric, tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Gather tensors from all processes and compute their mean.
+        
+        Uses Lightning Fabric's all_gather followed by a simple torch mean operation.
+        
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance for distributed operations
+        - tensor (torch.Tensor): The local tensor to be gathered and averaged
+        
+        Returns:
+        - torch.Tensor: The mean of the gathered tensors
+        """
+        return torch.mean(torch.stack(fabric.all_gather(tensor)))
+
     def _train_logs(self, fabric: L.Fabric, loss: torch.Tensor) -> None:
         """
         Log training metrics for monitoring.
@@ -388,37 +408,52 @@ class FabricTrainerBase(ABC):
         Parameters:
         - fabric (L.Fabric): The Fabric instance.
         """
+        # Only the main process should log validation start
+        if fabric.global_rank == 0:
+            self.cli_logger.info("Starting validation...")
+            
         t0 = time.perf_counter()
         self.model.eval()
         losses = []
+        
+        # Only show progress bar on main process
         batch_iterator = tqdm(
             self.dataloaders['valid'],
             desc="Validating...",
             mininterval=0,
             colour="green"
-        )
+        ) if fabric.global_rank == 0 else self.dataloaders['valid']
+        
         for k, val_data in enumerate(batch_iterator):
             validation_output = self.model.validation_step(val_data, k)
             loss = validation_output["loss"]
             losses.append(loss.detach())
             
+        # Compute mean loss
         out = torch.mean(torch.stack(losses)) if losses else torch.tensor(0.0, device=fabric.device)
+        
+        # Synchronize loss across all processes using all_gather and mean
+        out = self._all_gather_mean(fabric, out)
+        
         t1 = time.perf_counter()
         elapsed_time = t1 - t0
         self.monitor.eval_end(t1)
 
-        def fabric_eval_log(loss: torch.Tensor) -> None:
-            """
-            Inner function to log the evaluation metrics.
-
-            Parameters:
-            - loss (torch.Tensor): The computed validation loss.
-            """
-            self.cli_logger.info(f"step {self.state['iter_num']}: val loss {loss:.4f}, val time: {elapsed_time * 1000:.2f}ms")
-            fabric.log_dict({"metric/val_loss": loss.item()}, self.state["step_count"])
-            fabric.log_dict({"metric/val_ppl": math.exp(loss.item())}, self.state["step_count"])
-        
-        fabric_eval_log(out)
+        # Only main process should log results
+        if fabric.global_rank == 0:
+            self.cli_logger.info(
+                f"Validation complete - "
+                f"step {self.state['iter_num']}: val loss {out:.4f}, "
+                f"val time: {elapsed_time * 1000:.2f}ms, "
+                f"val perplexity: {math.exp(out):.2f}"
+            )
+            
+            # Log metrics to wandb/tensorboard if configured
+            fabric.log_dict({
+                "metric/val_loss": out.item(),
+                "metric/val_ppl": math.exp(out.item()),
+                "metric/val_time_ms": elapsed_time * 1000
+            }, self.state["step_count"])
         
         # Use safe_barrier instead of direct barrier call
         from src.tasks.pretraining.utils import safe_barrier
@@ -497,38 +532,54 @@ class FabricTrainerBase(ABC):
             setup_environment(self.config.seed)
             fabric.seed_everything(self.config.seed)
 
-        # Initialize training monitor with given parameters.
+        # Initialize training monitor
         self.monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=self.config.log_iter_interval)
 
         # Create output directory for checkpoints and logs on the main process.
         if fabric.global_rank == 0:
             os.makedirs(self.config.output_dir, exist_ok=True)
+            self.cli_logger.info(f"Output directory created at {self.config.output_dir}")
         
-        # Use safe_barrier instead of direct barrier call to handle NVML issues
+        # Use safe_barrier instead of direct barrier call
         from src.tasks.pretraining.utils import safe_barrier
         safe_barrier(fabric, self.cli_logger)
 
         # Setup Fabric data loaders.
         self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
 
-        # Instantiate and initialize the model within the fabric.init_module() context.
+        # Log dataset info from main process
+        if fabric.global_rank == 0:
+            for split, loader in self.dataloaders.items():
+                self.cli_logger.info(f"{split} dataset size: {len(loader.dataset)} samples")
+
+        # Instantiate and initialize model
+        if fabric.global_rank == 0:
+            self.cli_logger.info("Initializing model...")
+            
         t0 = time.perf_counter()
         with fabric.init_module():
-            # TODO: Handle more model configurations
             self.model = FabricGeneration(**self.config)
-            # Properly set up the model with Fabric for strategies such as FSDP.
             self.model = fabric.setup(self.model)
 
-        # Enable or disable gradient checkpointing based on configuration.
+        # Configure gradient checkpointing
         if self.config.gradient_checkpointing:
             self.model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={
                 "use_reentrant": False
             })
+            if fabric.global_rank == 0:
+                self.cli_logger.info("Gradient checkpointing enabled")
         else:
             self.model.model.gradient_checkpointing_disable()
+            if fabric.global_rank == 0:
+                self.cli_logger.info("Gradient checkpointing disabled")
 
-        self.cli_logger.info(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
-        # Set up the optimizer using a helper function.
+        if fabric.global_rank == 0:
+            self.cli_logger.info(f"Model initialization time: {time.perf_counter() - t0:.02f} seconds")
+
+        # Set up optimizer and scheduler
+        if fabric.global_rank == 0:
+            self.cli_logger.info("Setting up optimizer and scheduler...")
+            
         optimizer = select_optimizer(
             self.config.get("optimizer", "adamw"), 
             self.model, 
@@ -538,7 +589,7 @@ class FabricTrainerBase(ABC):
             self.config.beta2
         )
         optimizer = fabric.setup_optimizers(optimizer)
-        # Set up the scheduler using another helper function.
+        
         scheduler = select_scheduler(
             optimizer, 
             self.config.lr_scheduler, 
@@ -549,7 +600,8 @@ class FabricTrainerBase(ABC):
             self.config.warmup_proportion, 
             self.config.gradient_accumulation_steps
         )
-        # Store initial training state.
+
+        # Store initial training state
         self.state = {
             "model": self.model, 
             "optimizer": optimizer, 
@@ -558,11 +610,19 @@ class FabricTrainerBase(ABC):
             "step_count": 0, 
             "scheduler": scheduler
         }
-        # Load training state from a checkpoint if available.
+
+        # Load checkpoint if available
         self._load_from_checkpoint(fabric)
-        # Run the training loop.
+
+        # Start training
+        if fabric.global_rank == 0:
+            self.cli_logger.info("Starting training...")
+            
         train_time = time.perf_counter()
         self._train(fabric)
-        self.cli_logger.info(f"Training time: {(time.perf_counter() - train_time):.2f}s")
-        if fabric.device.type == "cuda":
-            self.cli_logger.info(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
+        
+        # Log final statistics from main process
+        if fabric.global_rank == 0:
+            self.cli_logger.info(f"Training completed in {(time.perf_counter() - train_time):.2f}s")
+            if fabric.device.type == "cuda":
+                self.cli_logger.info(f"Peak GPU memory usage: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")

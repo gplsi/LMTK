@@ -106,14 +106,30 @@ def get_logger(
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
     
-    # Set log level
-    logger.setLevel(level_mapping.get(level, logging.INFO))
+    # Set initial log level
+    initial_level = level_mapping.get(level, logging.INFO)
     
-    # Add rank filter if specified
+    # Handle distributed training logging
     if rank is not None:
-        logger.rank = rank
-        if rank != 0:  # Only show certain logs from rank 0
+        if rank != 0:  # Non-main processes
+            # Only show errors and warnings from non-main processes
             logger.setLevel(logging.WARNING)
+            formatter = CustomFormatter(
+                f'[Rank {rank}] %(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+        else:  # Main process
+            logger.setLevel(initial_level)
+            formatter = CustomFormatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+        # Update formatter for all handlers
+        for handler in logger.handlers:
+            handler.setFormatter(formatter)
+    else:
+        # No rank specified (non-distributed case)
+        logger.setLevel(initial_level)
     
     if level == VerboseLevel.NONE:
         logger.disabled = True

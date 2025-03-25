@@ -34,7 +34,8 @@ class ContinualOrchestrator(BaseOrchestrator):
         Initialize the ContinualOrchestrator with the given configuration.
         
         It performs the following steps:
-          - Calls the superclass initializer with the provided configuration.
+          - Gets the local rank from environment variables for distributed training
+          - Calls the superclass initializer with the provided configuration and rank
           - Checks for CUDA availability and counts the available CUDA devices.
           - Logs the number of available CUDA devices. If none are found, a warning is 
             logged and training will fall back to using the CPU.
@@ -42,21 +43,23 @@ class ContinualOrchestrator(BaseOrchestrator):
         Parameters:
             config (Box): Configuration object containing training parameters.
         """
-        super().__init__(config)
+        # Get local rank if running in distributed mode
+        local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+        
+        # Initialize base class with rank information
+        super().__init__(config, fabric_rank=local_rank)
         
         # Check if CUDA is available on the current machine
         if torch.cuda.is_available():
             self.devices = torch.cuda.device_count()
-            # Get local rank if running in distributed mode
-            local_rank = int(os.environ.get('LOCAL_RANK', '0'))
-            if local_rank == 0:  # Only log from rank 0
-                self.logger.info(f"Found {self.devices} CUDA devices available for training")
             # If at least one CUDA device exists, use them for training
             if self.devices > 0:
+                if local_rank == 0:  # Only log from rank 0 since base class now handles rank-aware logging
+                    self.logger.info(f"Found {self.devices} CUDA devices available for training")
                 return
             
         # Log a warning and fallback to CPU if no CUDA devices are found
-        if local_rank == 0:
+        if local_rank == 0:  # Only log from rank 0
             self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
         self.devices = "cpu"
 
