@@ -26,8 +26,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
+
 # Copy project files
 COPY . /workspace/
+
+
+# Then configure Git safety
+RUN chown -R root:root /workspace && \
+    git config --global --add safe.directory /workspace
+
+# Verify configuration
+RUN git config --global --list | grep safe.directory
+
 
 # Configure entrypoint
 ENTRYPOINT ["/bin/bash", "-c"]

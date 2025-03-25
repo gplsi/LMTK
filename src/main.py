@@ -11,11 +11,18 @@ os.environ["DS_SKIP_NVML_INIT"] = "1"  # DeepSpeed-specific NVML skip
 import sys
 import argparse
 from box import Box
+from dotenv import load_dotenv
+import wandb
 import yaml
 from src.config.config_loader import ConfigValidator
 
 # Import our patching utility after setting environment variables
 from src.utils.torch_patches import apply_all_patches
+
+
+load_dotenv()  # This loads the variables from .env
+wandb.login(key=os.getenv('WANDB_API_KEY'))
+
 
 def execute_task(config_path: str):
     # Load the YAML file (to extract the task value)

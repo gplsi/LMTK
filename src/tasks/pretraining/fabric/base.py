@@ -33,7 +33,7 @@ from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStra
 from box import Box
 
 # Configure CUDA allocation settings environment variable.
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 
 class FabricTrainerBase(ABC):

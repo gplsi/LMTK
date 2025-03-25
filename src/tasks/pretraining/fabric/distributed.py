@@ -55,8 +55,9 @@ class FSDP(FabricTrainerBase):
         if self.devices > 1:
             # Resolve FSDP configuration with sensible defaults using the provided config and model name.
             fsdp_config = resolve_fsdp_config(
-                config=self.config.__dict__,
-                model_name=self.config.model_name
+                config=self.config,
+                model_name=self.config.model_name,
+                logger=self.cli_logger
             )
             
             # Initialize FSDP strategy with parameters derived from the resolved configuration.
