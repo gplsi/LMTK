@@ -11,7 +11,7 @@ dataset:
 output_dir: "output/"
 
 # Model
-model_name: "meta-llama/Llama-3.2-1B"
+model_name: "meta-llama/Llama-3.2-3B"
 
 # Model precision
 precision: "bf16-true"
@@ -46,7 +46,7 @@ warmup_proportion: 0.06
 logging_config: "wandb"
 
 # Wandb logging specific parameters
-wandb_project: "prueba_llama-3.2-1B_ddp__titan"
+wandb_project: "prueba_llama-3.2-3B_fsdp__allen"
 wandb_entity: "gplsi_continual"
 log_model: false
 log_iter_interval: 10

@@ -25,11 +25,16 @@ class BaseOrchestrator(ABC):
         """Load dataset based on configuration."""
         self._validate__dataset_config()
         
+        # Safely get use_txt_as_samples with a default value if not present
+        use_txt_as_samples = False
+        if hasattr(self.config.dataset, 'use_txt_as_samples'):
+            use_txt_as_samples = self.config.dataset.use_txt_as_samples
+        
         dataset_handler = DatasetStorage(
             verbose_level=VerboseLevel(
                 self.config.get("verbose_level", VerboseLevel.INFO)
             ),
-            enable_txt_samples= self.config.dataset.use_txt_as_samples or False
+            enable_txt_samples=use_txt_as_samples
         )
 
         if self.config.dataset.source == "local":
@@ -45,10 +50,18 @@ class BaseOrchestrator(ABC):
             
             elif self.config.dataset.format == "files":
                 self.logger.info(f"Loading dataset from files at dir '{self.config.dataset.nameOrPath}'")
-                dataset= dataset_handler.process_files(
+                
+                # Get file_config from config if available
+                file_config = None
+                if hasattr(self.config.dataset, 'file_config'):
+                    file_config = self.config.dataset.file_config
+                
+                # Process files with complete file_config
+                dataset = dataset_handler.process_files(
                     self.config.dataset.nameOrPath,
-                    extension=self.config.dataset.file_config.format,
+                    file_config=file_config,
                 )
+                
                 if self.config.test_size:
                     self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
                 dataset = dataset_handler.split(dataset, split_ratio=self.config.test_size)
