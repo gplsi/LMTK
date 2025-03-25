@@ -1,0 +1,63 @@
+task: "pretraining"   # pretraining, tokenization
+experiment_name: "news_corpus_val-es"
+verbose_level: 1
+
+# Training data
+dataset:
+  source: "local"  # huggingface, local
+  nameOrPath: "/workspace/data/tokenized/news_corpus"
+
+num_workers: 4
+
+# Output dir
+output_dir: "output/"
+
+# Model
+model_name: "openai-community/gpt2"
+
+# Model precision
+precision: "bf16-true"
+static_graph: false
+
+# Training parameters
+number_epochs: 1
+batch_size: 4
+
+# Validation parameters
+validate_on_end: false
+validate_after_epoch: false
+validate_after_k_steps: null
+
+# Gradient parameters
+gradient_accumulation: true
+gradient_accumulation_steps: 4
+gradient_checkpointing: true
+grad_clip: 1.0
+
+# Optimizer parameters
+lr: 0.00002      
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler parameters
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06   
+
+# Logging
+logging_config: "wandb"
+
+# Wandb logging specific parameters
+wandb_project: "prueba_llama-3.2-1B_ddp__titan"
+wandb_entity: "gplsi_continual"
+log_model: false
+log_iter_interval: 10
+
+# Distributed_strategy
+parallelization_strategy: "deep_speed"
+
+# Deep Speed specific parameters
+zero_stage: 3
+zero_optimization: true
+

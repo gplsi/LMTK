@@ -1,0 +1,15 @@
+task: pretraining
+model:
+  name: gpt2
+  precision: bf16-mixed
+  # Other model parameters...
+
+training:
+  strategy: deepspeed
+  disable_nvlink_detection: true  # Add this line to your config
+  optimizer:
+    name: adam
+    lr: 5e-5
+  # Other training parameters...
+
+# Other configuration sections...

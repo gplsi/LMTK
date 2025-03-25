@@ -1,0 +1,141 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+<<<<<<< HEAD
+<<<<<<< HEAD
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      run: make build
+    
+    - name: Run unit tests in Docker
+      run: |
+        # Run CPU-only unit tests in Docker container
+        docker run --rm $(docker build -q .) pytest -v -m "not requires_gpu" tests/unit
+
+    - name: Run integration tests in Docker
+      run: |
+        # Run CPU-only integration tests in Docker container
+        docker run --rm $(docker build -q .) pytest -v -m "not requires_gpu" tests/integration
+
+    - name: Run coverage report in Docker
+      run: |
+        # Run coverage report in Docker container
+        docker run --rm $(docker build -q .) pytest --cov=src --cov-report=term-missing -m "not requires_gpu" tests/
+=======
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, '3.10']
+=======
+>>>>>>> a51282d (Add comprehensive configuration and developer guides with schema validation details)
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      run: make build
+    
+    - name: Run unit tests in Docker
+      run: |
+        # Run CPU-only unit tests in Docker container
+        docker run --rm $(docker build -q .) pytest -v -m "not requires_gpu" tests/unit
+
+    - name: Run integration tests in Docker
+      run: |
+        # Run CPU-only integration tests in Docker container
+        docker run --rm $(docker build -q .) pytest -v -m "not requires_gpu" tests/integration
+
+    - name: Run coverage report in Docker
+      run: |
+<<<<<<< HEAD
+        pip install flake8
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Test with pytest (CPU only tests)
+      run: |
+        # Set CI environment variable to allow tests to detect they're running in CI
+        export CI=true
+        pytest -v -m "not requires_gpu" tests/
+    
+    - name: Check test coverage
+      run: |
+<<<<<<< HEAD
+        pytest --cov=src tests/
+        
+  test-distributed:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        parallelization-strategy: ["ddp", "fsdp"]
+        
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Ensure test fixtures directories exist
+      run: |
+        mkdir -p tests/fixtures/data/sample_text
+        mkdir -p tests/fixtures/data/tokenized_dataset
+    
+    - name: Create distributed test config
+      run: |
+        python -c "import yaml; \
+        config = yaml.safe_load(open('config/experiments/test_config.yaml', 'r')); \
+        config['parallelization_strategy'] = '${{ matrix.parallelization-strategy }}'; \
+        config['backend'] = 'gloo' if '${{ matrix.parallelization-strategy }}' == 'ddp' else config.get('backend'); \
+        yaml.dump(config, open('distributed_test_config.yaml', 'w'))"
+    
+    - name: Run distributed tests
+      env:
+        CI: true
+      run: |
+<<<<<<< HEAD
+        # Create distributed test config based on matrix parameters
+        python -c "
+import yaml
+config = yaml.safe_load(open('config/experiments/test_config.yaml', 'r'))
+config['parallelization_strategy'] = '${{ matrix.parallelization-strategy }}'
+if '${{ matrix.parallelization-strategy }}' == 'ddp':
+    config['backend'] = 'gloo'
+yaml.dump(config, open('distributed_test_config.yaml', 'w'))
+        "
+        # Run tests with 2 processes to simulate distributed environment
+        python -m pytest tests/integration/test_pretraining_pipeline.py::TestPretrainingPipeline::test_pretraining_with_${{ matrix.parallelization-strategy }} -v
+>>>>>>> cd01e49 (Add testing dependencies and configurations for unit and integration tests)
+=======
+        python -m pytest tests/integration/test_pretraining_pipeline.py::TestPretrainingPipeline::test_pretraining_with_${{ matrix.parallelization-strategy }} -v
+>>>>>>> 05c94bb (Add GPU test and performance benchmark configuration files)
+=======
+        pytest --cov=src --cov-report=term-missing -m "not requires_gpu" tests/
+>>>>>>> 5a32446 (```)
+=======
+        # Run coverage report in Docker container
+        docker run --rm $(docker build -q .) pytest --cov=src --cov-report=term-missing -m "not requires_gpu" tests/
+>>>>>>> a51282d (Add comprehensive configuration and developer guides with schema validation details)

@@ -1,7 +1,21 @@
+# Disable NVML initialization BEFORE importing any other modules
+import os
+# Set critical environment variables to disable NVML functions
+os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
+os.environ["NCCL_P2P_DISABLE"] = "1"
+os.environ["NVML_SKIP_INIT"] = "1"  # Skip NVML initialization completely
+os.environ["NCCL_IGNORE_DISABLED_P2P"] = "1"
+os.environ["DS_SKIP_NVML_INIT"] = "1"  # DeepSpeed-specific NVML skip
+
+# Continue with imports
+import sys
+import argparse
 from box import Box
 import yaml
 from src.config.config_loader import ConfigValidator
 
+# Import our patching utility after setting environment variables
+from src.utils.torch_patches import apply_all_patches
 
 def execute_task(config_path: str):
     # Load the YAML file (to extract the task value)
@@ -23,14 +37,7 @@ def execute_task(config_path: str):
     task_module.execute(config)
     
 if __name__ == '__main__':
-    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('config', help='Path to experiment config')
     args = parser.parse_args()
     execute_task(args.config)
-    #execute_task("config/experiments/test_tokenizer_local.yaml")
-    
-    
-    # FOR CURRENT GPT-2 TESTING
-    #execute_task("config/experiments/test_tokenizer_local.yaml")
-    # execute_task("config/experiments/test_continual.yaml")

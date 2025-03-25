@@ -1,11 +1,17 @@
-
+"""
+This module defines a base trainer class using Lightning Fabric for training deep learning models.
+It encapsulates functionalities such as dataset loading, model instantiation, training loop, validation,
+checkpointing, logging, and gradient accumulation. The FabricTrainerBase class is designed as an abstract base
+class, providing a template for custom training strategies.
+"""
 
 import math
 from pathlib import Path
 import time
 import torch
 from torch.utils.data import DataLoader
-from datasets import load_from_disk, Dataset, DatasetDict
+from datasets import load_from_disk, DatasetDict
+from datasets import Dataset as HFDataset
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 import itertools
@@ -21,14 +27,37 @@ from src.tasks.pretraining.fabric.logger import step_csv_logger
 from src.tasks.pretraining.utils import *
 from src.tasks.pretraining.fabric.generation import FabricGeneration
 from utils.logging import get_logger
+import os  # duplicate import retained to not change functionality
+from typing import Tuple, Union
+from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
+from box import Box
 
-import os
+# Configure CUDA allocation settings environment variable.
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
+
 class FabricTrainerBase(ABC):
-    def __init__(self, devices, config, dataset: Dataset, checkpoint_path: str = None):
+    """
+    Abstract base trainer class for managing training using Lightning Fabric.
+    
+    This class provides the basic structure required for training by handling dataset preparation,
+    strategy setup, logging, checkpointing, gradient accumulation, and validation.
+    It is intended to be subclassed with a concrete implementation of the _setup_strategy method.
+    """
+    def __init__(self, devices: int, config: Box, dataset: HFDataset, checkpoint_path: str = None) -> None:
+        """
+        Initialize the FabricTrainerBase instance.
+
+        Parameters:
+        - devices (int): The number of devices to use for training.
+        - config (Box): Configuration object containing training parameters.
+        - dataset (HFDataset): The dataset (or DatasetDict) used for training.
+        - checkpoint_path (str, optional): Path to a checkpoint to resume training, if applicable.
+
+        Raises:
+        - ValueError: If dataset is None.
+        """
         self.cli_logger = get_logger(__name__, config.verbose_level)
-        
         if dataset is None:
             raise ValueError("Dataset must be provided for training.")
         
@@ -38,16 +67,26 @@ class FabricTrainerBase(ABC):
         self.state = {}
         self.dataset = dataset
         
-        # Load datasets and create dataloaders
+        # Load datasets and create dataloaders using a helper function.
         result = self._load_fabric_datasets_dataloaders(self.config, self.dataset)
         self.datasets = result["datasets"]
         self.dataloaders = result["dataloaders"]
     
     @abstractmethod
-    def _setup_strategy(self):
+    def _setup_strategy(self) -> Union[FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy]:
+        """
+        Abstract method to set up the training strategy.
+        
+        This method should be implemented in subclasses to return the desired training strategy instance.
+        """
         pass
         
     def setup(self) -> None:
+        """
+        Set up and launch the training pipeline.
+
+        This method configures the training strategy, sets up loggers, and then launches the training pipeline using Lightning Fabric.
+        """
         strategy = self._setup_strategy()
         loggers = self._set_loggers()
         fabric = L.Fabric(
@@ -56,6 +95,7 @@ class FabricTrainerBase(ABC):
             precision=self.config.precision,
             loggers=loggers,
         )
+        # Save hyperparameters that are of simple types.
         self.hparams = {
             k: v
             for k, v in locals().items()
@@ -64,13 +104,21 @@ class FabricTrainerBase(ABC):
         self.cli_logger.debug(self.hparams)
         fabric.launch(self._pipeline)
 
-    def _set_loggers(self):
+    def _set_loggers(self) -> list:
+        """
+        Set up training loggers based on configuration.
+
+        Returns:
+        - list: A list of logger objects to be used during training.
+        """
+        # Create a CSV logger for step logging.
         logger = step_csv_logger(
             self.config.output_dir, 
             self.config.model_name, 
             flush_logs_every_n_steps=self.config.log_iter_interval
         )
         
+        # If using Weights & Biases logging, add the WandbLogger.
         if self.config.logging_config == "wandb":
             wandb_logger = WandbLogger(
                 entity=self.config.wandb_entity, 
@@ -80,7 +128,15 @@ class FabricTrainerBase(ABC):
             return [logger, wandb_logger]
         return [logger]
     
-    def _save(self, fabric) -> None:
+    def _save(self, fabric: L.Fabric) -> None:
+        """
+        Save the training checkpoint.
+
+        This method saves the current training state to the output directory if provided.
+        
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance handling the distributed training.
+        """
         if self.config.output_dir is None:
             self.cli_logger.warning("Output directory not provided. Skipping checkpoint saving.")
             return
@@ -89,7 +145,17 @@ class FabricTrainerBase(ABC):
         self.cli_logger.debug(f"Saving checkpoint to {str(output_checkpoint_path)!r}")
         fabric.save(output_checkpoint_path, self.state)
     
-    def _get_resume_iterator(self, iterator, resume_iter):
+    def _get_resume_iterator(self, iterator: int, resume_iter: int) -> tuple[int, int]:
+        """
+        Get the resumed iterator state for training.
+
+        Parameters:
+        - iterator (int): The current iterator over the dataset.
+        - resume_iter (int): The iteration number from which to resume training.
+
+        Returns:
+        - tuple: A tuple containing the possibly sliced iterator and the updated resume_iter.
+        """
         epoch_batch_count = len(iterator)
         if resume_iter >= epoch_batch_count:
             return None, resume_iter - epoch_batch_count
@@ -98,17 +164,31 @@ class FabricTrainerBase(ABC):
         else:
             return iterator, resume_iter
     
-    def _load_from_checkpoint(self, fabric):
+    def _load_from_checkpoint(self, fabric: L.Fabric) -> None:
+        """
+        Load model and optimizer state from a checkpoint if a checkpoint path is provided.
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance handling the training.
+        """
         if self.checkpoint_path is not None:
             self.cli_logger.debug(f"Resuming training from '{self.checkpoint_path}'")
             fabric.load(self.checkpoint_path, self.state)
     
-    def _train_logs(self, fabric: L.Fabric, loss):
+    def _train_logs(self, fabric: L.Fabric, loss: torch.Tensor) -> None:
+        """
+        Log training metrics and monitor training progress.
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance for logging and synchronization.
+        - loss (torch.Tensor): The loss tensor from the current training step.
+        """
         self.cli_logger.debug(
             f"iter {self.state['iter_num']} step {self.state['step_count']}: loss {loss.item():.4f}, iter time:"
             f" {(self.train_t1 - self.train_iter_t0) * 1000:.2f}ms remaining time: "
             # f"{(self.train_t1 - self.train_total_t0) / (self.state['iter_num'] - self.initial_iter) * (self.config.max_iters - self.state['iter_num']) / 3600:.2f} hours. "
         )
+        # Monitor the training progress using SpeedMonitorFabric.
         self.monitor.on_train_batch_end(
             self.state["iter_num"] * self.config.batch_size,
             self.train_t1 - self.train_total_t0,
@@ -118,18 +198,39 @@ class FabricTrainerBase(ABC):
             train_loss=loss.item()
         )
     
-    def _gradient_clipping(self, fabric: L.Fabric, model, optimizer):
+    def _gradient_clipping(self, fabric: L.Fabric, model: L.LightningModule, optimizer: torch.optim.Optimizer) -> None:
+        """
+        Clip model gradients to avoid exploding gradients.
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance.
+        - model (L.LightningModule): The model being trained.
+        - optimizer (torch.optim.Optimizer): The optimizer used for training.
+        """
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.grad_clip)
         self.cli_logger.debug(f"Gradient norm before clipping: {grad_norm:.4f}")
         fabric.clip_gradients(model, optimizer, max_norm=self.config.grad_clip)
     
-    def _accumulate_training(self, fabric: L.Fabric, model, batch, step):
+    def _accumulate_training(self, fabric: L.Fabric, model: L.LightningModule, batch: Tuple[torch.Tensor, ...], step: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Perform training step with gradient accumulation.
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance.
+        - model (L.LightningModule): The model being trained.
+        - batch (tuple): A batch of training data.
+        - step (int): The current training step.
+
+        Returns:
+        - tuple: Contains the outputs from the training step and the loss tensor.
+        """
         is_accumulating = (self.state["iter_num"] + 1) % self.config.gradient_accumulation_steps != 0
         with fabric.no_backward_sync(model, enabled=is_accumulating):
             training_output = model.training_step(batch, step)
             outputs = training_output["outputs"]
             loss = training_output["loss"]
             
+            # Scale loss if accumulating gradients.
             real_loss = (loss / self.config.gradient_accumulation_steps) if is_accumulating else loss
             fabric.backward(real_loss)
         if not is_accumulating:
@@ -144,7 +245,20 @@ class FabricTrainerBase(ABC):
         self.state["iter_num"] += 1
         return outputs, loss
     
-    def _try_validate(self, fabric: L.Fabric, epochFinished: bool = False, trainingFinished: bool = False):
+    def _try_validate(self, fabric: L.Fabric, epochFinished: bool = False, trainingFinished: bool = False) -> None:
+        """
+        Determine whether to run validation based on configured conditions and perform validation if necessary.
+
+        This method checks various conditions including:
+          - Running every 'k' training steps (if specified)
+          - At the end of an epoch
+          - At the end of training
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance.
+        - epochFinished (bool): Flag indicating if the current epoch has finished.
+        - trainingFinished (bool): Flag indicating if training has completed.
+        """
         validate_after_k_steps = self.config.get("validate_after_k_steps", None)
         validate_on_end = self.config.get("validate_on_end", False)
         validate_after_epoch = self.config.get("validate_after_epoch", False)
@@ -154,21 +268,36 @@ class FabricTrainerBase(ABC):
         end_condition = validate_on_end and trainingFinished
         
         if steps_condition or epoch_condition or end_condition:
-            # Clear cache
+            # Clear CUDA cache if available.
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 
-            fabric.barrier()
+            # Use safe_barrier instead of direct barrier call
+            from src.tasks.pretraining.utils import safe_barrier
+            safe_barrier(fabric, self.cli_logger)
+                
             if 'valid' in self.dataloaders.keys():
                 self._validate(fabric)
                 
-            # Clear cache
+            # Clear CUDA cache again after validation.
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 
             self._save(fabric)
     
-    def _normal_training(self, fabric: L.Fabric, model, batch, step):
+    def _normal_training(self, fabric: L.Fabric, model: L.LightningModule, batch: Tuple[torch.Tensor, ...], step: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Perform a standard training step without gradient accumulation.
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance.
+        - model (L.LightningModule): The model being trained.
+        - batch (tuple): A batch of training data.
+        - step (int): The current training step.
+
+        Returns:
+        - tuple: Contains the outputs from the training step and the loss tensor.
+        """
         with self.autocast_context():
             training_output = model.training_step(batch, step)
             outputs = training_output["outputs"]
@@ -187,7 +316,16 @@ class FabricTrainerBase(ABC):
             self.state["iter_num"] += 1
             return outputs, loss
             
-    def _train(self, fabric):
+    def _train(self, fabric: L.Fabric) -> None:
+        """
+        Execute the main training loop over the specified number of epochs.
+
+        This method iterates over the training dataset, handling both gradient accumulation and normal training,
+        resuming from checkpoints when applicable, and logging training progress as well as performing validation.
+        
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance driving the training.
+        """
         model = self.state["model"]
         self.total_lengths = 0
         self.train_total_t0 = time.perf_counter()
@@ -198,6 +336,7 @@ class FabricTrainerBase(ABC):
         for epoch in range(epochs):
             if fabric.global_rank == 0:
                 self.cli_logger.debug(f"Running Epoch {epoch + 1} of {epochs}")
+            # Use tqdm progress bar for the training dataloader if on the main process.
             batch_iterator = tqdm(self.dataloaders['train'], mininterval=0, colour="blue") \
                 if fabric.global_rank == 0 else self.dataloaders['train']
             batch_iterator, resume_iter = self._get_resume_iterator(batch_iterator, resume_iter)
@@ -218,6 +357,15 @@ class FabricTrainerBase(ABC):
     
     @torch.no_grad()
     def _validate(self, fabric: L.Fabric) -> None:
+        """
+        Validate the model on the validation dataset.
+
+        This method switches the model to evaluation mode, processes the validation data, computes
+        the mean loss, logs the validation metrics, and synchronizes across processes.
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance.
+        """
         t0 = time.perf_counter()
         self.model.eval()
         losses = []
@@ -236,15 +384,43 @@ class FabricTrainerBase(ABC):
         t1 = time.perf_counter()
         elapsed_time = t1 - t0
         self.monitor.eval_end(t1)
-        def fabric_eval_log(loss):
+
+        def fabric_eval_log(loss: torch.Tensor) -> None:
+            """
+            Inner function to log the evaluation metrics.
+
+            Parameters:
+            - loss (torch.Tensor): The computed validation loss.
+            """
             self.cli_logger.info(f"step {self.state['iter_num']}: val loss {loss:.4f}, val time: {elapsed_time * 1000:.2f}ms")
             fabric.log_dict({"metric/val_loss": loss.item()}, self.state["step_count"])
             fabric.log_dict({"metric/val_ppl": math.exp(loss.item())}, self.state["step_count"])
+        
         fabric_eval_log(out)
-        fabric.barrier()
+        
+        # Use safe_barrier instead of direct barrier call
+        from src.tasks.pretraining.utils import safe_barrier
+        safe_barrier(fabric, self.cli_logger)
     
-    def _load_fabric_datasets_dataloaders(self, config, dataset: Dataset | DatasetDict):
-        if not isinstance(dataset, DatasetDict|Dataset):
+    def _load_fabric_datasets_dataloaders(self, config: Box, dataset: Union[HFDataset, DatasetDict]) -> dict[DatasetDict, Union[dict[str, DataLoader], DataLoader]]:
+        """
+        Load datasets and create dataloaders from the given dataset and configuration.
+
+        This method validates the dataset, sets the required format, and creates DataLoader objects for each split.
+
+        Parameters:
+        - config (Box): Configuration parameters including batch_size and num_workers.
+        - dataset (Union[HFDataset, DatasetDict]): The dataset or dictionary of datasets to use.
+
+        Returns:
+        - dict: A dictionary containing the processed datasets and corresponding dataloaders.
+
+        Raises:
+        - TypeError: If the dataset is not a DatasetDict or HFDataset.
+        - ValueError: If required config parameters or dataset splits/columns are missing.
+        - RuntimeError: If setting the format or creating a DataLoader fails.
+        """
+        if not isinstance(dataset, HFDataset | DatasetDict):
             raise TypeError("Expected dataset to be a DatasetDict or Dataset")
         if not hasattr(config, 'batch_size') or not isinstance(config.batch_size, int) or config.batch_size <= 0:
             raise ValueError("config.batch_size must be a positive integer")
@@ -252,7 +428,7 @@ class FabricTrainerBase(ABC):
             raise ValueError("config.num_workers must be a non-negative integer")
         
         # TODO: reformat this logic to be more maintainable
-        if isinstance(dataset, Dataset):
+        if isinstance(dataset, HFDataset):
             dataset = DatasetDict({"train": dataset})
         if not dataset.keys():
             raise ValueError("Dataset is empty, no splits found")
@@ -283,31 +459,45 @@ class FabricTrainerBase(ABC):
             "dataloaders": dataloaders
         }
     
-    def _pipeline(self, fabric):
-        # DETERMINISTIC RESULTS
+    def _pipeline(self, fabric: L.Fabric) -> None:
+        """
+        Orchestrate the complete training pipeline.
+
+        This method sets deterministic seeds if provided, sets up monitoring and log directories,
+        prepares dataloaders for Fabric, instantiates and configures the model (including gradient checkpointing),
+        sets up the optimizer and scheduler, loads from a checkpoint if available, and finally starts training.
+
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance coordinating distributed training.
+        """
+        # Set up deterministic behavior if a seed is provided.
         if self.config.get("seed", None) is not None:
             setup_environment(self.config.seed)
             fabric.seed_everything(self.config.seed)
 
-        # MONITORING
+        # Initialize training monitor with given parameters.
         self.monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=self.config.log_iter_interval)
 
-        # OUTPUT DIR AND SYNC
+        # Create output directory for checkpoints and logs on the main process.
         if fabric.global_rank == 0:
             os.makedirs(self.config.output_dir, exist_ok=True)
-        fabric.barrier()
+        
+        # Use safe_barrier instead of direct barrier call to handle NVML issues
+        from src.tasks.pretraining.utils import safe_barrier
+        safe_barrier(fabric, self.cli_logger)
 
-        # FABRIC DATALOADERS SETUP
+        # Setup Fabric data loaders.
         self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
 
-        # MODEL: instantiate within the fabric.init_module() context
+        # Instantiate and initialize the model within the fabric.init_module() context.
         t0 = time.perf_counter()
         with fabric.init_module():
+            # TODO: Handle more model configurations
             self.model = FabricGeneration(**self.config)
-            # Properly set up the model with fabric for FSDP
+            # Properly set up the model with Fabric for strategies such as FSDP.
             self.model = fabric.setup(self.model)
 
-        # GRADIENT CHECKPOINTING
+        # Enable or disable gradient checkpointing based on configuration.
         if self.config.gradient_checkpointing:
             self.model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={
                 "use_reentrant": False
@@ -316,7 +506,7 @@ class FabricTrainerBase(ABC):
             self.model.model.gradient_checkpointing_disable()
 
         self.cli_logger.info(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
-        # OPTIMIZER
+        # Set up the optimizer using a helper function.
         optimizer = select_optimizer(
             self.config.get("optimizer", "adamw"), 
             self.model, 
@@ -326,7 +516,7 @@ class FabricTrainerBase(ABC):
             self.config.beta2
         )
         optimizer = fabric.setup_optimizers(optimizer)
-        # SCHEDULER
+        # Set up the scheduler using another helper function.
         scheduler = select_scheduler(
             optimizer, 
             self.config.lr_scheduler, 
@@ -337,7 +527,7 @@ class FabricTrainerBase(ABC):
             self.config.warmup_proportion, 
             self.config.gradient_accumulation_steps
         )
-        # STATE
+        # Store initial training state.
         self.state = {
             "model": self.model, 
             "optimizer": optimizer, 
@@ -346,9 +536,9 @@ class FabricTrainerBase(ABC):
             "step_count": 0, 
             "scheduler": scheduler
         }
-        # RESUME
+        # Load training state from a checkpoint if available.
         self._load_from_checkpoint(fabric)
-        # TRAINING
+        # Run the training loop.
         train_time = time.perf_counter()
         self._train(fabric)
         self.cli_logger.info(f"Training time: {(time.perf_counter() - train_time):.2f}s")

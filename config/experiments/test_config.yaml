@@ -1,0 +1,47 @@
+task: pretraining
+
+# Output configuration
+output_dir: "outputs/test_run"
+
+# Random seed for reproducibility
+seed: 42
+
+# Data configuration
+dataset:
+  source: "local"
+  nameOrPath: "tests/fixtures/data/tokenized_dataset"
+
+# Model configuration
+model_name: "gpt2"  # Using GPT2 small for tests
+precision: "16-mixed"
+
+# Training configurations
+number_epochs: 1
+batch_size: 2
+gradient_accumulation_steps: 1
+grad_clip: 1.0
+lr: 1e-5
+lr_decay: true
+lr_scheduler: "cosine"
+warmup_proportion: 0.1
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Distributed strategy
+parallelization_strategy: "none"  # Can be "none", "ddp", "fsdp", "deep_speed"
+
+# FSDP specific parameters (used if parallelization_strategy is "fsdp")
+auto_wrap_policy: "gpt2"
+sharding_strategy: "FULL_SHARD"
+state_dict_type: "sharded"
+limit_all_gathers: true
+cpu_offload: false
+gradient_checkpointing: false
+num_workers: 1
+
+# DDP specific parameters (used if parallelization_strategy is "ddp")
+# backend: "gloo"  # Uncomment for DDP
+
+# Logging configuration
+logging_config: "none"  # Can be "none" or "wandb"

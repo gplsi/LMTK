@@ -1,4 +1,14 @@
+"""
+This module provides a utility to recursively scan directories for files with specific or 
+supported file extensions. The primary function, scan_directory, traverses a given directory 
+tree and groups files by their parent folder, filtering them by either a provided extension 
+or a set of default supported extensions.
+
+Supported file extensions include: "txt", "csv", and "json".
+"""
+
 import os
+from typing import Dict, Optional
 from typing import Dict
 from src.utils.logging import get_logger
 
@@ -9,7 +19,15 @@ local_logger = get_logger(__name__)
 
 def scan_directory(path, extension: str = None, logger = local_logger) -> Dict:
     """
-    Scans the given directory for text files and returns a dictionary of data sources and their files.
+    Scan the provided directory (and its subdirectories) for files matching a given extension
+    or the default set of supported extensions.
+
+    The function traverses the entire directory tree starting from 'path'. For each directory,
+    it collects files that satisfy the extension filter:
+      - If an extension is explicitly provided, only files ending with that extension are collected.
+      - If no extension is provided, any file with an extension listed in SUPPORTED_EXTENSIONS is collected.
+    The results are returned in a dictionary where the keys are the names of the directories (data sources)
+    and the values are lists containing the full paths to the matching files.
 
     Args:
         path (str): Path to the directory containing subfolders with text files.
@@ -17,8 +35,13 @@ def scan_directory(path, extension: str = None, logger = local_logger) -> Dict:
         logger (str, optional): If provided, only files with this extension will be included.
 
     Returns:
-        dict: A dictionary where keys are data sources (folder names) and values are lists of text file paths.
+        Dict[str, list]: A dictionary mapping each data source (directory name) to a list of file paths
+                         that match the specified filter criteria.
+
+    Raises:
+        ValueError: If an extension is provided that is not among the supported extensions.
     """
+    # Validate the provided file extension if it is not None.
     if (extension is not None) and (extension not in SUPPORTED_EXTENSIONS):
         raise ValueError(f"Unsupported file extension: {extension}.")
 
@@ -41,6 +64,7 @@ def scan_directory(path, extension: str = None, logger = local_logger) -> Dict:
             total_count = len(files)
             logger.debug(f"Directory: {root} - Found {matching_count}/{total_count} files with .{extension} extension")
         else:
+            # When no extension is provided, gather files whose extension is in SUPPORTED_EXTENSIONS.
             data_files = [
                 os.path.join(root, file)
                 for file in files
@@ -50,6 +74,7 @@ def scan_directory(path, extension: str = None, logger = local_logger) -> Dict:
             total_count = len(files)
             logger.debug(f"Directory: {root} - Found {matching_count}/{total_count} files with supported extensions {SUPPORTED_EXTENSIONS}")
 
+        # If matching files are found in the current directory, add them to the result dictionary.
         if data_files:
             data_sources[source] = data_files
             total_files_found += len(data_files)

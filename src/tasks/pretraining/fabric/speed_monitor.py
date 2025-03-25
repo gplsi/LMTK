@@ -187,7 +187,7 @@ class SpeedMonitorBase:
         window_size: int = 100,
         time_unit: str = "hours",
         log_iter_interval: int = 1,
-    ):
+    ) -> None:
         self.flops_available = flops_available
         self.log_dict = log_dict
         self.log_iter_interval = log_iter_interval
@@ -225,7 +225,7 @@ class SpeedMonitorBase:
         flops_per_batch: Optional[int] = None,  # (per device)
         lengths: Optional[int] = None,  # total length of the samples seen (per device)
         train_loss: Optional[float] = None,
-    ):
+    ) -> None:
         self.iter += 1
         metrics = {}
 
@@ -294,7 +294,7 @@ class SpeedMonitorBase:
         if self.iter % self.log_iter_interval == 0:
             self.log_dict(metrics, step_count)
 
-    def eval_end(self, eval_elapsed: float):
+    def eval_end(self, eval_elapsed: float) -> None:
         self.total_eval_wct += eval_elapsed  # seconds
 
 
