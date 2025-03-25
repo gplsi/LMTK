@@ -20,7 +20,7 @@ os.environ["NCCL_P2P_DISABLE"] = "1"
 
 # Optimize DeepSpeed performance and disable NVML features
 os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
-os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"
+#os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"
 os.environ["NCCL_IGNORE_DISABLED_P2P"] = "1"
 os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
 

@@ -1,6 +1,7 @@
 # Disable NVML initialization BEFORE importing any other modules
 import os
 # Set critical environment variables to disable NVML functions
+os.environ['TORCH_NCCL_ASYNC_ERROR_HANDLING'] = '1'
 os.environ["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"
 os.environ["NCCL_P2P_DISABLE"] = "1"
 os.environ["NVML_SKIP_INIT"] = "1"  # Skip NVML initialization completely
