@@ -18,6 +18,7 @@ from src.tasks.pretraining.fabric.distributed import FSDP, DeepSpeed, Distribute
 from utils import inherit_init_params
 from utils.orchestrator import BaseOrchestrator
 from datasets import Dataset as HFDataset
+import os
 
 class ContinualOrchestrator(BaseOrchestrator):
     """
@@ -46,13 +47,17 @@ class ContinualOrchestrator(BaseOrchestrator):
         # Check if CUDA is available on the current machine
         if torch.cuda.is_available():
             self.devices = torch.cuda.device_count()
-            self.logger.info(f"Found {self.devices} CUDA devices available for training")
+            # Get local rank if running in distributed mode
+            local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+            if local_rank == 0:  # Only log from rank 0
+                self.logger.info(f"Found {self.devices} CUDA devices available for training")
             # If at least one CUDA device exists, use them for training
             if self.devices > 0:
                 return
             
         # Log a warning and fallback to CPU if no CUDA devices are found
-        self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
+        if local_rank == 0:
+            self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
         self.devices = "cpu"
 
     def validate_config(self) -> None:

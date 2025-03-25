@@ -120,66 +120,6 @@ def get_flops_available(device: torch.device, precision: str) -> Optional[float]
 
 
 class SpeedMonitorBase:
-    """Logs the training throughput and utilization.
-
-    +-------------------------------------+-----------------------------------------------------------+
-    | Key                                 | Logged data                                               |
-    +=====================================+===========================================================+
-    |                                     | Rolling average (over `window_size` most recent           |
-    | `throughput/batches_per_sec`        | batches) of the number of batches processed per second    |
-    |                                     |                                                           |
-    +-------------------------------------+-----------------------------------------------------------+
-    |                                     | Rolling average (over `window_size` most recent           |
-    | `throughput/samples_per_sec`        | batches) of the number of samples processed per second    |
-    |                                     |                                                           |
-    +-------------------------------------+-----------------------------------------------------------+
-    |                                     | Rolling average (over `window_size` most recent           |
-    | `throughput/tokens_per_sec`         | batches) of the number of tokens processed per second.    |
-    |                                     | This may include padding depending on dataset             |
-    +-------------------------------------+-----------------------------------------------------------+
-    |                                     | Estimates flops by `flops_per_batch * batches_per_sec`    |
-    | `throughput/flops_per_sec`          |                                                           |
-    |                                     |                                                           |
-    +-------------------------------------+-----------------------------------------------------------+
-    | `throughput/device/batches_per_sec` | `throughput/batches_per_sec` divided by world size        |
-    +-------------------------------------+-----------------------------------------------------------+
-    | `throughput/device/samples_per_sec` | `throughput/samples_per_sec` divided by world size        |
-    +-------------------------------------+-----------------------------------------------------------+
-    |                                     | `throughput/tokens_per_sec` divided by world size. This   |
-    | `throughput/device/tokens_per_sec`  | may include pad tokens depending on dataset               |
-    |                                     |                                                           |
-    +-------------------------------------+-----------------------------------------------------------+
-    |                                     | `throughput/flops_per_sec` divided by world size. Only    |
-    | `throughput/device/flops_per_sec`   | logged when model has attribute `flops_per_batch`         |
-    |                                     |                                                           |
-    +-------------------------------------+-----------------------------------------------------------+
-    |                                     | `throughput/device/flops_per_sec` divided by world size.  |
-    | `throughput/device/mfu`             |                                                           |
-    |                                     |                                                           |
-    +-------------------------------------+-----------------------------------------------------------+
-    | `time/train`                        | Total elapsed training time                               |
-    +-------------------------------------+-----------------------------------------------------------+
-    | `time/val`                          | Total elapsed validation time                             |
-    +-------------------------------------+-----------------------------------------------------------+
-    | `time/total`                        | Total elapsed time (time/train + time/val)                |
-    +-------------------------------------+-----------------------------------------------------------+
-
-    Notes:
-        - The implementation assumes that devices are homogeneous as it normalizes by the world size.
-        - Tokens/sec, flops/sec and MFU do not account for padding tokens if present. We suggest using samples/sec or
-          batches/sec to measure throughput under this circumstance.
-        - Be careful when comparing MFU numbers across projects, as this will highly depend on the ``flops_per_batch``.
-          There is no widespread, realistic, and reliable implementation to compute them.
-          We suggest using our ``measure_flops`` function, but many other works will use ``estimated_flops`` which
-          will almost always be an overestimate when compared to the true value.
-
-    Args:
-        window_size (int, optional): Number of batches to use for a rolling average of throughput.
-            Defaults to 100.
-        time_unit (str, optional): Time unit to use for `time` logging. Can be one of
-            'seconds', 'minutes', 'hours', or 'days'. Defaults to 'hours'.
-    """
-
     def __init__(
         self,
         flops_available: float,
@@ -187,34 +127,39 @@ class SpeedMonitorBase:
         window_size: int = 100,
         time_unit: str = "hours",
         log_iter_interval: int = 1,
+        rank: int = 0
     ) -> None:
         self.flops_available = flops_available
         self.log_dict = log_dict
         self.log_iter_interval = log_iter_interval
-        # Track the batch num samples and wct to compute throughput over a window of batches
-        self.history_samples: Deque[int] = deque(maxlen=window_size + 1)
-        self.history_training_loss: Deque[int] = deque(maxlen=log_iter_interval)
-        self.history_wct: Deque[float] = deque(maxlen=window_size + 1)
-        self.history_lengths: Deque[int] = deque(maxlen=window_size + 1)
-        self.history_flops: Deque[int] = deque(maxlen=window_size + 1)
+        self.rank = rank
+        
+        # Track metrics only if this is rank 0
+        if rank == 0:
+            # Track the batch num samples and wct to compute throughput over a window of batches
+            self.history_samples: Deque[int] = deque(maxlen=window_size + 1)
+            self.history_training_loss: Deque[int] = deque(maxlen=log_iter_interval)
+            self.history_wct: Deque[float] = deque(maxlen=window_size + 1)
+            self.history_lengths: Deque[int] = deque(maxlen=window_size + 1)
+            self.history_flops: Deque[int] = deque(maxlen=window_size + 1)
 
-        self.divider = 1
-        if time_unit == "seconds":
             self.divider = 1
-        elif time_unit == "minutes":
-            self.divider = 60
-        elif time_unit == "hours":
-            self.divider = 60 * 60
-        elif time_unit == "days":
-            self.divider = 60 * 60 * 24
-        else:
-            raise ValueError(
-                f'Invalid time_unit: {time_unit}. Must be one of "seconds", "minutes", "hours", or "days".'
-            )
+            if time_unit == "seconds":
+                self.divider = 1
+            elif time_unit == "minutes":
+                self.divider = 60
+            elif time_unit == "hours":
+                self.divider = 60 * 60
+            elif time_unit == "days":
+                self.divider = 60 * 60 * 24
+            else:
+                raise ValueError(
+                    f'Invalid time_unit: {time_unit}. Must be one of "seconds", "minutes", "hours", or "days".'
+                )
 
-        # Keep track of time spent evaluating
-        self.total_eval_wct = 0.0
-        self.iter = -1
+            # Keep track of time spent evaluating
+            self.total_eval_wct = 0.0
+            self.iter = -1
 
     def on_train_batch_end(
         self,
@@ -226,6 +171,10 @@ class SpeedMonitorBase:
         lengths: Optional[int] = None,  # total length of the samples seen (per device)
         train_loss: Optional[float] = None,
     ) -> None:
+        # Only track metrics on rank 0
+        if self.rank != 0:
+            return
+            
         self.iter += 1
         metrics = {}
 
@@ -236,73 +185,71 @@ class SpeedMonitorBase:
             # if lengths are passed, there should be as many values as samples
             assert len(self.history_samples) == len(self.history_lengths)
         self.history_wct.append(train_elapsed)
+        
+        # Update metrics
         if len(self.history_wct) == self.history_wct.maxlen:
             elapsed_batches = len(self.history_samples) - 1
             elapsed_samples = self.history_samples[-1] - self.history_samples[0]
             elapsed_wct = self.history_wct[-1] - self.history_wct[0]
             samples_per_sec = elapsed_samples * world_size / elapsed_wct
             dev_samples_per_sec = elapsed_samples / elapsed_wct
-            metrics.update(
-                {
-                    "throughput/batches_per_sec": elapsed_batches * world_size / elapsed_wct,
-                    "throughput/samples_per_sec": samples_per_sec,
-                    "throughput/device/batches_per_sec": elapsed_batches / elapsed_wct,
-                    "throughput/device/samples_per_sec": dev_samples_per_sec,
-                }
-            )
+            
+            metrics.update({
+                "throughput/batches_per_sec": elapsed_batches * world_size / elapsed_wct,
+                "throughput/samples_per_sec": samples_per_sec,
+                "throughput/device/batches_per_sec": elapsed_batches / elapsed_wct,
+                "throughput/device/samples_per_sec": dev_samples_per_sec,
+            })
+            
             if lengths is not None:
                 elapsed_lengths = int(self.history_lengths[-1]) - int(self.history_lengths[0])
-                avg_length = elapsed_lengths / elapsed_batches  
-                metrics.update(
-                    {
-                        "throughput/tokens_per_sec": samples_per_sec * avg_length,
-                        "throughput/device/tokens_per_sec": dev_samples_per_sec * avg_length,
-                        "total_tokens": avg_length * world_size * samples,
-                    }
-                )
+                avg_length = elapsed_lengths / elapsed_batches
+                metrics.update({
+                    "throughput/tokens_per_sec": samples_per_sec * avg_length,
+                    "throughput/device/tokens_per_sec": dev_samples_per_sec * avg_length,
+                    "total_tokens": avg_length * world_size * samples,
+                })
+                
                 if train_loss is not None:
                     avg_loss = sum(self.history_training_loss) / len(self.history_training_loss)
-                    metrics.update(
-                        {
-                            "metric/train_loss": avg_loss,
-                            "metric/train_ppl": math.exp(avg_loss)
-                        }
-                    )
+                    metrics.update({
+                        "metric/train_loss": avg_loss,
+                        "metric/train_ppl": math.exp(avg_loss)
+                    })
 
         if flops_per_batch is not None:
             # sum of flops per batch across ranks
             self.history_flops.append(flops_per_batch * world_size)
+            
         if len(self.history_flops) == self.history_flops.maxlen:
             elapsed_flops = sum(self.history_flops) - self.history_flops[0]
             elapsed_wct = self.history_wct[-1] - self.history_wct[0]
             flops_per_sec = elapsed_flops / elapsed_wct
             device_flops_per_sec = flops_per_sec / world_size
-            metrics.update(
-                {"throughput/flops_per_sec": flops_per_sec, "throughput/device/flops_per_sec": device_flops_per_sec}
-            )
+            metrics.update({
+                "throughput/flops_per_sec": flops_per_sec,
+                "throughput/device/flops_per_sec": device_flops_per_sec
+            })
             if self.flops_available:
                 metrics["throughput/device/mfu"] = device_flops_per_sec / self.flops_available
 
-        metrics.update(
-            {
-                "time/train": train_elapsed / self.divider,
-                "time/val": self.total_eval_wct / self.divider,
-                "time/total": (train_elapsed + self.total_eval_wct) / self.divider,
-                "samples": samples,
-            }
-        )
+        metrics.update({
+            "time/train": train_elapsed / self.divider,
+            "time/val": self.total_eval_wct / self.divider,
+            "time/total": (train_elapsed + self.total_eval_wct) / self.divider,
+            "samples": samples,
+        })
+
+        # Log metrics at specified intervals
         if self.iter % self.log_iter_interval == 0:
             self.log_dict(metrics, step_count)
 
-    def eval_end(self, eval_elapsed: float) -> None:
-        self.total_eval_wct += eval_elapsed  # seconds
-
-
 class SpeedMonitorFabric(SpeedMonitorBase):
     def __init__(self, fabric: Fabric, *args: Any, **kwargs: Any) -> None:
-        # TODO: this will not work properly if a precision plugin is passed to Fabric
+        # Get FLOPS available for the device
         flops_available = get_flops_available(fabric.device, fabric._connector._precision_input)
-        super().__init__(flops_available, fabric.log_dict, *args, **kwargs)
+        # Pass the rank to base class
+        super().__init__(flops_available, fabric.log_dict, rank=fabric.global_rank, *args, **kwargs)
 
     @fabric_rank_zero_only
     def on_train_batch_end(self, *args: Any, **kwargs: Any):

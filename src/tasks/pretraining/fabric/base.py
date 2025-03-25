@@ -19,6 +19,7 @@ import itertools
 # Import Lightning and other necessary libraries
 import lightning as L
 from pytorch_lightning.loggers import WandbLogger
+import wandb
 import os
 
 # Import custom utilities
@@ -191,7 +192,7 @@ class FabricTrainerBase(ABC):
         elapsed = time.perf_counter() - self.train_total_t0
         
         iter_num = self.state["iter_num"]
-        num_iters = self.initial_iter + (self.dataset['train'].num_samples // 
+        num_iters = self.initial_iter + (len(self.dataset['train']) // 
                                          (self.config.batch_size * fabric.world_size))
         
         # Calculate loss average for logging

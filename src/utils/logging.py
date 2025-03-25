@@ -60,86 +60,66 @@ class CustomFormatter(logging.Formatter):
     RESET = '\033[0m'
     
     def format(self, record: logging.LogRecord) -> str:
-        """
-        Format the specified log record as text, inserting ANSI color codes.
-
-        This overridden method wraps the log level name and the log message with color codes
-        based on the record's log level.
-
-        Args:
-            record (logging.LogRecord): The log record to format.
-
-        Returns:
-            str: The formatted log message with ANSI color codes.
-        """
-        # Retrieve the color associated with the record's level; default is None if not found.
-        color = self.COLORS.get(record.levelno)
-        # Decorate the level name and the message with the retrieved color and RESET code.
-        record.levelname = f'{color}{record.levelname}{self.RESET}'
-        record.msg = f'{color}{record.msg}{self.RESET}'
-        # Delegate the rest of the formatting to the parent class.
+        """Format log record with color and avoid double formatting"""
+        if not hasattr(record, 'formatted_message'):
+            # Only color and format the message once
+            color = self.COLORS.get(record.levelno, '')
+            record.levelname = f'{color}{record.levelname}{self.RESET}'
+            record.msg = f'{color}{record.msg}{self.RESET}'
+            record.formatted_message = True
+            
+            # Add process rank to log format if in distributed mode
+            if hasattr(record, 'rank'):
+                self._fmt = f'%(asctime)s [%(rank)s] - %(name)s - %(levelname)s - %(message)s'
+            
         return super().format(record)
 
 
 def get_logger(
     name: str,
-    level: Optional[VerboseLevel] = VerboseLevel.INFO
+    level: Optional[VerboseLevel] = VerboseLevel.INFO,
+    rank: Optional[int] = None
 ) -> logging.Logger:
     """
     Creates and configures a logger with a custom formatter and specified verbosity level.
-
-    This function sets up a logger that outputs to the console (stdout) using the custom colorized
-    formatter. It clears any pre-existing handlers to avoid duplicate log entries and maps the provided
-    verbosity level (from the VerboseLevel enum) to a corresponding standard logging level.
-
+    
     Args:
         name (str): The name of the logger (typically __name__).
         level (Optional[VerboseLevel]): The desired verbosity level. Defaults to VerboseLevel.INFO.
-
-    Raises:
-        ValueError: If the provided verbosity level is not within the acceptable range.
-
+        rank (Optional[int]): The process rank in distributed training. Used to filter logs.
+    
     Returns:
         logging.Logger: A logger instance configured with the specified settings.
     """
-    # Validate that the provided level is within the valid range.
     if (level < VerboseLevel.NONE) or (level > VerboseLevel.DEBUG):
         raise ValueError("Invalid verbose level. Must be between None and Debug.")
     
-    # Retrieve (or create) a logger instance with the given name.
     logger = logging.getLogger(name)
     
-    # Remove any existing handlers to prevent duplicate log outputs.
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    # Only configure handler if it hasn't been configured yet
+    if not logger.handlers:
+        console_handler = logging.StreamHandler(sys.stdout)
+        formatter = CustomFormatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
     
-    # Create a stream handler that sends log messages to stdout.
-    console_handler = logging.StreamHandler(sys.stdout)
-    
-    # Set a custom formatter for the handler to include colored logs and a specific message format.
-    console_handler.setFormatter(CustomFormatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    ))
-    
-    # Attach the handler to the logger.
-    logger.addHandler(console_handler)
-    
-    # Local mapping for the current logger instantiation to map VerboseLevel to standard logging levels.
-    level_mapping = {
-        VerboseLevel.NONE: logging.CRITICAL + 1,
-        VerboseLevel.ERRORS: logging.ERROR,
-        VerboseLevel.WARNINGS: logging.WARNING,
-        VerboseLevel.INFO: logging.INFO,
-        VerboseLevel.DEBUG: logging.DEBUG
-    }
-    
-    # Set the logger's level based on the provided verbosity level.
+    # Set log level
     logger.setLevel(level_mapping.get(level, logging.INFO))
     
-    # If verbosity is set to NONE, disable the logger entirely.
+    # Add rank filter if specified
+    if rank is not None:
+        logger.rank = rank
+        if rank != 0:  # Only show certain logs from rank 0
+            logger.setLevel(logging.WARNING)
+    
     if level == VerboseLevel.NONE:
         logger.disabled = True
+    
+    # Prevent log propagation to avoid duplicates
+    logger.propagate = False
     
     return logger
 

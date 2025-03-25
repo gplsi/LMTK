@@ -37,25 +37,29 @@ class FabricGeneration(L.LightningModule):
                 - zero_stage (Optional): DeepSpeed ZeRO stage level.
         """
         super().__init__()
-        # Initialize the logger with the module's name and provided verbosity level.
-        self.cli_logger = get_logger(__name__, kwargs.get("verbose_level", VerboseLevel.DEBUG))
+        # Initialize logger with rank awareness
+        self.cli_logger = get_logger(
+            __name__, 
+            kwargs.get("verbose_level", VerboseLevel.DEBUG),
+            rank=kwargs.get("local_rank", None)
+        )
         self.args = kwargs
         model_name = kwargs["model_name"]
         
-        # Determine the correct torch data type based on the specified precision.
+        # Determine the correct torch data type based on precision
         if kwargs['precision'] == 'bf16-true':
             torch_dtype = torch.bfloat16
         else:
             torch_dtype = torch.float32
         
-        # Check if using DeepSpeed ZeRO-3, which requires ignore_mismatched_sizes=True
-        # due to parameter partitioning
+        # Check if using DeepSpeed ZeRO-3
         ignore_mismatched = False
         if kwargs.get("parallelization_strategy", "") == "deep_speed" and kwargs.get("zero_stage", 0) == 3:
-            self.cli_logger.info("Using DeepSpeed ZeRO Stage 3: Enabling ignore_mismatched_sizes=True")
+            if kwargs.get("local_rank", 0) == 0:  # Only log from rank 0
+                self.cli_logger.info("Using DeepSpeed ZeRO Stage 3: Enabling ignore_mismatched_sizes=True")
             ignore_mismatched = True
         
-        # Load the pre-trained causal language model without caching to support training.
+        # Load the pre-trained model
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch_dtype,
