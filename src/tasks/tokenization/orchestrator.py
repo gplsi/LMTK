@@ -26,10 +26,18 @@ class TokenizationOrchestrator(BaseOrchestrator):
 
     def tokenize_dataset(self, dataset: Dataset) -> Dataset:
         """Execute tokenization task."""
+        # Safely access required and optional parameters
+        context_length = self.config.tokenizer.context_length
+        tokenizer_name = self.config.tokenizer.name
+        
+        # Access optional overlap parameter with .get()
+        overlap = self.config.tokenizer.get("overlap")
+        
+        # Create tokenizer configuration
         tokenizer_config = TokenizerConfig(
-            context_length=self.config.tokenizer.context_length,
-            overlap=self.config.tokenizer.get("overlap"),
-            tokenizer_name=self.config.tokenizer.name,
+            context_length=context_length,
+            overlap=overlap,
+            tokenizer_name=tokenizer_name,
             verbose_level=VerboseLevel(
                 self.config.get("verbose_level", VerboseLevel.INFO)
             ),
