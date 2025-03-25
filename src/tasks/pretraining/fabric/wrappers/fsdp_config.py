@@ -46,13 +46,33 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str, logger=None) ->
     """
     # Start with the default configuration
     fsdp_config = get_default_fsdp_config()
-    if logger:
-        logger.debug(f"Default FSDP config: {fsdp_config}")
+
+    # Helper function to log only on rank 0
+    def rank_zero_log(level, msg):
+        if logger:
+            # Check if we're running in a distributed environment and this is rank 0
+            if hasattr(logger, 'fabric'):
+                if logger.fabric.global_rank == 0:
+                    if level == 'debug':
+                        logger.debug(msg)
+                    elif level == 'info':
+                        logger.info(msg)
+                    elif level == 'warning':
+                        logger.warning(msg)
+            else:
+                # If no fabric attribute (single process), just log normally
+                if level == 'debug':
+                    logger.debug(msg)
+                elif level == 'info':
+                    logger.info(msg)
+                elif level == 'warning':
+                    logger.warning(msg)
+    
+    rank_zero_log('debug', f"Default FSDP config: {fsdp_config}")
     
     # Check if this is a Box object and handle it properly
     if hasattr(config, '_box_config'):
-        if logger:
-            logger.debug("Config is a Box object, accessing Box attributes")
+        rank_zero_log('debug', "Config is a Box object, accessing Box attributes")
         
         # In Box objects, the attributes are directly accessible as attributes
         # Try accessing common FSDP configuration keys directly
@@ -61,13 +81,11 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str, logger=None) ->
         # First try to access auto_wrap_policy directly on the config object
         if hasattr(config, 'auto_wrap_policy'):
             policy_name = config.auto_wrap_policy
-            if logger:
-                logger.debug(f"Found auto_wrap_policy directly in Box config: {policy_name}")
+            rank_zero_log('debug', f"Found auto_wrap_policy directly in Box config: {policy_name}")
             
             # Create appropriate wrap policy based on the string value
             if isinstance(policy_name, str):
-                if logger:
-                    logger.debug(f"Creating auto_wrap_policy for: {policy_name}")
+                rank_zero_log('debug', f"Creating auto_wrap_policy for: {policy_name}")
                 auto_wrap_policy = create_auto_wrap_policy(
                     model_name=model_name if policy_name == "auto" else policy_name,
                     min_num_params=fsdp_config["min_num_params"]
@@ -78,18 +96,15 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str, logger=None) ->
         for key in ['sharding_strategy', 'state_dict_type', 'limit_all_gathers', 'cpu_offload']:
             if hasattr(config, key):
                 value = getattr(config, key)
-                if logger:
-                    logger.debug(f"Setting {key} = {value} directly from Box config")
+                rank_zero_log('debug', f"Setting {key} = {value} directly from Box config")
                 fsdp_config[key] = value
     else:
         # Handle regular dictionary config
-        if logger:
-            logger.debug(f"User config keys: {list(config.keys())}")
+        rank_zero_log('debug', f"User config keys: {list(config.keys())}")
         
         # Check if auto_wrap_policy exists in the config
         if 'auto_wrap_policy' in config:
-            if logger:
-                logger.debug(f"Found auto_wrap_policy in config: {config['auto_wrap_policy']}")
+            rank_zero_log('debug', f"Found auto_wrap_policy in config: {config['auto_wrap_policy']}")
             policy_name = config['auto_wrap_policy']
             if isinstance(policy_name, str):
                 auto_wrap_policy = create_auto_wrap_policy(
@@ -101,14 +116,12 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str, logger=None) ->
             # Override default values with user-provided settings if available
             for key, value in config.items():
                 if key in fsdp_config and value is not None:
-                    if logger:
-                        logger.debug(f"Setting {key} = {value} from user config")
+                    rank_zero_log('debug', f"Setting {key} = {value} from user config")
                     fsdp_config[key] = value
     
     # If no policy was specified or found, create one based on model_name
     if not fsdp_config["auto_wrap_policy"]:
-        if logger:
-            logger.debug(f"No policy specified, creating one based on model_name: {model_name}")
+        rank_zero_log('debug', f"No policy specified, creating one based on model_name: {model_name}")
         auto_wrap_policy = create_auto_wrap_policy(
             model_name=model_name,
             min_num_params=fsdp_config["min_num_params"]
@@ -121,11 +134,9 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str, logger=None) ->
             # Create a policy dictionary for transformer layers if applicable
             layer_cls = fsdp_config["auto_wrap_policy"].keywords["transformer_layer_cls"]
             fsdp_config["activation_checkpointing_policy"] = {layer_cls: dict()}
-            if logger:
-                logger.debug(f"Set activation checkpointing for {layer_cls}")
+            rank_zero_log('debug', f"Set activation checkpointing for {layer_cls}")
     
-    if logger:
-        logger.debug(f"Final FSDP config auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
+    rank_zero_log('debug', f"Final FSDP config auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
     return fsdp_config
 
 def get_transformer_layer_class(model_name: str) -> Optional[str]:

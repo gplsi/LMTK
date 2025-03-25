@@ -177,26 +177,47 @@ class FabricTrainerBase(ABC):
     
     def _train_logs(self, fabric: L.Fabric, loss: torch.Tensor) -> None:
         """
-        Log training metrics and monitor training progress.
-
-        Parameters:
-        - fabric (L.Fabric): The Fabric instance for logging and synchronization.
-        - loss (torch.Tensor): The loss tensor from the current training step.
+        Log training metrics for monitoring.
         """
-        self.cli_logger.debug(
-            f"iter {self.state['iter_num']} step {self.state['step_count']}: loss {loss.item():.4f}, iter time:"
-            f" {(self.train_t1 - self.train_iter_t0) * 1000:.2f}ms remaining time: "
-            # f"{(self.train_t1 - self.train_total_t0) / (self.state['iter_num'] - self.initial_iter) * (self.config.max_iters - self.state['iter_num']) / 3600:.2f} hours. "
+        # Only log if we are at the appropriate iteration interval
+        if (self.state["iter_num"] % self.config.log_iter_interval) != 0:
+            return
+        
+        # Only the main process should log to avoid duplicate messages
+        if fabric.global_rank != 0:
+            return
+            
+        iter_time = time.perf_counter() - self.train_iter_t0
+        elapsed = time.perf_counter() - self.train_total_t0
+        
+        iter_num = self.state["iter_num"]
+        num_iters = self.initial_iter + (self.dataset['train'].num_samples // 
+                                         (self.config.batch_size * fabric.world_size))
+        
+        # Calculate loss average for logging
+        all_loss = self._all_gather_mean(fabric, loss).item()
+        tokens_processed = (self.state["iter_num"] - self.initial_iter) * self.config.batch_size * fabric.world_size
+        
+        tokens_per_sec = self.total_lengths / elapsed
+        
+        # Log to the CLI and wandb
+        self.cli_logger.info(
+            f"iter {iter_num}/{num_iters}: loss {all_loss:.4f}, "
+            f"iter time: {iter_time:.2f}s, "
+            f"tokens/sec: {tokens_per_sec:.1f}, "
+            f"LR: {self.state['optimizer'].param_groups[0]['lr']:.5e}"
         )
-        # Monitor the training progress using SpeedMonitorFabric.
-        self.monitor.on_train_batch_end(
-            self.state["iter_num"] * self.config.batch_size,
-            self.train_t1 - self.train_total_t0,
-            fabric.world_size,
-            self.state["step_count"],
-            lengths=self.total_lengths,
-            train_loss=loss.item()
-        )
+
+        if self.config.logging_config == 'wandb' and fabric.global_rank == 0:
+            wandb_dict = {
+                "loss": all_loss,
+                "iter": iter_num,
+                "iter_time": iter_time,
+                "tokens_processed": tokens_processed,
+                "tokens_per_sec": tokens_per_sec,
+                "lr": self.state["optimizer"].param_groups[0]["lr"],
+            }
+            wandb.log(wandb_dict, step=iter_num)
     
     def _gradient_clipping(self, fabric: L.Fabric, model: L.LightningModule, optimizer: torch.optim.Optimizer) -> None:
         """
