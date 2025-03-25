@@ -43,9 +43,12 @@ allOf:
               format:
                 type: string
                 default: "any"
-                enum: ["csv", "txt", "json", "any"]
+                enum: ["csv", "txt", "json", "jsonl"]
               text_column:
                 type: string
+              text_key:
+                type: string
+                description: "For JSON/JSONL files, the key to extract text from when each entry is a dictionary"
               encoding:
                 type: string
                 default: "utf-8"
