@@ -8,7 +8,6 @@ Supported file extensions include: "txt", "csv", and "json".
 """
 
 import os
-from typing import Dict, Optional
 from typing import Dict
 from src.utils.logging import get_logger
 

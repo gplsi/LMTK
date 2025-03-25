@@ -38,7 +38,6 @@ from datasets import (
     DatasetDict,
 )
 from datasets import Dataset as HFDataset
-from datasets import Dataset as HFDataset
 import os
 from functools import partial
 from enum import IntEnum
@@ -424,7 +423,6 @@ class DatasetStorage:
 
     def save_to_disk(
         self,
-        dataset: HFDataset,
         dataset: HFDataset,
         output_path: str,
         max_shard_size: str | int | None = None,
