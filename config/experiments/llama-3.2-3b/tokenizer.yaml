@@ -1,0 +1,23 @@
+task: "tokenization"
+experiment_name: "anonymized_corpus_va"
+verbose_level: 4
+
+tokenizer:
+  name: "meta-llama/Llama-3.2-3B"
+  context_length: 2048
+  overlap: 512
+  task: "causal_pretraining"
+
+dataset:
+  source: "local"
+  nameOrPath: "/workspace/data/anonymized"
+  format: "files"
+  file_config:
+    text_key: "text"
+    format: "jsonl"
+    encoding: "utf-8"
+
+output:
+  path: "data/tokenized/anonymized-va-llama"
+
+test_size: 0
