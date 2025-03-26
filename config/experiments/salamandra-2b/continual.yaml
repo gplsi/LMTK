@@ -5,7 +5,7 @@ verbose_level: 4
 # Training data
 dataset:
   source: "local"  # huggingface, local
-  nameOrPath: "/workspace/data/tokenized/anonymized-va"
+  nameOrPath: "/workspace/data/tokenized/anonymized-va-salamandra"
 
 # Output dir
 output_dir: "output/"
