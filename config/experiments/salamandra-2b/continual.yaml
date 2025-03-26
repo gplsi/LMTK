@@ -55,7 +55,7 @@ log_iter_interval: 10
 parallelization_strategy: "fsdp"
 
 # FSDP specific parameters
-auto_wrap_policy: "llama"
+# auto_wrap_policy: "llama"
 sharding_strategy: "FULL_SHARD"
 state_dict_type: "sharded"
 limit_all_gathers: true
