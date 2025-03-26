@@ -63,6 +63,10 @@ class TokenizationOrchestrator(BaseOrchestrator):
         Returns:
             HFDataset: The tokenized version of the input dataset.
         """
+        context_length = self.config.tokenizer.context_length
+        overlap = self.config.tokenizer.overlap
+        tokenizer_name = self.config.tokenizer.name
+        
         # Create the tokenizer configuration using parameters from the orchestrator's configuration.
         tokenizer_config = TokenizerConfig(
             context_length=context_length,

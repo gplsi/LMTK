@@ -19,7 +19,7 @@ static_graph: false
 
 # Training parameters
 number_epochs: 1
-batch_size: 2
+batch_size: 6
 
 # Validation parameters
 validate_on_end: false
@@ -46,20 +46,17 @@ warmup_proportion: 0.06
 logging_config: "wandb"
 
 # Wandb logging specific parameters
-wandb_project: "salamandra-2b_fsdp__allen"
+wandb_project: "salamandra-2b_deepspeed__allen"
 wandb_entity: "gplsi_continual"
 log_model: false
 log_iter_interval: 10
 
 # Distributed_strategy
-parallelization_strategy: "fsdp"
+parallelization_strategy: "deep_speed"
 
-# FSDP specific parameters
-auto_wrap_policy: "llama"
-sharding_strategy: "FULL_SHARD"
-state_dict_type: "sharded"
-limit_all_gathers: true
-cpu_offload: false
-num_workers: 32
+# Deep Speed specific parameters
+zero_stage: 3
+zero_optimization: true
+num_workers: 4
 gradient_checkpointing: true
 
