@@ -11,7 +11,7 @@ allOf:
       auto_wrap_policy:
         type: string
         enum: ["llama", "gpt2"]
-        default: "llama"
+        default: null
         description: "This string will automatically check the minimum layer of the sharded model for FSDP according to HuggingFace"
       
       sharding_strategy:
@@ -47,7 +47,6 @@ allOf:
         description: "Whether to use gradient checkpointing"
 
     required:
-      - auto_wrap_policy
       - sharding_strategy
       - state_dict_type
       - limit_all_gathers
