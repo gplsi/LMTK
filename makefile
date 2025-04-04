@@ -18,7 +18,12 @@ PIP_VENV = .pip-venv
 # Installation method - defaults to poetry, can be overridden with `make INSTALL_METHOD=pip`
 INSTALL_METHOD ?= poetry
 
-.PHONY: help build build-dev build-prod container validate tokenize train clean install install-poetry install-pip poetry-install poetry-update poetry-shell poetry-export poetry-test poetry-lint poetry-docs poetry-run pip-install pip-update pip-venv pip-test pip-run
+# Version management
+VERSION_BUMP ?= patch  # Options: major, minor, patch
+CHANGELOG_FILE = CHANGELOG.md
+VERSION = $(shell $(POETRY) version -s)
+
+.PHONY: help build build-dev build-prod container validate tokenize train clean install install-poetry install-pip poetry-install poetry-update poetry-shell poetry-export poetry-test poetry-lint poetry-docs poetry-run pip-install pip-update pip-venv pip-test pip-run version-bump version-show version-release changelog
 
 help:
 	@echo "Continual Pretraining Framework"
@@ -41,6 +46,7 @@ help:
 	@echo   "poetry-export    - Export dependencies to requirements.txt"
 	@echo   "poetry-test      - Run tests using pytest through Poetry"
 	@echo   "poetry-lint      - Run linting through Poetry"
+	@echo   "poetry-docs      - Build documentation using Sphinx"
 	@echo   "poetry-run       - Run a command in the Poetry environment (usage: make poetry-run CMD='python src/main.py')"
 	@echo   ""
 	@echo   "Pip commands:"
@@ -48,6 +54,12 @@ help:
 	@echo   "pip-install      - Install using pip in a virtual environment"
 	@echo   "pip-test         - Run tests using pytest through pip"
 	@echo   "pip-run          - Run a command in the pip environment (usage: make pip-run CMD='python src/main.py')"
+	@echo   ""
+	@echo   "Version management:"
+	@echo   "version-show     - Show current project version"
+	@echo   "version-bump     - Bump version (default: patch) - use VERSION_BUMP=major|minor|patch"
+	@echo   "version-release  - Prepare a new release (updates changelog, tags, commits)"
+	@echo   "changelog        - Open the changelog file for editing"
 
 # Docker build commands
 build: build-dev
@@ -134,6 +146,48 @@ pip-run: pip-venv
 	@echo "Running command with pip virtual environment..."
 	@. $(PIP_VENV)/bin/activate && \
 	$(CMD)
+
+# Version management commands
+version-show:
+	@echo "Current version: $(VERSION)"
+	@echo "To bump version, use: make version-bump [VERSION_BUMP=major|minor|patch]"
+
+version-bump:
+	@echo "Bumping $(VERSION_BUMP) version..."
+	@$(POETRY) version $(VERSION_BUMP)
+	@NEW_VERSION=$$($(POETRY) version -s); \
+	echo "New version: $$NEW_VERSION"
+	@echo "Remember to update the CHANGELOG.md file with your changes"
+	@echo "Then run 'make version-release' to finalize the release"
+
+changelog:
+	@echo "Opening CHANGELOG.md for editing..."
+	@$${EDITOR:-nano} $(CHANGELOG_FILE)
+
+version-release:
+	@if ! git diff --quiet HEAD -- $(CHANGELOG_FILE); then \
+		echo "Changelog has been modified. Proceeding with release."; \
+	else \
+		echo "ERROR: Please update the CHANGELOG.md file first with your changes using 'make changelog'"; \
+		exit 1; \
+	fi
+	@echo "Preparing release for version $(VERSION)..."
+	@TODAY=$$(date +%Y-%m-%d); \
+	VERSION_STRING="## [$(VERSION)] - $$TODAY"; \
+	sed -i "s/## \[Unreleased\]/## \[Unreleased\]\n\n### Added\n- Future additions will be documented here before release\n\n$$VERSION_STRING/" $(CHANGELOG_FILE)
+	@echo "Updating changelog links..."
+	@REPO_URL=$$(grep "\[Unreleased\]" $(CHANGELOG_FILE) | sed -E 's/.*https:\/\/github.com\/([^\/]+\/[^\/]+)\/compare.*/https:\/\/github.com\/\1/'); \
+	if [ -n "$$REPO_URL" ]; then \
+		LAST_VERSION=$$(grep -o "\[[0-9]\+\.[0-9]\+\.[0-9]\+\]" $(CHANGELOG_FILE) | head -1 | tr -d '[]'); \
+		sed -i "s|\[Unreleased\]: .*|[Unreleased]: $$REPO_URL/compare/v$(VERSION)...HEAD\n[$(VERSION)]: $$REPO_URL/compare/v$$LAST_VERSION...v$(VERSION)|" $(CHANGELOG_FILE); \
+	fi
+	@echo "Committing changes..."
+	git add $(CHANGELOG_FILE) pyproject.toml
+	git commit -m "Release v$(VERSION)"
+	git tag -a v$(VERSION) -m "Version $(VERSION)"
+	@echo "Release v$(VERSION) prepared!"
+	@echo "To push the release, run: git push && git push --tags"
+	@echo "To create a GitHub release, visit: $(shell grep -o "https://github.com/[^/]*/[^/]*" $(CHANGELOG_FILE) | head -1)/releases/new?tag=v$(VERSION)"
 
 # Release workflow
 release: poetry-export build-prod

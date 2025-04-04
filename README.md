@@ -47,6 +47,88 @@ make build-dev
 make container
 ```
 
+## 📋 Version Control System
+
+The framework implements a comprehensive version control system using Poetry to manage semantic versioning. This ensures consistent versioning across all components and helps track changes systematically.
+
+### Version Information
+
+You can view the current version of the framework using:
+
+```bash
+# Show the current version
+make version-show
+
+# Display detailed version info including dependencies
+python -m src.main --version
+```
+
+### Version Management Workflow
+
+When making changes to the codebase, follow this workflow to manage versions properly:
+
+1. **Make your changes** to the codebase
+2. **Decide on the version increment** based on semantic versioning principles:
+   - `major`: Breaking changes to the API
+   - `minor`: New features, backward compatible
+   - `patch`: Bug fixes, backward compatible
+
+3. **Bump the version**:
+```bash
+# For a patch update (e.g., 0.1.0 → 0.1.1)
+make version-bump
+
+# For a minor update (e.g., 0.1.0 → 0.2.0)
+make version-bump VERSION_BUMP=minor
+
+# For a major update (e.g., 0.1.0 → 1.0.0)
+make version-bump VERSION_BUMP=major
+```
+
+4. **Update the changelog** to document your changes:
+```bash
+make changelog
+```
+When editing the changelog, add your changes under the `[Unreleased]` section using appropriate categories (Added, Changed, Fixed, etc.).
+
+5. **Finalize the release**:
+```bash
+make version-release
+```
+This command will:
+- Update the changelog format
+- Create a git tag for the version
+- Commit the changes
+
+6. **Push to the repository**:
+```bash
+git push && git push --tags
+```
+
+### Checking Version in Code
+
+The framework provides utilities for checking version information in your code:
+
+```python
+from src.utils.version import get_version, display_version_info
+
+# Get current version string
+version = get_version()
+
+# Display detailed version information
+display_version_info()
+```
+
+### Versioning Strategy
+
+The project follows [Semantic Versioning](https://semver.org/):
+
+- **MAJOR** version (0.x.x → 1.0.0): Incompatible API changes
+- **MINOR** version (0.1.x → 0.2.0): New functionality in a backward-compatible manner
+- **PATCH** version (0.1.0 → 0.1.1): Backward-compatible bug fixes
+
+During development phase (before 1.0.0), minor version bumps may include breaking changes.
+
 ## 🌟 Key Features
 
 ### 🔧 Core Infrastructure

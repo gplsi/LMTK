@@ -1,6 +1,8 @@
 from box import Box
 import yaml
+import sys
 from src.config.config_loader import ConfigValidator
+from src.utils.version import display_version_info
 
 
 def execute_task(config_path: str):
@@ -24,13 +26,44 @@ def execute_task(config_path: str):
     
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config', help='Path to experiment config')
+    parser = argparse.ArgumentParser(description='Continual Pretraining Framework')
+    parser.add_argument('--config', '-c', help='Path to experiment config')
+    parser.add_argument('--version', '-v', action='store_true', help='Display version information')
+    parser.add_argument('--validate', action='store_true', help='Validate configuration without execution')
     args = parser.parse_args()
-    execute_task(args.config)
-    #execute_task("config/experiments/test_tokenizer_local.yaml")
     
+    # Handle version command
+    if args.version:
+        display_version_info()
+        sys.exit(0)
+        
+    # Ensure a config is provided when needed
+    if not args.config:
+        parser.print_help()
+        sys.exit(1)
+        
+    # Handle validation only
+    if args.validate:
+        print(f"Validating configuration: {args.config}")
+        validator = ConfigValidator()
+        with open(args.config, "r") as f:
+            raw_data = yaml.safe_load(f)
+        raw_config = Box(raw_data, box_dots=True)
+        task = raw_config.get("task")
+        if not task:
+            print("ERROR: Missing 'task' key in configuration.")
+            sys.exit(1)
+        try:
+            validator.validate(args.config, task)
+            print("Configuration is valid!")
+            sys.exit(0)
+        except Exception as e:
+            print(f"ERROR: Invalid configuration: {e}")
+            sys.exit(1)
     
-    # FOR CURRENT GPT-2 TESTING
-    #execute_task("config/experiments/test_tokenizer_local.yaml")
-    # execute_task("config/experiments/test_continual.yaml")
+    # Execute the task
+    try:
+        execute_task(args.config)
+    except Exception as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
