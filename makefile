@@ -5,6 +5,7 @@ DOCKER_RUN = docker run -v "$(CURDIR)":/workspace
 GPU_DEVICES ?= all  # Can specify "0", "0,1" or "none" for CPU-only
 POETRY = poetry
 PYTHON = $(POETRY) run python
+TOX = $(POETRY) run tox
 
 # Poetry configuration
 POETRY_VENV = .venv
@@ -23,7 +24,10 @@ VERSION_BUMP ?= patch  # Options: major, minor, patch
 CHANGELOG_FILE = CHANGELOG.md
 VERSION = $(shell $(POETRY) version -s)
 
-.PHONY: help build build-dev build-prod container validate tokenize train clean install install-poetry install-pip poetry-install poetry-update poetry-shell poetry-export poetry-test poetry-lint poetry-docs poetry-run pip-install pip-update pip-venv pip-test pip-run version-bump version-show version-release changelog
+# CI configuration
+TOX_ENV ?= py310  # Default tox environment
+
+.PHONY: help build build-dev build-prod container validate tokenize train clean install install-poetry install-pip poetry-install poetry-update poetry-shell poetry-export poetry-test poetry-lint poetry-docs poetry-run pip-install pip-update pip-venv pip-test pip-run version-bump version-show version-release changelog ci ci-all ci-test ci-lint ci-type ci-coverage
 
 help:
 	@echo "Continual Pretraining Framework"
@@ -60,6 +64,15 @@ help:
 	@echo   "version-bump     - Bump version (default: patch) - use VERSION_BUMP=major|minor|patch"
 	@echo   "version-release  - Prepare a new release (updates changelog, tags, commits)"
 	@echo   "changelog        - Open the changelog file for editing"
+	@echo   ""
+	@echo   "CI commands:"
+	@echo   "ci               - Run tests with tox (default: py310)"
+	@echo   "                   Override with TOX_ENV=environment"
+	@echo   "ci-all           - Run all CI checks (tests, lint, type, coverage)"
+	@echo   "ci-test          - Run tests with tox"
+	@echo   "ci-lint          - Run linting with tox"
+	@echo   "ci-type          - Run type checking with tox"
+	@echo   "ci-coverage      - Run test coverage with tox"
 
 # Docker build commands
 build: build-dev
@@ -188,6 +201,31 @@ version-release:
 	@echo "Release v$(VERSION) prepared!"
 	@echo "To push the release, run: git push && git push --tags"
 	@echo "To create a GitHub release, visit: $(shell grep -o "https://github.com/[^/]*/[^/]*" $(CHANGELOG_FILE) | head -1)/releases/new?tag=v$(VERSION)"
+
+# CI commands
+ci:
+	@echo "Running tox with environment: $(TOX_ENV)"
+	$(TOX) -e $(TOX_ENV)
+
+ci-all:
+	@echo "Running all CI checks with tox"
+	$(TOX)
+
+ci-test:
+	@echo "Running tests with tox"
+	$(TOX) -e py310
+
+ci-lint:
+	@echo "Running linting with tox"
+	$(TOX) -e lint
+
+ci-type:
+	@echo "Running type checking with tox"
+	$(TOX) -e type
+
+ci-coverage:
+	@echo "Running test coverage with tox"
+	$(TOX) -e coverage
 
 # Release workflow
 release: poetry-export build-prod
