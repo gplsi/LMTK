@@ -1,0 +1,66 @@
+# Multi-stage build for production deployment
+# Stage 1: Build environment
+FROM nvcr.io/nvidia/pytorch:24.02-py3 AS builder
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    POETRY_VERSION=2.1.2 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1
+
+# Add Poetry to PATH
+ENV PATH="$POETRY_HOME/bin:$PATH"
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    chmod 755 $POETRY_HOME/bin/poetry
+
+# Set up project
+WORKDIR /app
+
+# Copy only Poetry configuration files first for better caching
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies (without development dependencies)
+RUN poetry install --no-root --no-dev
+
+# Copy project files
+COPY . /app/
+
+# Install the project
+RUN poetry install --no-dev
+
+# Stage 2: Production image
+FROM nvcr.io/nvidia/pytorch:24.02-py3 AS production
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src:$PYTHONPATH
+
+WORKDIR /app
+
+# Copy built virtual environment from builder stage
+COPY --from=builder /app /app
+
+# Create a non-root user to run the application
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Run the application
+ENTRYPOINT ["poetry", "run", "python", "src/main.py"]
