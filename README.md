@@ -3,6 +3,50 @@
 **A Modular Toolkit for Efficient Language Model Pretraining and Adaptation**  
 *Streamlining continual pretraining of foundation language models through scalable pipelines and reproducible configurations*
 
+## 🚀 Installation
+
+### Option 1: Using Poetry (Recommended)
+
+```bash
+# Install with Poetry
+make install-poetry
+
+# Or just use the default install target (defaults to Poetry)
+make install
+```
+
+### Option 2: Using pip
+
+```bash
+# Install with pip in a virtual environment
+make install-pip
+
+# Or specify pip as the installation method
+make INSTALL_METHOD=pip install
+```
+
+### Option 3: Direct pip install
+
+```bash
+# Create and activate a virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install the package
+pip install -e .  # Regular installation
+pip install -e .[dev]  # With development dependencies
+```
+
+### Docker Installation
+
+```bash
+# Build development image (with Poetry)
+make build-dev
+
+# Run development container
+make container
+```
+
 ## 🌟 Key Features
 
 ### 🔧 Core Infrastructure
@@ -89,7 +133,7 @@ project/
 **Dockerfile Highlights**:
 ```
 FROM nvcr.io/nvidia/pytorch:23.10-py3
-COPY requirements.txt .
+COPY requirements.txt . 
 RUN pip install -r requirements.txt
 ENTRYPOINT ["make"]
 ```
