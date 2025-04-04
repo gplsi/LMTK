@@ -13,6 +13,22 @@ The module makes extensive use of verbose logging to notify users of its operati
 and it is designed with extensibility and robust error handling in mind.
 """
 
+"""
+This module implements the DatasetStorage class, which provides functionality for 
+loading, processing, splitting, and saving datasets in Arrow format using the Hugging Face Datasets library.
+
+Key features include:
+  - Loading datasets from various file types (e.g., text, CSV, JSON)
+  - Grouping files in a directory by file extension
+  - Handling special processing for text files when enabled
+  - Splitting datasets into training and validation subsets
+  - Saving and loading datasets from disk as well as fetching from the Hugging Face Hub
+
+The module makes extensive use of verbose logging to notify users of its operations,
+and it is designed with extensibility and robust error handling in mind.
+"""
+
+
 from pathlib import Path
 from typing import Dict, Optional, List, Any, Union
 import json
@@ -34,7 +50,21 @@ class DatasetStorage:
     """
     Class for handling dataset operations including loading, processing, splitting,
     and saving datasets in Arrow format.
+    Class for handling dataset operations including loading, processing, splitting,
+    and saving datasets in Arrow format.
 
+    Attributes:
+        verbose_level (VerboseLevel): Level of verbosity for logging.
+        enable_txt_samples (bool): Flag to enable loading text files as individual samples.
+        logger: Logger instance used to log messages at various verbosity levels.
+        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods.
+
+    Verbose Level Mapping:
+        0: No messages
+        1: Errors only
+        2: Errors and warnings
+        3: Errors, warnings, and informational messages
+        4: Errors, warnings, informational messages, and debug messages
     Attributes:
         verbose_level (VerboseLevel): Level of verbosity for logging.
         enable_txt_samples (bool): Flag to enable loading text files as individual samples.
@@ -60,6 +90,7 @@ class DatasetStorage:
             verbose_level (VerboseLevel): The verbosity level for logging. Defaults to VerboseLevel.DEBUG.
             enable_txt_samples (bool): Boolean flag to process text files as individual samples. Defaults to False.
         """
+        
         self.logger = get_logger(__name__, level=verbose_level)
         self.verbose_level = verbose_level
         self.enable_txt_samples = enable_txt_samples
@@ -75,15 +106,20 @@ class DatasetStorage:
 
     def __load_dataset_from_extension(self, data_type: str, files: list[str]) -> Union[HFDataset, DatasetDict]:
         """
-        Load dataset from files with the specified extension.
-        
+        Load a dataset from files with a specific file extension.
+
+        This method checks if the data type is "text" and if special text sample processing is enabled.
+        If so, it loads each text file as an individual sample. Otherwise, it delegates to 
+        Hugging Face's built-in load_dataset function.
+
         Args:
             data_type (str): The type of data to load (e.g., 'text', 'csv', 'json').
-            files (list[str]): List of file paths to load.
-        
+            files (list[str]): A list of file paths to load.
+
         Returns:
             Union[HFDataset, DatasetDict]: The loaded dataset.
         """
+        
         if data_type == "text" and self.enable_txt_samples:
             return self.__load_text_files_as_samples(files)
         
@@ -93,6 +129,7 @@ class DatasetStorage:
         
         # Default behavior: use Hugging Face's built-in loaders
         return load_dataset(data_type, data_files=files)
+    
     
     def __load_json_with_text_key(self, files: list[str]) -> DatasetDict:
         """
@@ -107,6 +144,7 @@ class DatasetStorage:
         Returns:
             DatasetDict: A dataset where each entry contains the extracted text.
         """
+        
         data = []
         for file_path in files:
             try:
@@ -230,8 +268,12 @@ class DatasetStorage:
 
     def process_files(self, files_path: str, file_config: Optional[Dict] = None) -> HFDataset:
         """
-        Process files from a directory and create a dataset.
-        
+        Process files within the given directory and build a consolidated dataset.
+
+        The method scans the directory, groups the files by their extensions, 
+        then uses the appropriate dataset loading method based on the extension.
+        If multiple datasets are produced (one for each supported file extension), they are concatenated.
+
         Args:
             files_path (str): Path to the directory containing files.
             file_config (Optional[Dict]): Configuration for file processing, including format and text_key.
@@ -239,6 +281,7 @@ class DatasetStorage:
         Returns:
             HFDataset: The processed dataset.
         """
+         
         if not os.path.isdir(files_path):
             raise ValueError(f"Invalid directory path: {files_path}.")
             
@@ -309,6 +352,7 @@ class DatasetStorage:
         Returns:
             DatasetDict: A dataset dictionary containing 'train' and optionally 'valid' splits.
         """
+        
         if isinstance(dataset, DatasetDict):
             dataset_train = dataset["train"]
         else:
@@ -353,17 +397,33 @@ class DatasetStorage:
         Returns:
             HFDataset: The dataset loaded from the Hub.
         """
+        
         return load_dataset(dataset_name, **kwargs)
 
     def save_to_disk(
         self,
         dataset: HFDataset,
         output_path: str,
-        max_shard_size: str | int | None = None,
-        num_shards: int | None = None,
-        num_proc: int | None = None,
+        max_shard_size: Optional[Union[str, int]] = None,
+        num_shards: Optional[int] = None,
+        num_proc: Optional[int] = None,
     ) -> Path:
-        """Save dataset to disk with proper error handling."""
+        """
+        Save the given dataset to disk with support for sharding and multiprocessing.
+
+        The method ensures that the parent directory of the output path exists, creates the directory if necessary,
+        and then saves the dataset using Hugging Face's save_to_disk function.
+
+        Args:
+            dataset (HFDataset): The dataset to be saved.
+            output_path (str): The destination file system path where the dataset will be stored.
+            max_shard_size (str | int | None, optional): Maximum size for each shard of the dataset.
+            num_shards (int | None, optional): Number of shards to divide the dataset into.
+            num_proc (int | None, optional): Number of processes to use during saving.
+
+        Returns:
+            Path: A Path object representing the directory where the dataset was saved.
+        """
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 

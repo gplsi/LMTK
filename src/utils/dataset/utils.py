@@ -1,3 +1,12 @@
+"""
+This module provides a utility to recursively scan directories for files with specific or 
+supported file extensions. The primary function, scan_directory, traverses a given directory 
+tree and groups files by their parent folder, filtering them by either a provided extension 
+or a set of default supported extensions.
+
+Supported file extensions include: "txt", "csv", and "json".
+"""
+
 import os
 from typing import Dict
 from src.utils.logging import get_logger
@@ -7,9 +16,18 @@ SUPPORTED_EXTENSIONS = ["txt", "csv", "json", "jsonl"]
 # Create a logger for this module
 local_logger = get_logger(__name__)
 
+
 def scan_directory(path, extension: str = None, logger = local_logger) -> Dict:
     """
-    Scans the given directory for text files and returns a dictionary of data sources and their files.
+    Scan the provided directory (and its subdirectories) for files matching a given extension
+    or the default set of supported extensions.
+
+    The function traverses the entire directory tree starting from 'path'. For each directory,
+    it collects files that satisfy the extension filter:
+      - If an extension is explicitly provided, only files ending with that extension are collected.
+      - If no extension is provided, any file with an extension listed in SUPPORTED_EXTENSIONS is collected.
+    The results are returned in a dictionary where the keys are the names of the directories (data sources)
+    and the values are lists containing the full paths to the matching files.
 
     Args:
         path (str): Path to the directory containing subfolders with text files.
@@ -17,8 +35,13 @@ def scan_directory(path, extension: str = None, logger = local_logger) -> Dict:
         logger (str, optional): If provided, only files with this extension will be included.
 
     Returns:
-        dict: A dictionary where keys are data sources (folder names) and values are lists of text file paths.
+        Dict[str, list]: A dictionary mapping each data source (directory name) to a list of file paths
+                         that match the specified filter criteria.
+
+    Raises:
+        ValueError: If an extension is provided that is not among the supported extensions.
     """
+    
     if (extension is not None) and (extension not in SUPPORTED_EXTENSIONS):
         raise ValueError(f"Unsupported file extension: {extension}.")
 

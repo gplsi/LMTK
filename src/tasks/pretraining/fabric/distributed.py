@@ -1,4 +1,13 @@
-# Importando Lightning y otras librerías necesarias
+"""
+Module: distributed_strategies
+Description:
+    This module defines various classes that configure distributed training
+    strategies using Lightning Fabric. Each class sets up a specific strategy
+    based on the provided configuration and the number of available devices.
+"""
+
+
+# Importing Lightning and other necessary libraries
 import lightning as L
 from lightning.fabric.strategies import (
     FSDPStrategy,
@@ -7,16 +16,38 @@ from lightning.fabric.strategies import (
     DataParallelStrategy,
 )
 
-# Importando utilidades personalizadas
+import torch.optim as optim
+from tqdm import tqdm
+
+# Importing custom utilities and base classes
 from src.tasks.pretraining.utils import *
 from src.tasks.pretraining.fabric.base import FabricTrainerBase
 from tasks.pretraining.fabric.wrappers.fsdp_config import resolve_fsdp_config
 from utils import inherit_init_params
+from src.tasks.pretraining.fabric.speed_monitor import SpeedMonitorFabric as Monitor
 
 
 @inherit_init_params
 class FSDP(FabricTrainerBase):
-    def _setup_strategy(self):
+    """
+    Class to set up the Fully Sharded Data Parallel (FSDP) strategy for distributed training.
+    
+    This class extends the FabricTrainerBase and configures the FSDP strategy based
+    on the configuration parameters provided. When using multiple devices, it resolves
+    the appropriate FSDP configuration and initializes the strategy. For a single device,
+    it falls back to an automatic strategy.
+    """
+    def _setup_strategy(self) -> FSDPStrategy:
+        """
+        Set up and return the FSDP strategy.
+
+        Returns:
+            FSDPStrategy or str: A configured FSDP strategy when multiple devices are used,
+            otherwise a string indicating an automatic strategy.
+
+        The method logs the steps involved, resolves the FSDP configuration from the provided
+        settings, and initializes the strategy accordingly.
+        """
         self.cli_logger.info("Setting up FSDP strategy.")
         if self.devices > 1:
             # Resolve FSDP configuration with sensible defaults
@@ -48,7 +79,26 @@ class FSDP(FabricTrainerBase):
 
 @inherit_init_params
 class DeepSpeed(FabricTrainerBase):
+    """
+    Class to set up the DeepSpeed strategy for distributed training.
+    
+    This class configures and returns a DeepSpeed strategy that leverages multiple devices.
+    It uses DeepSpeed-specific parameters to optimize training and properly handles optimizer
+    configuration based on the ZeRO stage being used.
+    """
+
     def _setup_strategy(self):
+        """
+        Set up and return the DeepSpeed strategy.
+
+        Returns:
+            DeepSpeedStrategy: A strategy object configured for DeepSpeed training.
+
+        The method creates a DeepSpeed configuration dictionary based on the provided
+        config parameters and initializes the strategy with the appropriate settings
+        for the specified ZeRO optimization stage.
+        """
+        
         self.cli_logger.info("Setting up DeepSpeed strategy.")
         if self.devices > 1:
             # Pass DeepSpeed-specific parameters from your config
@@ -66,7 +116,23 @@ class DeepSpeed(FabricTrainerBase):
     
 @inherit_init_params
 class DistributedDataParallel(FabricTrainerBase):
-    def _setup_strategy(self):
+    """
+    Class to set up the Distributed Data Parallel (DDP) strategy for training.
+    
+    This class configures the DDP strategy using typical parameters from the training configuration.
+    When using multiple devices, common settings such as the process group backend, unused parameter
+    detection, and static graph optimizations are applied. For a single device, it defaults to an automatic strategy.
+    """
+    
+    def _setup_strategy(self) -> DDPStrategy:
+        """
+        Set up and return the DDP strategy.
+
+        Returns:
+            DDPStrategy or str: A configured DDP strategy object for multiple devices,
+            or a string indicating an automatic strategy if only one device is used.
+        """
+        
         self.cli_logger.info("Setting up DDP strategy.")
         if self.devices > 1:
             # Configure DDPStrategy with common parameters:
@@ -82,7 +148,23 @@ class DistributedDataParallel(FabricTrainerBase):
 
 @inherit_init_params
 class DataParallel(FabricTrainerBase):
-    def _setup_strategy(self):
+    """
+    Class to set up the Data Parallel (DP) strategy for distributed training.
+    
+    This class handles the configuration of the Data Parallel strategy for scenarios where
+    multiple devices are available. It assigns the devices used in parallel computations,
+    and for a single device configuration, it defaults to an automatic setting.
+    """ 
+    
+    def _setup_strategy(self) -> DataParallelStrategy:
+        """
+        Set up and return the Data Parallel strategy.
+
+        Returns:
+            DataParallelStrategy or str: A Data Parallel strategy object configured with the
+            provided devices, or a string indicating an automatic strategy for single-device setups.
+        """
+        
         self.cli_logger.info("Setting up DP strategy.")
         if self.devices > 1:
             strategy = DataParallelStrategy(

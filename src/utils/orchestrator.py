@@ -1,14 +1,51 @@
+"""
+Module: orchestrator.py
+
+This module defines the BaseOrchestrator class, which provides a framework for loading datasets
+based on a given configuration. The orchestrator handles logging, dataset validation, loading,
+and optional splitting. It supports local datasets (loaded from disk or files) and sets the stage
+for future integration with HuggingFace datasets.
+"""
+
 from box import Box
 from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
 from abc import ABC
-from datasets import Dataset
+from datasets import Dataset as HFDataset
+from typing import Optional
+
 
 class BaseOrchestrator(ABC):
-    """Base Orchestrator Class"""
+    """
+    BaseOrchestrator is an abstract base class that defines a common interface for dataset orchestration.
 
-    def __init__(self, config: Box):
+    It provides methods for validating dataset configurations, loading datasets from various sources,
+    and splitting datasets based on test size configurations. Logging is integrated for debugging and
+    tracing purposes.
+    """
+
+    def __init__(self, config: Box) -> None:
+        """
+        Initialize the BaseOrchestrator instance with configuration details.
+
+        The initializer sets up the configuration, logging mechanism, and a dataset storage utility
+        based on the provided parameters. The configuration should specify at least a 'dataset' key,
+        which further provides details like source, format, and file configurations.
+
+        Parameters:
+            config (Box): A configuration object containing parameters such as:
+                          - verbose_level (optional): The verbosity level for logging.
+                          - dataset: A dictionary containing dataset-specific configurations:
+                                     * source: The dataset source ('local' or 'huggingface').
+                                     * format: The format of the dataset (e.g., 'dataset' or 'files').
+                                     * nameOrPath: For local datasets, a path or name to locate the dataset.
+                                     * use_txt_as_samples (optional): A flag to enable text samples.
+                                     * file_config: Additional file configurations when format is 'files'.
+                          - test_size (optional): A float indicating the ratio to split the dataset for testing.
+            fabric_rank (Optional[int]): The process rank in distributed training. Used to filter logs.
+        """
+        
         self.config = config
         self.verbose_level = VerboseLevel(
             self.config.get("verbose_level", VerboseLevel.INFO)
@@ -17,12 +54,39 @@ class BaseOrchestrator(ABC):
         self.storage = DatasetStorage(self.verbose_level)
 
     def _validate__dataset_config(self) -> None:
-        """Validate tokenization configuration."""
+        """
+        Validate that the configuration contains the necessary dataset settings.
+
+        This method checks whether the 'dataset' configuration is provided. If not, it raises a
+        ValueError indicating that dataset configuration is mandatory.
+
+        Raises:
+            ValueError: If the dataset configuration is missing.
+        """
         if not self.config.dataset:
             raise ValueError("Dataset configuration must be provided")
 
-    def load_dataset(self) -> Dataset:
-        """Load dataset based on configuration."""
+    def load_dataset(self) -> HFDataset:
+        """
+        Load a dataset based on the provided configuration and handle optional dataset splitting.
+
+        The process includes:
+          1. Validating the presence of dataset configuration.
+          2. Initializing a dataset handler with the appropriate verbose level and text sample settings.
+          3. Loading the dataset based on the 'source' and 'format' specified in the configuration:
+             - For a local source with 'dataset' format, the dataset is loaded from disk.
+             - For a local source with 'files' format, the dataset is constructed by processing files in a directory.
+          4. If a test size is defined, the dataset is split accordingly.
+          5. Returning the loaded (and possibly split) dataset.
+
+        Returns:
+            HFDataset: The processed HuggingFace dataset.
+
+        Raises:
+            ValueError: If the dataset configuration is missing, or if an invalid dataset source or format is specified.
+            NotImplementedError: If the dataset source is 'huggingface', as this functionality is not implemented.
+        """
+        
         self._validate__dataset_config()
         
         # Safely get use_txt_as_samples with a default value if not present

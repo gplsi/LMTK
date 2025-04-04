@@ -1,16 +1,33 @@
 # src/tokenization/causal.py
 from typing import Dict, List, Optional, Union
-from datasets import Dataset, Features, Sequence, Value
+from datasets import  Features, Sequence, Value, DatasetDict
+from datasets import Dataset as HFDataset
 import os
-from datasets import DatasetDict, Dataset
 from src.tasks.tokenization.tokenizer.base import BaseTokenizer
 from src.tasks.tokenization.tokenizer.utils import build_causal_lm_outputs
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 
 class CausalLMTokenizer(BaseTokenizer):
-    """Tokenizer for causal language modeling tasks."""
+    """
+    Tokenizer implementation for casual language modeling tasks.
+
+    This class extends BaseTokenizer to provide tokenization methods specifically designed
+    for causal language modeling. It supports both single HFDataset instances and multiple splits
+    encapsulated in a DatasetDict. The tokenization process generates sequences for input IDs,
+    attention masks, and labels, with the labels mirroring the input IDs for training purposes.
+    """
     
-    def __init__(self, config: TokenizerConfig):
+    def __init__(self, config: TokenizerConfig) -> None:
+        """
+        Initialize the CausalLMTokenizer instance with the given configuration.
+
+        This constructor sets up the tokenizer by invoking the base constructor and defines
+        the expected output structure (features) of tokenization using Hugging Face Datasets.
+
+        Args:
+            config (TokenizerConfig): Configuration parameters for the tokenizer, including
+                                      context length and overlap settings.
+        """
         super().__init__(config)
         self._features = Features({
             "input_ids": Sequence(Value("int32")),
@@ -18,8 +35,24 @@ class CausalLMTokenizer(BaseTokenizer):
             "labels": Sequence(Value("int32"))
         })
     
-    def tokenize(self, dataset: Dataset) -> Dataset:
-        """Tokenize dataset for causal language modeling."""
+    def tokenize(self, dataset: Union[HFDataset, DatasetDict]) -> HFDataset:
+        """
+        Tokenize the input dataset for causal language modeling.
+
+        This method applies tokenization to either a single dataset (HFDataset) or a dictionary 
+        of datasets (DatasetDict) containing multiple splits. It utilizes the Hugging Face's map 
+        function to efficiently process data in batches. Post tokenization, it removes unnecessary 
+        columns from the original dataset.
+
+        Args:
+            dataset (Union[HFDataset, DatasetDict]): The dataset or dataset dictionary to be tokenized.
+
+        Returns:
+            Union[HFDataset, DatasetDict]: A tokenized dataset if a single HFDataset is provided, or
+                                           a DatasetDict if multiple splits were tokenized. In the case
+                                           of a DatasetDict with only one split, the single tokenized dataset
+                                           is returned directly.
+        """
         self.logger.info("Initializing tokenizer")
         self._initialize_tokenizer()
         
@@ -54,7 +87,23 @@ class CausalLMTokenizer(BaseTokenizer):
             return tokenized_dataset
     
     def _tokenize_function(self, batch: Dict[str, List[str]]) -> Dict[str, List[int]]:
-        """Internal tokenization function."""
+        """
+        Internal helper function to tokenize a batch of text data.
+
+        This function processes the 'text' field of a batch using the underlying tokenizer.
+        It applies operations such as truncation, padding, and handling of overlapping tokens.
+        The generated outputs include token IDs, attention masks, and labels, where the labels
+        are a copy of the input_ids to support causal language modeling training configurations.
+
+        Args:
+            batch (Dict[str, List[str]]): A dictionary with a key "text" containing a list of text strings.
+
+        Returns:
+            Dict[str, List[int]]: A dictionary with keys:
+                - "input_ids": The tokenized representation of the input text.
+                - "attention_mask": Binary mask indicating real tokens versus padding.
+                - "labels": Copy of input_ids, used as training labels for language modeling.
+        """
         outputs = self._tokenizer(
             batch["text"],
             truncation=True,
@@ -68,5 +117,5 @@ class CausalLMTokenizer(BaseTokenizer):
         return {
             "input_ids": outputs["input_ids"],
             "attention_mask": outputs["attention_mask"],
-            "labels": outputs["input_ids"].copy()
+            "labels": outputs["input_ids"].copy()  # Duplicate input_ids for use as labels in LM training
         }

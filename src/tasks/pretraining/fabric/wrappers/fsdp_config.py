@@ -4,35 +4,48 @@ import functools
 from typing import Optional, Dict, Any, Set, Type, Union, Callable
 import torch.nn as nn
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy, size_based_auto_wrap_policy
-
 from tasks.pretraining.fabric.wrappers.policies import create_auto_wrap_policy
 
 def get_default_fsdp_config() -> Dict[str, Any]:
-    """Return default configuration for FSDP strategy."""
+    """
+    Return the default configuration for Fully Sharded Data Parallel (FSDP) strategy.
+
+    This function provides a baseline configuration for FSDP that can be used as a starting point
+    for distributed training. The configuration includes default values for sharding strategy,
+    auto-wrapping policies, activation checkpointing, state dictionary type, and CPU offloading.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the default FSDP configuration.
+    """
+    
     return {
-        "sharding_strategy": "FULL_SHARD",
-        "auto_wrap_policy": None,  # Will be determined based on model
-        "activation_checkpointing": None,  # Will be determined based on model and auto_wrap_policy
-        "state_dict_type": "full",
-        "limit_all_gathers": True,
-        "cpu_offload": False,
-        "min_num_params": 1e7  # Default threshold for size-based policy
+        "sharding_strategy": "FULL_SHARD",  # Default sharding strategy
+        "auto_wrap_policy": None,  # Auto-wrap policy to be determined based on the model
+        "activation_checkpointing": None,  # Activation checkpointing policy to be determined
+        "state_dict_type": "full",  # State dict type for saving/loading model states
+        "limit_all_gathers": True,  # Limit all-gather operations to reduce communication overhead
+        "cpu_offload": False,  # Disable CPU offloading by default
+        "min_num_params": 1e7  # Minimum number of parameters for size-based auto-wrap policy
     }
 
 def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, Any]:
     """
-    Resolve FSDP configuration with sensible defaults based on the model.
-    
+    Resolve the FSDP configuration by merging user-provided settings with sensible defaults.
+
+    This function takes a user-provided FSDP configuration and fills in missing values with defaults.
+    It also determines the appropriate auto-wrap and activation checkpointing policies based on the 
+    model name and other parameters.
+
     Args:
-        config: User configuration
-        model_name: Name of the model being trained
-        
+        config (Dict[str, Any]): User-provided FSDP configuration.
+        model_name (str): Name of the model being trained.
+
     Returns:
-        Complete FSDP configuration with defaults filled in
+        Dict[str, Any]: The complete FSDP configuration with defaults filled in.
     """
+    
     # Start with default config
     fsdp_config = get_default_fsdp_config()
-    
     # Override with user config if provided
     for key, value in config.items():
         if key in fsdp_config and value is not None:
@@ -55,9 +68,21 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, An
     
     return fsdp_config
 
-# Keep the existing functions from policies.py
+
 def get_transformer_layer_class(model_name: str) -> Optional[str]:
-    """Get the transformer layer class name based on model name prefix."""
+    """
+    Get the transformer layer class name based on the model's name prefix.
+
+    This function maps common model names (e.g., GPT-2, T5) to their corresponding transformer 
+    layer class names. It helps identify which layers should be wrapped or checkpointed during training.
+
+    Args:
+        model_name (str): The name of the model being trained.
+
+    Returns:
+        Optional[str]: The transformer layer class name if found; otherwise, None.
+    """
+    
     MODEL_TO_LAYER_CLASS_MAPPING = {
         "gpt2": "GPT2Block",
         "llama": "LlamaDecoderLayer",
@@ -73,14 +98,30 @@ def get_transformer_layer_class(model_name: str) -> Optional[str]:
     for prefix, layer_class in MODEL_TO_LAYER_CLASS_MAPPING.items():
         if prefix in model_name.lower():
             return layer_class
+    
     return None
 
 def get_transformer_layer_class_from_model(
     model: nn.Module,
 ) -> Optional[Set[Type[nn.Module]]]:
-    """Attempt to find transformer layer classes in the model."""
+    """
+    Attempt to find transformer layer classes within a given PyTorch model.
+
+    This function inspects all submodules of a PyTorch model to identify classes commonly used 
+    in transformer architectures (e.g., Block, Layer). It returns a set of unique layer classes 
+    found in the model.
+
+    Args:
+        model (nn.Module): The PyTorch model to inspect.
+
+    Returns:
+        Optional[Set[Type[nn.Module]]]: A set of unique transformer layer classes found in the 
+                                         model. Returns None if no such classes are found.
+    """
+    
     layer_classes = set()
-    # Try to find common transformer layer classes in the model
+    
+    
     for module in model.modules():
         module_class_name = module.__class__.__name__
         if any(
