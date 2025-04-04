@@ -1,0 +1,47 @@
+[tool.poetry]
+name = "workspace"
+version = "0.1.0"
+description = "Machine learning training framework"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]  # Add this line to specify where the package's code is located
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.11"  # Specifying compatible Python version
+transformers = "^4.39.3"
+datasets = "^2.17.0"
+evaluate = "^0.4.3"
+accelerate = "^0.28.0"
+tokenizers = "^0.15.2"
+pyyaml = "^6.0.1"
+jsonschema = "^4.23.0"
+python-box = "^7.3.2"
+types-pyyaml = "^6.0.12"
+scikit-learn = "^1.6.1"
+lightning = "^2.5.1"
+wandb = "0.17.0"
+pydantic = "1.10.11"
+deepspeed = "^0.13.5"
+
+# flash-attn package is commented out as it requires special setup
+# flash-attn = { version = "^2.7.4", optional = true }
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.4"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.14.0"
+pytest-xdist = "^3.6.1"
+pytest-timeout = "^2.3.1"
+hypothesis = "^6.130.8"
+sentencepiece = "^0.1.99"
+
+[tool.poetry.extras]
+gpu = ["flash-attn"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.urls]
+"Repository" = "https://github.com/yourusername/workspace"
+"Documentation" = "https://yourusername.github.io/workspace"
