@@ -26,7 +26,7 @@ help:
 	@echo   "poetry-export    - Export dependencies to requirements.txt"
 	@echo   "poetry-test      - Run tests using pytest through Poetry"
 	@echo   "poetry-lint      - Run linting through Poetry"
-	@echo   "poetry-run       - Run a command in the Poetry environment (usage: make poetry-run CMD='python src/main.py')"
+
 
 build:
 	docker build -t $(PROJECT_NAME) --network=host -f docker/Dockerfile .
@@ -59,22 +59,8 @@ poetry-lint:
 poetry-docs:
 	$(POETRY) run sphinx-build -b html docs docs/_build/html
 
-poetry-run:
-	@if [ -z "$(CMD)" ]; then \
-		echo "Error: CMD is required. Usage: make poetry-run CMD='python src/main.py'"; \
-		exit 1; \
-	fi
-	$(POETRY) run $(CMD)
 
-# Project-specific targets that utilize Poetry
-train:
-	$(PYTHON) src/main.py
 
-tokenize:
-	$(PYTHON) src/main.py --task tokenization
-
-validate:
-	$(PYTHON) src/main.py --validate-config
 
 clean:
 	-@find . -name "*.pyc" -delete 2> /dev/null
