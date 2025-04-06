@@ -32,11 +32,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -sSL https://install.python-poetry.org | python3 - && \
     chmod 755 $POETRY_HOME/bin/poetry
 
+# Copy Poetry configuration files
+COPY pyproject.toml ./
+
+# Generate a new lock file and then install dependencies
+RUN poetry lock && poetry install --no-root
+
 # Copy project files
 COPY . /workspace/
 
-# Make sure we're using a freshly generated lock file
-RUN rm -f poetry.lock && poetry lock && poetry install
+# Install project with all dependencies
+RUN poetry install
 
 # Configure entrypoint
 ENTRYPOINT ["/bin/bash", "-c"]
