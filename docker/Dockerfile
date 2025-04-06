@@ -4,7 +4,7 @@ FROM nvcr.io/nvidia/pytorch:24.02-py3
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive \
+    DEBIAN_FRONTEND=1 \
     POETRY_VERSION=2.1.2 \
     POETRY_HOME="/opt/poetry" \
     POETRY_VIRTUALENVS_IN_PROJECT=true \
@@ -32,17 +32,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -sSL https://install.python-poetry.org | python3 - && \
     chmod 755 $POETRY_HOME/bin/poetry
 
-# Copy Poetry configuration files
-COPY pyproject.toml poetry.lock* ./
-
-# Install Python dependencies (including development dependencies)
-RUN poetry install --no-root
-
 # Copy project files
 COPY . /workspace/
 
-# Install project with all dependencies
-RUN poetry install
+# Make sure we're using a freshly generated lock file
+RUN rm -f poetry.lock && poetry lock && poetry install
 
 # Configure entrypoint
 ENTRYPOINT ["/bin/bash", "-c"]
