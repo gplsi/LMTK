@@ -238,6 +238,34 @@ train:     # Launch training
 2. **Environment Snapshot** - `pip freeze` in training logs
 3. **Deterministic Seeds** - Full random state preservation
 
+## 📚 Documentation
+
+The project includes comprehensive documentation built with Sphinx featuring a beautiful custom design.
+
+### Building Documentation
+
+We provide a convenient script to build the documentation:
+
+```bash
+# Build documentation
+./build_docs.sh
+
+# Build and open in browser
+./build_docs.sh --open
+
+# More options
+./build_docs.sh --help
+```
+
+Alternatively, you can use tox:
+
+```bash
+# Using tox
+tox -e docs
+```
+
+For more details on documentation features, customization, and contributing guidelines, please refer to the [Documentation README](/docs/README.md).
+
 ## 🤝 Contributing
 
 1. Implement new config schemas in `src/config/`
@@ -249,3 +277,4 @@ def test_tokenization_config():
     with pytest.raises(ValidationError):
         TokenizationConfig(tokenizer_name="invalid/model")
 ```
+````

@@ -1,89 +1,58 @@
-"""Version utilities for the Continual Pretraining Framework.
+"""Version information for the ML Training Framework."""
 
-This module provides utilities for retrieving and displaying
-version information from within the codebase.
-"""
-
-import importlib.metadata
-import os
+import platform
 import sys
-from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from datetime import datetime
+from typing import Dict, Any
 
-__all__ = ["get_version", "get_version_info", "display_version_info"]
-
+__version__ = "0.1.0"
 
 def get_version() -> str:
-    """Get the current version of the package.
-
+    """Return the current version of the framework.
+    
     Returns:
-        str: The version string.
+        str: The current version number.
     """
-    try:
-        # First try to get version from installed package metadata
-        return importlib.metadata.version("continual-pretrain")
-    except importlib.metadata.PackageNotFoundError:
-        # Fall back to reading from pyproject.toml
-        try:
-            import tomli
-            # Look for pyproject.toml in parent directories
-            current_dir = Path(__file__).parent
-            while current_dir != current_dir.parent:
-                pyproject_path = current_dir / "pyproject.toml"
-                if pyproject_path.exists():
-                    with open(pyproject_path, "rb") as f:
-                        pyproject_data = tomli.load(f)
-                        if "tool" in pyproject_data and "poetry" in pyproject_data["tool"]:
-                            return pyproject_data["tool"]["poetry"]["version"]
-                current_dir = current_dir.parent
-            
-            # If we get here, we couldn't find pyproject.toml
-            return "unknown"
-        except (ImportError, KeyError):
-            return "unknown"
+    return __version__
 
-
-def get_version_info() -> Dict[str, str]:
-    """Get detailed version information.
-
+def get_system_info() -> Dict[str, Any]:
+    """Get information about the current system.
+    
     Returns:
-        Dict[str, str]: Dictionary with version details.
+        Dict[str, Any]: Dictionary containing system information.
     """
-    import platform
-    import torch
-    import transformers
-
-    info = {
-        "version": get_version(),
-        "python": platform.python_version(),
+    return {
+        "python_version": sys.version,
         "platform": platform.platform(),
-        "torch": torch.__version__,
-        "transformers": transformers.__version__,
+        "platform_release": platform.release(),
+        "platform_system": platform.system(),
+        "platform_version": platform.version(),
+        "platform_machine": platform.machine(),
+        "platform_processor": platform.processor(),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    
-    # Add CUDA info if available
-    if torch.cuda.is_available():
-        info["cuda"] = torch.version.cuda
-        info["gpu"] = torch.cuda.get_device_name(0)
-    
-    return info
 
-
-def display_version_info(file=None) -> None:
-    """Display version information in a formatted way.
-
-    Args:
-        file: File-like object to write to (defaults to sys.stdout).
-    """
-    if file is None:
-        file = sys.stdout
-        
-    info = get_version_info()
+def display_version_info() -> None:
+    """Display detailed version information about the framework."""
+    system_info = get_system_info()
     
-    max_key_length = max(len(key) for key in info.keys())
+    print(f"ML Training Framework v{get_version()}")
+    print(f"Python Version: {system_info['python_version'].split()[0]}")
+    print(f"Platform: {system_info['platform']}")
+    print(f"Time: {system_info['timestamp']}")
     
-    print("Continual Pretraining Framework", file=file)
-    print("=" * 35, file=file)
+    try:
+        import torch
+        print(f"PyTorch Version: {torch.__version__}")
+        if torch.cuda.is_available():
+            print(f"CUDA Version: {torch.version.cuda}")
+            print(f"CUDA Devices: {torch.cuda.device_count()}")
+            print(f"Current CUDA Device: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+    except ImportError:
+        print("PyTorch: Not installed")
     
-    for key, value in info.items():
-        print(f"{key.ljust(max_key_length)} : {value}", file=file)
+    try:
+        import transformers
+        print(f"Transformers Version: {transformers.__version__}")
+    except ImportError:
+        print("Transformers: Not installed")

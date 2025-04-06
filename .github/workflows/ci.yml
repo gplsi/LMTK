@@ -211,6 +211,43 @@ jobs:
           path: docs/_build/html/
           retention-days: 14
 
+  docs-test:
+    name: Documentation Build Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ env.PYTHON_DEFAULT }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: 'pip'
+          cache-dependency-path: |
+            poetry.lock
+            requirements.txt
+      
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      
+      - name: Cache tox environments
+        uses: actions/cache@v3
+        with:
+          path: .tox
+          key: ${{ env.CACHE_KEY_PREFIX }}-tox-docs-test-${{ runner.os }}-${{ env.PYTHON_DEFAULT }}-${{ hashFiles('tox.ini', 'poetry.lock') }}
+      
+      - name: Build and test documentation
+        run: python -m tox -e docs
+      
+      - name: Upload documentation preview
+        uses: actions/upload-artifact@v3
+        with:
+          name: docs-preview
+          path: docs/build/html/
+          retention-days: 7
+
   build:
     name: Build Package
     needs: [test, lint, type-check]

@@ -1,0 +1,22 @@
+{
+  "name": "ML Training Framework",
+  "version_switchers": {
+    "switcher_options": [
+      {
+        "name": "Latest",
+        "version": "latest",
+        "url": "https://yourusername.github.io/workspace/latest/"
+      },
+      {
+        "name": "v0.1.0 (Current)",
+        "version": "0.1.0",
+        "url": "https://yourusername.github.io/workspace/"
+      },
+      {
+        "name": "Development",
+        "version": "dev",
+        "url": "https://yourusername.github.io/workspace/dev/"
+      }
+    ]
+  }
+}
