@@ -26,11 +26,16 @@ while [[ $# -gt 0 ]]; do
       rm -rf docs/build
       shift
       ;;
+    --mock-modules)
+      MOCK_MODULES=true
+      shift
+      ;;
     --help|-h)
       echo -e "Usage: $0 [options]"
       echo -e "Options:"
       echo -e "  --port, -p PORT   Specify the port to serve on (default: 8000)"
       echo -e "  --clean, -c       Clean existing build before building"
+      echo -e "  --mock-modules    Mock problematic modules for documentation build"
       echo -e "  --help, -h        Show this help message"
       exit 0
       ;;
@@ -60,6 +65,40 @@ fi
 # Install dependencies
 echo -e "${YELLOW}Installing dependencies...${NC}"
 poetry install
+
+# Create autodoc-mock file if mock flag is set
+if [ "$MOCK_MODULES" = true ]; then
+    echo -e "${YELLOW}Creating mock modules configuration for problematic imports...${NC}"
+    cat > docs/source/conf_mock.py << 'EOF'
+"""
+Mock module configuration for documentation build.
+This file is automatically imported by conf.py.
+"""
+import sys
+from unittest.mock import MagicMock
+
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+        return MagicMock()
+
+# Mock modules that cause documentation build failures
+MOCK_MODULES = [
+    'wandb', 'wandb.sdk', 'wandb.sdk.data_types', 
+    'numpy.float_', 'torch.cuda', 'torch.distributed',
+    'torch.nn.parallel', 'torch.nn.parallel.distributed',
+    'deepspeed'
+]
+
+sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+EOF
+
+    # Add import to conf.py if not already present
+    if ! grep -q "import conf_mock" docs/source/conf.py; then
+        echo -e "${YELLOW}Adding mock configuration import to conf.py...${NC}"
+        sed -i '1s/^/# Import mock configuration\ntry:\n    import conf_mock\nexcept ImportError:\n    pass\n\n/' docs/source/conf.py
+    fi
+fi
 
 # Build HTML documentation
 echo -e "${YELLOW}Building HTML documentation...${NC}"

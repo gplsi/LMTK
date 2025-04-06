@@ -1,3 +1,9 @@
+# Import mock configuration
+try:
+    import conf_mock
+except ImportError:
+    pass
+
 """
 Configuration file for the Sphinx documentation builder.
 """
@@ -63,14 +69,12 @@ html_theme_options = {
         "text": "ML Training Framework",
     },
     "navigation_with_keys": True,
-    "use_edit_page_button": True,
     "show_nav_level": 2,
     "show_toc_level": 3,
     "navbar_start": ["navbar-logo"],
     "navbar_center": ["navbar-nav"],
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
     "navbar_persistent": ["search-button"],
-    "primary_sidebar_end": ["sidebar-ethical-ads"],
     "footer_items": ["copyright", "sphinx-version", "theme-version"],
     "switcher": {
         "json_url": "https://yourusername.github.io/workspace/_static/switcher.json",
@@ -78,10 +82,14 @@ html_theme_options = {
     },
     "pygment_light_style": "github-light",
     "pygment_dark_style": "github-dark",
-    # Custom color palette
-    "primary_color": "#4C72B0",
-    "secondary_color": "#7B64FF",
-    "accent_color": "#FF7F0E",
+}
+
+# HTML context for GitHub links
+html_context = {
+    "github_user": "yourusername",
+    "github_repo": "workspace",
+    "github_version": "main",
+    "doc_path": "docs/source",
 }
 
 # Add any paths that contain custom static files
@@ -128,7 +136,7 @@ autodoc_typehints_format = 'short'
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'torch': ('https://pytorch.org/docs/stable', None),
-    'transformers': ('https://huggingface.co/transformers/master', None),
+    'transformers': ('https://huggingface.co/docs/transformers/main', None),
     'lightning': ('https://lightning.ai/docs/pytorch/stable/', None),
 }
 
