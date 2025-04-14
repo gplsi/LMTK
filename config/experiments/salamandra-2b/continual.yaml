@@ -8,7 +8,7 @@ dataset:
   nameOrPath: "/workspace/data/tokenized/anonymized-va-salamandra"
 
 # Output dir
-output_dir: "output/"
+output_dir: "output/salamandra-2b-2epochs/"
 
 # Model
 model_name: "BSC-LT/salamandra-2b"
@@ -18,17 +18,17 @@ precision: "bf16-true"
 static_graph: false
 
 # Training parameters
-number_epochs: 1
-batch_size: 4
+number_epochs: 2
+batch_size: 2
 
 # Validation parameters
-validate_on_end: false
-validate_after_epoch: false
-validate_after_k_steps: null
+validate_on_end: true
+validate_after_epoch: true
+validate_after_k_steps: 750
 
 # Gradient parameters
 gradient_accumulation: true
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 32
 grad_clip: 1.0
 
 # Optimizer parameters
