@@ -175,3 +175,4 @@ output/*
 wandb/*
 wandb_cache/*
 nohup*.out
+/nohup.out
