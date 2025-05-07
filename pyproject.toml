@@ -17,6 +17,7 @@ pyyaml = "^6.0.1"
 jsonschema = "^4.23.0"
 python-box = "^7.3.2"
 types-pyyaml = "^6.0.12"
+numpy = "^1.26.4" # Pinned <2.0 due to np.float_ deprecation in NumPy 2.0. Remove pin after code update.
 scikit-learn = "^1.6.1"
 lightning = "^2.5.1"
 wandb = "0.17.0"
@@ -27,6 +28,7 @@ deepspeed = "^0.13.5"
 # flash-attn = { version = "^2.7.4", optional = true }
 
 [tool.poetry.group.dev.dependencies]
+
 pytest = "^7.4.4"
 pytest-cov = "^4.1.0"
 pytest-mock = "^3.14.0"

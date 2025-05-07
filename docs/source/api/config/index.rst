@@ -1,7 +1,7 @@
 .. _api_config:
 
 Configuration API
-==============
+================
 
 This API reference provides detailed documentation for the configuration module.
 

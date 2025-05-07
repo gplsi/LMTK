@@ -73,7 +73,7 @@ def get_logger(
     
     Args:
         name (str): The name of the logger (typically __name__).
-        level (Optional[VerboseLevel]): The desired verbosity level. Defaults to VerboseLevel.INFO.
+        level (:data:`VerboseLevel`): The desired verbosity level. Defaults to :data:`VerboseLevel.INFO` :no-index:.
         rank (Optional[int]): The process rank in distributed training. Used to filter logs.
     
     Returns:

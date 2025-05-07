@@ -1,12 +1,12 @@
 .. _api_pretraining:
 
 Pretraining API
-==============
+================
 
 This API reference provides detailed documentation for the pretraining module components.
 
 Orchestrator
------------
+------------
 
 .. automodule:: src.tasks.pretraining.orchestrator
    :members:

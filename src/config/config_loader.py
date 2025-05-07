@@ -19,6 +19,7 @@ class ConfigValidator:
     The class loads JSON schema definitions from a given directory and stores them in a
     dictionary, keyed by their corresponding file URI. This enables proper resolution of
     schema references when validating configuration data.
+
     """
     
     def __init__(self, schema_dir="config/schemas") -> None:
@@ -26,12 +27,13 @@ class ConfigValidator:
         Initialize the ConfigValidator instance and load all available schemas.
 
         Parameters:
-        - schema_dir (str): The directory path that contains schema files in YAML format.
-                            Defaults to "config/schemas".
-        
+            schema_dir (str): The directory path that contains schema files in YAML format.
+                Defaults to "config/schemas".
+
         The schema directory is resolved to an absolute path to ensure consistency, and
         all schemas found in the directory (including subdirectories) are loaded into the
         internal schema_store for later reference resolution during validation.
+
         """
         self.schema_dir = Path(schema_dir).resolve()  # Ensure absolute path
         self.schema_store = {}
@@ -44,6 +46,7 @@ class ConfigValidator:
         This private method searches for files ending with the ".schema.yaml" extension, loads
         each schema using yaml.safe_load, and stores them in the schema_store dictionary. The key
         for each schema is its file URI, ensuring that references using $ref resolve correctly.
+
         """
         for schema_path in self.schema_dir.rglob("*.schema.yaml"):
             with open(schema_path, 'r') as f:
@@ -56,6 +59,7 @@ class ConfigValidator:
         Validate a configuration file against a specified JSON schema.
 
         The method executes the following steps:
+
         - Loads configuration data from the specified YAML file.
         - Loads the task-specific schema identified by schema_name.
         - Constructs a RefResolver with the preloaded schemas to handle JSON Schema references.
