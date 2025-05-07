@@ -43,7 +43,7 @@ FSDP Wrappers
    :show-inheritance:
 
 Model Generation
----------------
+-----------------
 
 .. automodule:: src.tasks.pretraining.fabric.generation
    :members:
@@ -51,7 +51,7 @@ Model Generation
    :show-inheritance:
 
 Performance Monitoring
----------------------
+----------------------
 
 .. automodule:: src.tasks.pretraining.fabric.speed_monitor
    :members:
@@ -59,7 +59,7 @@ Performance Monitoring
    :show-inheritance:
 
 Logging
-------
+-------
 
 .. automodule:: src.tasks.pretraining.fabric.logger
    :members:
@@ -67,7 +67,7 @@ Logging
    :show-inheritance:
 
 Utilities
---------
+---------
 
 .. automodule:: src.tasks.pretraining.utils
    :members:

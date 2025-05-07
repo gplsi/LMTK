@@ -39,7 +39,15 @@ class TokenizerConfig:
         verbose_level (VerboseLevel): 
             Determines the verbosity of logging during the tokenization process.
             Typical levels are defined in the VerboseLevel enum, with a default set to INFO.
+
+    .. attribute:: overlap
+       :no-index:
+    .. attribute:: tokenizer_name
+       :no-index:
+    .. attribute:: verbose_level
+       :no-index:
     """
+
     context_length: int
     overlap: Optional[int] = None
     tokenizer_name: Optional[str] = None

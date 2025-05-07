@@ -1,11 +1,6 @@
 """
-Module: distributed_strategies
-Description:
-    This module defines various classes that configure distributed training
-    strategies using Lightning Fabric. Each class sets up a specific strategy
-    based on the provided configuration and the number of available devices.
+Distributed training strategies implemented with Lightning Fabric.
 """
-
 
 # Importing Lightning and other necessary libraries
 import lightning as L

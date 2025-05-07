@@ -40,10 +40,10 @@ class DatasetStorage:
         Use :no-index: in duplicate object descriptions for Sphinx.
 
     Attributes:
-        verbose_level (VerboseLevel): Level of verbosity for logging.
-        enable_txt_samples (bool): Flag to enable loading text files as individual samples.
-        logger: Logger instance used to log messages at various verbosity levels.
-        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods.
+        verbose_level (VerboseLevel): Level of verbosity for logging. :no-index:
+        enable_txt_samples (bool): Flag to enable loading text files as individual samples. :no-index:
+        logger: Logger instance used to log messages at various verbosity levels. :no-index:
+        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods. :no-index:
 
     Verbose Level Mapping:
         0: No messages
@@ -53,10 +53,10 @@ class DatasetStorage:
         4: Errors, warnings, informational messages, and debug messages
 
     Attributes:
-        verbose_level (VerboseLevel): Level of verbosity for logging.
-        enable_txt_samples (bool): Flag to enable loading text files as individual samples.
-        logger: Logger instance used to log messages at various verbosity levels.
-        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods.
+        verbose_level (VerboseLevel): Level of verbosity for logging. :no-index:
+        enable_txt_samples (bool): Flag to enable loading text files as individual samples. :no-index:
+        logger: Logger instance used to log messages at various verbosity levels. :no-index:
+        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods. :no-index:
 
 
     Verbose Level Mapping:

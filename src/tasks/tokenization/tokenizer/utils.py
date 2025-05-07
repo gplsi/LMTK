@@ -21,19 +21,15 @@ def build_causal_lm_outputs(outputs: Dict[str, List]) -> Dict[str, np.ndarray]:
     """
     Build and return a dictionary of causal language modeling outputs.
 
-    This function converts lists of token information into numpy arrays with a fixed integer type.
-    The resulting dictionary includes:
-        - 'input_ids': The token IDs converted to a numpy array.
-        - 'attention_mask': The attention mask converted to a numpy array.
-        - 'labels': Duplicates the input_ids array (commonly used as targets in causal LM tasks).
-
     Args:
-        outputs (Dict[str, List]): A dictionary containing the following keys:
-            - "input_ids": List of token ID lists.
-            - "attention_mask": List of attention mask lists.
+        outputs (Dict[str, List]):
+            A dictionary containing:
+                - "input_ids": List of token ID lists.
+                - "attention_mask": List of attention mask lists.
 
     Returns:
-        Dict[str, np.ndarray]: A dictionary with numpy arrays for "input_ids", "attention_mask", and "labels".
+        Dict[str, np.ndarray]:
+            Dictionary with numpy arrays for "input_ids", "attention_mask", and "labels".
     """
     
     return {
@@ -46,21 +42,16 @@ def build_causal_lm_outputs_old(outputs: Dict[str, List]) -> Dict[str, List]:
     """
     Build outputs for causal language modeling using pre-allocated arrays.
 
-    This legacy function manually pre-allocates numpy arrays to store token IDs, attention masks,
-    and language model labels for each sample in the batch. The approach involves:
-        1. Determining batch size from the 'length' key.
-        2. Pre-allocating arrays based on the batch size and the sequence length of the first example.
-        3. Populating each array with corresponding data from the provided lists.
-        4. Converting the numpy arrays back to lists before returning the dictionary.
-
     Args:
-        outputs (Dict[str, List]): A dictionary expected to contain:
-            - "input_ids": List of lists of token IDs.
-            - "attention_mask": List of lists of attention masks.
-            - "length": List with the sequence lengths for each example (assumes uniform sequence length).
+        outputs (Dict[str, List]):
+            A dictionary expected to contain:
+                - "input_ids": List of lists of token IDs.
+                - "attention_mask": List of lists of attention masks.
+                - "length": List with the sequence lengths for each example (assumes uniform sequence length).
 
     Returns:
-        Dict[str, List]: A dictionary with processed lists for "input_ids", "attention_mask", and "labels".
+        Dict[str, List]:
+            Dictionary with lists for "input_ids", "attention_mask", and "labels".
     """
     batch_size = len(outputs["length"])
     
