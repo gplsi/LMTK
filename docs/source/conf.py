@@ -76,7 +76,7 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/yourusername/workspace",
+            "url": "https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp",
             "icon": "fab fa-github",
             "type": "fontawesome",
         },
@@ -102,9 +102,9 @@ html_theme_options = {
 
 # HTML context for GitHub links
 html_context = {
-    "github_user": "yourusername",
-    "github_repo": "workspace",
-    "github_version": "main",
+    "github_user": "gplsi",
+    "github_repo": "continual-pretraining-framework",
+    "github_version": "last-llama-fsdp",
     "doc_path": "docs/source",
 }
 
