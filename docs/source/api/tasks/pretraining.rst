@@ -22,7 +22,7 @@ Fabric Base
    :show-inheritance:
 
 Distributed Training
--------------------
+--------------------
 
 .. automodule:: src.tasks.pretraining.fabric.distributed
    :members:
@@ -30,7 +30,7 @@ Distributed Training
    :show-inheritance:
 
 FSDP Wrappers
-------------
+-------------
 
 .. automodule:: src.tasks.pretraining.fabric.wrappers.fsdp_config
    :members:
@@ -43,7 +43,7 @@ FSDP Wrappers
    :show-inheritance:
 
 Model Generation
---------------
+---------------
 
 .. automodule:: src.tasks.pretraining.fabric.generation
    :members:
@@ -51,7 +51,7 @@ Model Generation
    :show-inheritance:
 
 Performance Monitoring
---------------------
+---------------------
 
 .. automodule:: src.tasks.pretraining.fabric.speed_monitor
    :members:
