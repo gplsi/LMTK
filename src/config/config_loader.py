@@ -58,6 +58,14 @@ class ConfigValidator:
         """
         Validate a configuration file against a specified JSON schema.
 
+        :param config_path: The file path to the configuration YAML file to be validated.
+        :type config_path: Path
+        :param schema_name: The base name (without extension) of the schema file to use for validation.
+        :type schema_name: str
+        :return: A Box object containing the configuration data, enabling dot notation for attribute access.
+        :rtype: Box
+        :raises ValueError: If the configuration fails validation. The exception message will contain detailed error messages for all validation issues encountered.
+
         The method executes the following steps:
 
         - Loads configuration data from the specified YAML file.
@@ -65,17 +73,6 @@ class ConfigValidator:
         - Constructs a RefResolver with the preloaded schemas to handle JSON Schema references.
         - Validates the configuration data using the Draft7Validator.
         - If validation errors are found, aggregates them into a detailed error message.
-
-        Parameters:
-        - config_path (Path): The file path to the configuration YAML file to be validated.
-        - schema_name (str): The base name (without extension) of the schema file to use for validation.
-
-        Returns:
-        - Box: A Box object containing the configuration data, enabling dot notation for attribute access.
-
-        Raises:
-        - ValueError: If the configuration fails validation. The exception message will contain
-                      detailed error messages for all validation issues encountered.
         """
         # Load config data
         with open(config_path, 'r') as f:

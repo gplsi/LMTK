@@ -14,7 +14,7 @@ Orchestrator
    :show-inheritance:
 
 Fabric Base
-----------
+-----------
 
 .. automodule:: src.tasks.pretraining.fabric.base
    :members:
@@ -22,7 +22,7 @@ Fabric Base
    :show-inheritance:
 
 Distributed Training
-------------------
+-------------------
 
 .. automodule:: src.tasks.pretraining.fabric.distributed
    :members:

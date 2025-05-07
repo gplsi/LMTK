@@ -51,11 +51,13 @@ class DatasetStorage:
         2: Errors and warnings
         3: Errors, warnings, and informational messages
         4: Errors, warnings, informational messages, and debug messages
+
     Attributes:
         verbose_level (VerboseLevel): Level of verbosity for logging.
         enable_txt_samples (bool): Flag to enable loading text files as individual samples.
         logger: Logger instance used to log messages at various verbosity levels.
         extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods.
+
 
     Verbose Level Mapping:
         0: No messages

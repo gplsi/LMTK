@@ -38,7 +38,7 @@ Configuration
    :show-inheritance:
 
 Utilities
---------
+---------
 
 .. automodule:: src.tasks.tokenization.tokenizer.utils
    :members:

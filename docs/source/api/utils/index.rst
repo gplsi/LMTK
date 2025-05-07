@@ -1,12 +1,12 @@
 .. _api_utils:
 
 Utilities API
-============
+=============
 
 This API reference provides detailed documentation for the utility modules.
 
 Logging
-------
+-------
 
 .. automodule:: src.utils.logging
    :members:
