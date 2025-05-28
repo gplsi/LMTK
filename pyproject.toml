@@ -22,7 +22,8 @@ scikit-learn = "^1.6.1"
 lightning = "^2.5.1"
 wandb = "0.17.0"
 pydantic = "1.10.11"
-deepspeed = "^0.13.5"
+
+
 
 # flash-attn package is commented out as it requires special setup
 # flash-attn = { version = "^2.7.4", optional = true }
@@ -53,6 +54,7 @@ sphinxcontrib-mermaid = "^1.0.0"
 nbsphinx = "^0.9.3"
 sphinx-tabs = "^3.4.4"
 pydata-sphinx-theme = "^0.14.4"
+peft = "^0.1.0"
 
 [tool.poetry.extras]
 gpu = ["flash-attn"]
