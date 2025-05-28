@@ -25,25 +25,42 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    python3.10 \
+    python3.10-venv \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Set up Python 3.10 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
 
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 - && \
     chmod 755 $POETRY_HOME/bin/poetry
 
-# Copy Poetry configuration files
-COPY pyproject.toml ./
-
-# Generate a new lock file and then install dependencies
-RUN poetry lock && poetry install --no-root
+# Set up Poetry to use in-project virtualenvs
+RUN poetry config virtualenvs.create true && \
+    poetry config virtualenvs.in-project true
 
 # Copy project files
 COPY . /workspace/
+WORKDIR /workspace
 
-# Install project with all dependencies
-RUN poetry install
+# Create a script to initialize the environment
+RUN echo '#!/bin/bash' > /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo '# Activate virtual environment if it exists' >> /entrypoint.sh && \
+    echo 'if [ -f ".venv/bin/activate" ]; then' >> /entrypoint.sh && \
+    echo '    source .venv/bin/activate' >> /entrypoint.sh && \
+    echo 'fi' >> /entrypoint.sh && \
+    echo '' >> /entrypoint.sh && \
+    echo '# If no command is provided, start a shell' >> /entrypoint.sh && \
+    echo 'if [ "$#" -eq 0 ]; then' >> /entrypoint.sh && \
+    echo '    exec /bin/bash' >> /entrypoint.sh && \
+    echo 'else' >> /entrypoint.sh && \
+    echo '    exec "$@"' >> /entrypoint.sh && \
+    echo 'fi' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
 
-# Configure entrypoint
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["echo 'Container ready - use exec to run commands' && tail -f /dev/null"]
+# Set up entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/bin/bash"]

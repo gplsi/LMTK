@@ -85,11 +85,35 @@ build-prod:
 	docker build --target production -t $(PROJECT_NAME):prod --network=host -f docker/Dockerfile.prod .
 
 # Container execution
-container:
-	$(DOCKER_RUN) --name gplsi_continual_pretraining_framework -it --network=host --gpus '"device=$(GPU_DEVICES)"' $(PROJECT_NAME):dev bash
+# Development container (interactive with source code mounted)
+container: container-dev
 
+container-dev:
+	@echo "Starting development container with source code mounted..."
+	@echo "GPU devices: $(GPU_DEVICES)"
+	$(DOCKER_RUN) --name $(PROJECT_NAME)-dev -it --network=host --gpus '"device=$(GPU_DEVICES)"' \
+		-v $(CURDIR)/data:/workspace/data \
+		-v $(CURDIR)/models:/workspace/models \
+		$(PROJECT_NAME):dev bash
+
+# Production container (runs the application)
 container-prod:
-	$(DOCKER_RUN) --name gplsi_continual_pretraining_prod -it --network=host --gpus '"device=$(GPU_DEVICES)"' $(PROJECT_NAME):prod bash
+	@echo "Starting production container..."
+	@echo "GPU devices: $(GPU_DEVICES)"
+	docker run -d --name $(PROJECT_NAME)-prod --network=host --gpus '"device=$(GPU_DEVICES)"' \
+		-v $(CURDIR)/data:/workspace/data \
+		-v $(CURDIR)/models:/workspace/models \
+		$(PROJECT_NAME):prod
+
+# Production container with shell access (for debugging)
+container-prod-shell:
+	@echo "Starting production container with shell access..."
+	@echo "GPU devices: $(GPU_DEVICES)"
+	docker run -it --rm --name $(PROJECT_NAME)-prod-shell --network=host --gpus '"device=$(GPU_DEVICES)"' \
+		-v $(CURDIR)/data:/workspace/data \
+		-v $(CURDIR)/models:/workspace/models \
+		--entrypoint /bin/bash \
+		$(PROJECT_NAME):prod
 
 # Universal installation target that uses either Poetry or pip
 install:
