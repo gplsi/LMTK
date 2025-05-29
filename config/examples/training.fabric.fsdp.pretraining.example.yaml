@@ -1,0 +1,72 @@
+# Example configuration for pretraining with FSDP
+# This configuration follows the training.fabric.fsdp.schema.yaml schema
+
+task: pretraining
+experiment_name: pythia-pretraining
+
+# Training mode (process_dataset or train)
+mode: train
+
+# Strategy configuration
+strategy: fsdp
+
+# Device configuration
+devices: 2  # Number of devices to use
+precision: bf16-mixed
+
+# Output configuration
+output_dir: output/pythia_pretraining
+
+# Model configuration
+model:
+  name: EleutherAI/pythia-2.8b
+  tokenizer: EleutherAI/pythia-2.8b
+  trust_remote_code: true
+  max_length: 2048
+  padding_side: right
+
+# Dataset configuration
+dataset:
+  source: huggingface
+  nameOrPath: EleutherAI/pile
+  split: train
+  streaming: true
+  format: dataset
+  filter:
+    min_length: 10
+    max_length: 2048
+
+# Training configuration
+training:
+  batch_size: 4
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+
+# Training parameters
+max_epochs: 1
+val_interval: 500
+save_interval: 1000
+log_interval: 10
+
+# FSDP configuration
+fsdp:
+  sharding_strategy: full_shard
+  auto_wrap_policy: transformer
+  transformer_layers:
+    - GPTNeoXLayer
+  activation_checkpointing: true
+  cpu_offload: false
+  state_dict_type: full
+
+# Optimizer configuration
+optimizer:
+  name: adamw
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+
+# Scheduler configuration
+scheduler:
+  name: cosine
+  warmup_steps: 0.1  # 10% of total steps

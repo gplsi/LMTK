@@ -6,21 +6,20 @@ the pretraining workflow using different distributed strategies such as FSDP, DD
 It handles device detection, configuration validation, dataset loading, and training execution.
 """
 
-# src/tasks/tokenization.py
-
+from typing import Dict, Any, Optional, Union
 from box import Box
-from datasets import DatasetDict
+from datasets import Dataset as HFDataset, DatasetDict
 import torch
-from src.utils.logging import get_logger
-from src.utils.logging import VerboseLevel
+
+from src.utils.logging import get_logger, VerboseLevel
 from src.utils.dataset import DatasetStorage
-from src.tasks.pretraining.fabric.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
+from src.abstract_tasks.training.orchestrator import TrainingOrchestrator
+from src.tasks.pretraining.fabric.trainer import PretrainingTrainer
 from utils import inherit_init_params
-from utils.orchestrator import BaseOrchestrator
-from datasets import Dataset as HFDataset
 
 
-class ContinualOrchestrator(BaseOrchestrator):
+@inherit_init_params
+class ContinualOrchestrator(TrainingOrchestrator):
     """
     Orchestrates the continual pretraining workflow.
     
@@ -34,135 +33,48 @@ class ContinualOrchestrator(BaseOrchestrator):
         Initialize the ContinualOrchestrator with the given configuration.
         
         It performs the following steps:
-          - Gets the local rank from environment variables for distributed training
-          - Calls the superclass initializer with the provided configuration and rank
-          - Checks for CUDA availability and counts the available CUDA devices.
-          - Logs the number of available CUDA devices. If none are found, a warning is 
-            logged and training will fall back to using the CPU.
+          - Calls the superclass initializer with the provided configuration
+          - Sets up logging and dataset storage
         
         Parameters:
             config (Box): Configuration object containing training parameters.
         """
         super().__init__(config)
-        
-        # get all devices available in torch so we can set them to torch modules
-        if (torch.cuda.is_available()):
-            self.devices = torch.cuda.device_count()
-            self.logger.info(f"Found {self.devices} CUDA devices available for training")
-            if self.devices > 0:
-                self.logger.info(f"Found {self.devices} CUDA devices available for training")
-                return
-            
-        self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
-        self.devices = "cpu"
+        self.logger = get_logger(__name__, VerboseLevel.INFO)
+        self.processed_dataset = None
 
     def validate_config(self) -> None:
         """
         Validate continual configuration.
         
-        This method is intended to verify that the configuration settings
+        This method verifies that the configuration settings
         are properly defined and sufficient for running the pretraining tasks.
-        Currently, it is a placeholder for future validation implementation.
         
         Raises:
-            NotImplementedError: If configuration validation logic is added and fails.
+            ValueError: If required configuration elements are missing.
         """
-        # TODO: Implement general configuration validation
-        pass
+        if not hasattr(self.config, "model") or not self.config.model:
+            raise ValueError("Model configuration must be provided")
+        if not hasattr(self.config.model, "name") or not self.config.model.name:
+            raise ValueError("Model name must be provided")
+        if not hasattr(self.config, "dataset") or not self.config.dataset:
+            raise ValueError("Dataset configuration must be provided")
+        if not hasattr(self.config.dataset, "source") or not self.config.dataset.source:
+            raise ValueError("Dataset source must be provided")
+        if not hasattr(self.config, "output_dir") or not self.config.output_dir:
+            raise ValueError("Output directory must be provided")
 
-    def fsdp(self, dataset: HFDataset) -> None:
+    def _validate_dataset_config(self) -> None:
         """
-        Execute FSDP (Fully Sharded Data Parallel) continual pretraining task.
+        Validate the dataset configuration.
         
-        This method initializes and sets up the FSDP trainer using the given dataset and configuration.
-        It logs the start and finish of the FSDP training process.
+        This method ensures that the dataset configuration is properly defined.
         
-        Parameters:
-            dataset (HFDataset): The dataset to be used for pretraining.
+        Raises:
+            ValueError: If the dataset configuration is missing.
         """
-        self.logger.info("Starting FSDP continual pretraining task")
-        # TODO: Validate specific configuration
-        
-        trainer = FSDP(
-            devices=self.devices,
-            config=self.config,
-            dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
-        )
-        
-        trainer.setup()
-        self.logger.info("FSDP training finished")
-        
-    def ddp(self, dataset: HFDataset) -> None:
-        """
-        Execute DDP (Distributed Data Parallel) continual pretraining task.
-        
-        This method sets up the trainer with DistributedDataParallel using the available devices.
-        It logs the overall process of the DDP training.
-        
-        Parameters:
-            dataset (HFDataset): The dataset to be used for pretraining.
-        """        
-        self.logger.info("Starting DDP continual pretraining task")
-        # TODO: Validate specific configuration
-        
-        trainer = DistributedDataParallel(
-            devices=self.devices,
-            config=self.config,
-            dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
-        )
-        
-        trainer.setup()
-        self.logger.info("DDP training finished")
-        
-    def dp(self, dataset: HFDataset) -> None:
-        """
-        Execute DP (Data Parallel) continual pretraining task.
-        
-        This method initializes and configures the DataParallel trainer using the provided dataset
-        and configuration settings. It logs both the start and the completion of the DP training.
-        
-        Parameters:
-            dataset (HFDataset): The dataset used for pretraining.
-        """
-        self.logger.info("Starting DP continual pretraining task")
-        # TODO: Validate specific configuration
-        
-        trainer = DataParallel(
-            devices=self.devices,
-            config=self.config,
-            dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
-        )
-        
-        trainer.setup()
-        self.logger.info("DP training finished")
-
-    def deep_speed(self, dataset: HFDataset) -> None:
-        """
-        Execute DeepSpeed continual pretraining task.
-        
-        This method sets up the DeepSpeed trainer by using the chosen configuration,
-        dataset, and available devices. It logs the commencement and the completion of the
-        DeepSpeed training process.
-        
-        Parameters:
-            dataset (HFDataset): The dataset to be used for pretraining.
-        """
-        self.logger.info("Starting Deep Speed continual pretraining task")
-        # TODO: Validate specific configuration
-        
-        trainer = DeepSpeed(
-            devices=self.devices,
-            config=self.config,
-            dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
-        )
-        
-        trainer.setup()
-        self.logger.info("Deep Speed training finished")
-
+        if not hasattr(self.config, "dataset") or not self.config.dataset:
+            raise ValueError("Dataset configuration must be provided")
 
     def load_dataset(self) -> HFDataset:
         """
@@ -187,24 +99,153 @@ class ContinualOrchestrator(BaseOrchestrator):
             )
         )
         
-        self._validate__dataset_config()
+        self._validate_dataset_config()
         
         if self.config.dataset.source == "local":
             self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")
             
             dataset = dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
-            # TODO: IMPROVE THIS FOR MAINTAINABILITY
+            # Ensure dataset is wrapped in a DatasetDict for consistency
             if isinstance(dataset, HFDataset):
                 dataset = DatasetDict({"train": dataset})
+            
+            self.processed_dataset = dataset
             return dataset
         
         elif self.config.dataset.source == "huggingface":
-            raise NotImplementedError("HuggingFace dataset loading not implemented yet")
+            self.logger.info(f"Loading dataset from HuggingFace: '{self.config.dataset.nameOrPath}'")
+            
+            # Get dataset name and config
+            dataset_name = self.config.dataset.nameOrPath
+            config_name = self.config.dataset.get("config_name", None)
+            split = self.config.dataset.get("split", "train")
+            
+            # Load dataset from HuggingFace
+            dataset = HFDataset.load_dataset(
+                dataset_name,
+                name=config_name,
+                split=split
+            )
+            
+            # Ensure dataset is wrapped in a DatasetDict for consistency
+            if isinstance(dataset, HFDataset):
+                dataset = DatasetDict({"train": dataset})
+            
+            self.processed_dataset = dataset
+            return dataset
+        
         raise ValueError(f"Invalid dataset source: {self.config.dataset.source}")
+
+    def _process_dataset(self) -> None:
+        """
+        Process the dataset for pretraining.
+        
+        This method implements the abstract method from TrainingOrchestrator
+        to handle dataset processing for pretraining.
+        """
+        self.logger.info("Processing dataset for pretraining")
+        
+        # Validate configuration
+        self.validate_config()
+        
+        # Load dataset
+        dataset = self.load_dataset()
+        self.processed_dataset = dataset
+        
+        # Save processed dataset if configured
+        if hasattr(self.config, "output") and self.config.output.get("save_processed", False):
+            output_path = self.config.output.path
+            self.logger.info(f"Saving processed dataset to {output_path}")
+            dataset.save_to_disk(output_path)
+        
+        self.logger.info("Dataset processing completed successfully")
+
+    def _setup_fsdp(self) -> PretrainingTrainer:
+        """
+        Set up the FSDP trainer for pretraining.
+        
+        This method overrides the parent method to use the PretrainingTrainer
+        instead of the generic FSDP trainer.
+        
+        Returns:
+            Configured PretrainingTrainer with FSDP strategy
+        """
+        self.logger.info("Setting up FSDP trainer for pretraining")
+        
+        return PretrainingTrainer(
+            config=self.config,
+            devices=self.devices,
+            output_dir=self.output_dir,
+            cli_logger=self.logger,
+            dataset=self.processed_dataset,
+        )
+    
+    def _setup_deepspeed(self) -> PretrainingTrainer:
+        """
+        Set up the DeepSpeed trainer for pretraining.
+        
+        This method overrides the parent method to use the PretrainingTrainer
+        instead of the generic DeepSpeed trainer.
+        
+        Returns:
+            Configured PretrainingTrainer with DeepSpeed strategy
+        """
+        self.logger.info("Setting up DeepSpeed trainer for pretraining")
+        
+        return PretrainingTrainer(
+            config=self.config,
+            devices=self.devices,
+            output_dir=self.output_dir,
+            cli_logger=self.logger,
+            dataset=self.processed_dataset,
+        )
+    
+    def _setup_ddp(self) -> PretrainingTrainer:
+        """
+        Set up the DDP trainer for pretraining.
+        
+        This method overrides the parent method to use the PretrainingTrainer
+        instead of the generic DDP trainer.
+        
+        Returns:
+            Configured PretrainingTrainer with DDP strategy
+        """
+        self.logger.info("Setting up DDP trainer for pretraining")
+        
+        return PretrainingTrainer(
+            config=self.config,
+            devices=self.devices,
+            output_dir=self.output_dir,
+            cli_logger=self.logger,
+            dataset=self.processed_dataset,
+        )
+    
+    def _setup_dp(self) -> PretrainingTrainer:
+        """
+        Set up the DataParallel trainer for pretraining.
+        
+        This method overrides the parent method to use the PretrainingTrainer
+        instead of the generic DataParallel trainer.
+        
+        Returns:
+            Configured PretrainingTrainer with DataParallel strategy
+        """
+        self.logger.info("Setting up DataParallel trainer for pretraining")
+        
+        return PretrainingTrainer(
+            config=self.config,
+            devices=self.devices,
+            output_dir=self.output_dir,
+            cli_logger=self.logger,
+            dataset=self.processed_dataset,
+        )
 
     def execute(self) -> None:
         """
         Execute the complete continual pretraining pipeline.
+        
+        This method overrides the execute method from TrainingOrchestrator
+        to add pretraining-specific preprocessing before training.
         
         The execution flow includes:
           1. Validating configuration settings.
@@ -214,29 +255,37 @@ class ContinualOrchestrator(BaseOrchestrator):
         
         Logs are generated at every major step. In case of errors, the exception is logged and re-raised.
         """
-        self.logger.info("Starting training pipeline")
+        self.logger.info("Starting pretraining pipeline")
+        
         try:
-            # 1. Validate configuration
-            self.validate_config()
+            # Determine execution mode
+            mode = getattr(self.config, "mode", "train")
             
-            # 2. Load dataset
-            dataset = self.load_dataset()
-
-            # Select specific continual method
-            strategy = self.config.get("parallelization_strategy", "fsdp")
-            if strategy == "fsdp":
-                self.fsdp(dataset)
-            elif strategy == "ddp":
-                self.ddp(dataset)
-            elif strategy == "deep_speed":
-                self.deep_speed(dataset)
-            elif strategy == "dp":
-                self.dp(dataset)
+            if mode == "process_dataset":
+                # Process dataset mode
+                self._process_dataset()
+            elif mode == "train":
+                # First process the dataset if needed
+                if self.config.get("preprocess_dataset", True):
+                    # Validate configuration
+                    self.validate_config()
+                    
+                    # Load dataset
+                    self.processed_dataset = self.load_dataset()
+                    
+                    # Save processed dataset if configured
+                    if hasattr(self.config, "output") and self.config.output.get("save_processed", False):
+                        output_path = self.config.output.path
+                        self.logger.info(f"Saving processed dataset to {output_path}")
+                        self.processed_dataset.save_to_disk(output_path)
+                
+                # Call parent method to handle training
+                super().execute()
             else:
-                raise ValueError(f"Invalid parallelization strategy: {strategy}")
+                raise ValueError(f"Unknown execution mode: {mode}")
             
-            self.logger.info("Continual Pretraining completed successfully")
-
+            self.logger.info("Pretraining pipeline completed successfully")
+            
         except Exception as e:
-            self.logger.error(f"Continual Pretraining pipeline failed: {str(e)}")
+            self.logger.error(f"Pretraining pipeline failed: {str(e)}")
             raise
