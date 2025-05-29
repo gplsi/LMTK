@@ -1,8 +1,8 @@
-# Example configuration for pretraining with FSDP
-# This configuration follows the training.fabric.fsdp.pretraining.huggingface.schema.yaml schema
+# Example configuration for pretraining with FSDP using local datasets
+# This configuration follows the training.fabric.fsdp.pretraining.local.schema.yaml schema
 
 task: pretraining
-experiment_name: pythia-pretraining
+experiment_name: pythia-pretraining-local
 
 # Training mode (process_dataset or train)
 mode: train
@@ -15,7 +15,7 @@ devices: 2  # Number of devices to use
 precision: bf16-mixed
 
 # Output configuration
-output_dir: output/pythia_pretraining
+output_dir: output/pythia_pretraining_local
 
 # Model configuration
 model:
@@ -27,19 +27,27 @@ model:
 
 # Dataset configuration
 dataset:
-  source: huggingface
-  nameOrPath: EleutherAI/pile
-  split: train
-  streaming: true
-  format: dataset
-  filter:
-    min_length: 10
-    max_length: 2048
-  preprocessing:
-    text_column: text
+  source: local
+  nameOrPath: /path/to/local/dataset
+  format: files
+  use_txt_as_samples: false
+  file_config:
+    extension: .txt
+    recursive: true
+    min_file_size: 100  # 100 bytes
+    max_file_size: 10000000  # 10MB
+    encoding: utf-8
     chunk_size: 2048
     stride: 512
     add_eos_token: true
+  filter:
+    min_length: 10
+    max_length: 2048
+
+# Output configuration for processed dataset
+output:
+  save_processed: true
+  path: output/processed_dataset
 
 # Training configuration
 training:
