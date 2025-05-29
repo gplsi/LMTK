@@ -1,12 +1,12 @@
 .. _api_utils:
 
 Utilities API
-===========
+=============
 
 This API reference provides detailed documentation for the utility modules.
 
 Logging
-------
+-------
 
 .. automodule:: src.utils.logging
    :members:
@@ -14,7 +14,7 @@ Logging
    :show-inheritance:
 
 Orchestrator Base
----------------
+-----------------
 
 .. automodule:: src.utils.orchestrator
    :members:
@@ -22,7 +22,7 @@ Orchestrator Base
    :show-inheritance:
 
 Version
-------
+-------
 
 .. automodule:: src.utils.version
    :members:
@@ -30,7 +30,7 @@ Version
    :show-inheritance:
 
 Dataset
-------
+-------
 
 .. automodule:: src.utils.dataset.storage
    :members:

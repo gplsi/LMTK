@@ -19,6 +19,17 @@ class VerboseLevel(IntEnum):
         WARNINGS (int): Warning messages.
         INFO (int): Informational messages.
         DEBUG (int): Debugging messages.
+
+    .. attribute:: NONE
+       :no-index:
+    .. attribute:: ERRORS
+       :no-index:
+    .. attribute:: WARNINGS
+       :no-index:
+    .. attribute:: INFO
+       :no-index:
+    .. attribute:: DEBUG
+       :no-index:
     """
     
     NONE = 0
@@ -44,6 +55,11 @@ class CustomFormatter(logging.Formatter):
     Attributes:
         COLORS (dict): Maps logging levels to ANSI escape sequences for color formatting.
         RESET (str): ANSI escape sequence to reset color formatting.
+
+    .. attribute:: COLORS
+       :no-index:
+    .. attribute:: RESET
+       :no-index:
     """
     
     COLORS = {
@@ -73,7 +89,7 @@ def get_logger(
     
     Args:
         name (str): The name of the logger (typically __name__).
-        level (Optional[VerboseLevel]): The desired verbosity level. Defaults to VerboseLevel.INFO.
+        level (:data:`VerboseLevel`): The desired verbosity level. Defaults to :data:`VerboseLevel.INFO` :no-index:.
         rank (Optional[int]): The process rank in distributed training. Used to filter logs.
     
     Returns:

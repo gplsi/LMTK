@@ -50,7 +50,23 @@ extensions = [
 templates_path = ['_templates']
 
 # List of patterns to exclude
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
+exclude_patterns = [
+    '_build',
+    'Thumbs.db',
+    '.DS_Store',
+    '**.ipynb_checkpoints',
+    'examples/**',  # Exclude example notebooks to avoid PandocMissing errors
+    '*.ipynb',      # Skip any remaining notebooks
+]
+
+# Mock heavy or optional imports to avoid import failures during autodoc
+autodoc_mock_imports = [
+    'torch',
+    'lightning',
+    'transformers',
+    'src.tasks.pretraining.orchestrator',
+    'src.tasks.pretraining.fabric.distributed',
+]
 
 # The theme to use for HTML and HTML Help pages
 html_theme = 'pydata_sphinx_theme'
@@ -60,7 +76,7 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/yourusername/workspace",
+            "url": "https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp",
             "icon": "fab fa-github",
             "type": "fontawesome",
         },
@@ -86,9 +102,9 @@ html_theme_options = {
 
 # HTML context for GitHub links
 html_context = {
-    "github_user": "yourusername",
-    "github_repo": "workspace",
-    "github_version": "main",
+    "github_user": "gplsi",
+    "github_repo": "continual-pretraining-framework",
+    "github_version": "last-llama-fsdp",
     "doc_path": "docs/source",
 }
 

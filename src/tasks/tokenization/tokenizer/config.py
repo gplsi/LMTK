@@ -52,7 +52,15 @@ class TokenizerConfig:
               show_progress (bool):
             Whether to show progress bars during tokenization. Useful for monitoring progress
             on large datasets. Defaults to True.
+
+    .. attribute:: overlap
+       :no-index:
+    .. attribute:: tokenizer_name
+       :no-index:
+    .. attribute:: verbose_level
+       :no-index:
     """
+
     context_length: int
     overlap: Optional[int] = None
     tokenizer_name: Optional[str] = None

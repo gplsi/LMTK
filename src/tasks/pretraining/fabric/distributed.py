@@ -1,11 +1,6 @@
 """
-Module: distributed_strategies
-Description:
-    This module defines various classes that configure distributed training
-    strategies using Lightning Fabric. Each class sets up a specific strategy
-    based on the provided configuration and the number of available devices.
+Distributed training strategies implemented with Lightning Fabric.
 """
-
 
 # Importing Lightning and other necessary libraries
 import lightning as L
@@ -31,7 +26,7 @@ from src.tasks.pretraining.fabric.speed_monitor import SpeedMonitorFabric as Mon
 class FSDP(FabricTrainerBase):
     """
     Class to set up the Fully Sharded Data Parallel (FSDP) strategy for distributed training.
-    
+
     This class extends the FabricTrainerBase and configures the FSDP strategy based
     on the configuration parameters provided. When using multiple devices, it resolves
     the appropriate FSDP configuration and initializes the strategy. For a single device,

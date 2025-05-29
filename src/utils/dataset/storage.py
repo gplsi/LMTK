@@ -13,21 +13,6 @@ The module makes extensive use of verbose logging to notify users of its operati
 and it is designed with extensibility and robust error handling in mind.
 """
 
-"""
-This module implements the DatasetStorage class, which provides functionality for 
-loading, processing, splitting, and saving datasets in Arrow format using the Hugging Face Datasets library.
-
-Key features include:
-  - Loading datasets from various file types (e.g., text, CSV, JSON)
-  - Grouping files in a directory by file extension
-  - Handling special processing for text files when enabled
-  - Splitting datasets into training and validation subsets
-  - Saving and loading datasets from disk as well as fetching from the Hugging Face Hub
-
-The module makes extensive use of verbose logging to notify users of its operations,
-and it is designed with extensibility and robust error handling in mind.
-"""
-
 
 from pathlib import Path
 from typing import Dict, Optional, List, Any, Union
@@ -50,14 +35,15 @@ class DatasetStorage:
     """
     Class for handling dataset operations including loading, processing, splitting,
     and saving datasets in Arrow format.
-    Class for handling dataset operations including loading, processing, splitting,
-    and saving datasets in Arrow format.
+
+    .. note::
+        Use :no-index: in duplicate object descriptions for Sphinx.
 
     Attributes:
-        verbose_level (VerboseLevel): Level of verbosity for logging.
-        enable_txt_samples (bool): Flag to enable loading text files as individual samples.
-        logger: Logger instance used to log messages at various verbosity levels.
-        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods.
+        verbose_level (VerboseLevel): Level of verbosity for logging. :no-index:
+        enable_txt_samples (bool): Flag to enable loading text files as individual samples. :no-index:
+        logger: Logger instance used to log messages at various verbosity levels. :no-index:
+        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods. :no-index:
 
     Verbose Level Mapping:
         0: No messages
@@ -65,11 +51,13 @@ class DatasetStorage:
         2: Errors and warnings
         3: Errors, warnings, and informational messages
         4: Errors, warnings, informational messages, and debug messages
+
     Attributes:
-        verbose_level (VerboseLevel): Level of verbosity for logging.
-        enable_txt_samples (bool): Flag to enable loading text files as individual samples.
-        logger: Logger instance used to log messages at various verbosity levels.
-        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods.
+        verbose_level (VerboseLevel): Level of verbosity for logging. :no-index:
+        enable_txt_samples (bool): Flag to enable loading text files as individual samples. :no-index:
+        logger: Logger instance used to log messages at various verbosity levels. :no-index:
+        extension_to_method (dict): Mapping of file extensions to their corresponding dataset loading methods. :no-index:
+
 
     Verbose Level Mapping:
         0: No messages

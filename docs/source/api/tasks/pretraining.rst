@@ -1,12 +1,12 @@
 .. _api_pretraining:
 
 Pretraining API
-==============
+================
 
 This API reference provides detailed documentation for the pretraining module components.
 
 Orchestrator
------------
+------------
 
 .. automodule:: src.tasks.pretraining.orchestrator
    :members:
@@ -14,7 +14,7 @@ Orchestrator
    :show-inheritance:
 
 Fabric Base
-----------
+-----------
 
 .. automodule:: src.tasks.pretraining.fabric.base
    :members:
@@ -22,7 +22,7 @@ Fabric Base
    :show-inheritance:
 
 Distributed Training
-------------------
+--------------------
 
 .. automodule:: src.tasks.pretraining.fabric.distributed
    :members:
@@ -30,7 +30,7 @@ Distributed Training
    :show-inheritance:
 
 FSDP Wrappers
-------------
+-------------
 
 .. automodule:: src.tasks.pretraining.fabric.wrappers.fsdp_config
    :members:
@@ -43,7 +43,7 @@ FSDP Wrappers
    :show-inheritance:
 
 Model Generation
---------------
+-----------------
 
 .. automodule:: src.tasks.pretraining.fabric.generation
    :members:
@@ -51,7 +51,7 @@ Model Generation
    :show-inheritance:
 
 Performance Monitoring
---------------------
+----------------------
 
 .. automodule:: src.tasks.pretraining.fabric.speed_monitor
    :members:
@@ -59,7 +59,7 @@ Performance Monitoring
    :show-inheritance:
 
 Logging
-------
+-------
 
 .. automodule:: src.tasks.pretraining.fabric.logger
    :members:
@@ -67,7 +67,7 @@ Logging
    :show-inheritance:
 
 Utilities
---------
+---------
 
 .. automodule:: src.tasks.pretraining.utils
    :members:
