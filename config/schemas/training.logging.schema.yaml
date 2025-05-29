@@ -1,0 +1,114 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "training.logging.schema.yaml"
+title: "Training Logging Configuration"
+description: "Schema for configuring logging in training tasks"
+type: object
+
+properties:
+  logging:
+    type: object
+    description: "Configuration for logging during training"
+    properties:
+      type:
+        type: string
+        enum: ["console", "wandb", "tensorboard", "csv", "all"]
+        default: "console"
+        description: "Type of logging to use. 'all' enables all available logging types."
+      
+      # WandB specific configuration
+      wandb:
+        type: object
+        description: "Weights & Biases logging configuration"
+        properties:
+          entity:
+            type: string
+            description: "WandB entity to log the experiment"
+          
+          project:
+            type: string
+            description: "WandB project to log the experiment"
+          
+          name:
+            type: string
+            description: "Name of the run in WandB"
+          
+          tags:
+            type: array
+            items:
+              type: string
+            description: "Tags to apply to the WandB run"
+          
+          log_model:
+            type: boolean
+            default: false
+            description: "If true, log the model to WandB"
+          
+          watch_model:
+            type: boolean
+            default: false
+            description: "If true, watch the model gradients and parameters"
+          
+          watch_freq:
+            type: integer
+            default: 100
+            description: "Frequency for watching model parameters and gradients"
+        
+        required:
+          - entity
+          - project
+      
+      # TensorBoard specific configuration
+      tensorboard:
+        type: object
+        description: "TensorBoard logging configuration"
+        properties:
+          log_dir:
+            type: string
+            default: "logs/tensorboard"
+            description: "Directory to store TensorBoard logs"
+      
+      # CSV logging configuration
+      csv:
+        type: object
+        description: "CSV logging configuration"
+        properties:
+          log_dir:
+            type: string
+            default: "logs/csv"
+            description: "Directory to store CSV logs"
+          
+          filename:
+            type: string
+            default: "training_log.csv"
+            description: "Name of the CSV log file"
+      
+      # General logging configuration
+      log_interval:
+        type: integer
+        default: 10
+        description: "Interval (in steps) to log metrics"
+      
+      log_memory:
+        type: boolean
+        default: false
+        description: "If true, log memory usage"
+      
+      log_gpu:
+        type: boolean
+        default: false
+        description: "If true, log GPU usage"
+      
+      log_learning_rate:
+        type: boolean
+        default: true
+        description: "If true, log learning rate"
+      
+      log_grad_norm:
+        type: boolean
+        default: false
+        description: "If true, log gradient norm"
+      
+      verbose:
+        type: boolean
+        default: true
+        description: "If true, print logs to console"

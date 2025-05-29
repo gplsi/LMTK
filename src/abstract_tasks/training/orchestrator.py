@@ -13,6 +13,7 @@ import torch
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union, Tuple
 
+from src.training.metrics_logger import create_metrics_logger
 from src.training.fabric.distributed import (
     FSDP,
     DeepSpeed,
@@ -47,6 +48,13 @@ class TrainingOrchestrator(ABC):
         
         # Create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
+        
+        # Initialize metrics logger
+        self.metrics_logger = create_metrics_logger(
+            config=self.config,
+            output_dir=self.output_dir,
+            experiment_name=getattr(self.config, "experiment_name", None),
+        )
     
     def _detect_devices(self) -> Union[int, List[int]]:
         """

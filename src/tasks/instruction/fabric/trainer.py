@@ -26,12 +26,19 @@ from peft import (
 )
 
 from torch.utils.data import DataLoader
-from src.training.fabric.base import FabricTrainerBase
+from src.abstract_tasks.training.trainer import TrainerBase
+from lightning.fabric import Fabric
+from lightning.fabric.strategies import (
+    FSDPStrategy,
+    DeepSpeedStrategy,
+    DDPStrategy,
+    SingleDeviceStrategy,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class InstructionTrainer(FabricTrainerBase):
+class InstructionTrainer(TrainerBase):
     """
     Trainer for instruction fine-tuning tasks.
     
@@ -60,6 +67,87 @@ class InstructionTrainer(FabricTrainerBase):
         super().__init__(config, devices, output_dir, cli_logger)
         self.dataset = dataset
         self.tokenizer = None
+        self.fabric = None
+    
+    def setup(self) -> None:
+        """
+        Set up the Fabric trainer.
+        
+        This method initializes the Fabric instance, sets up the model, optimizer,
+        scheduler, and dataloaders, and prepares them for training with Fabric.
+        """
+        self.cli_logger.info("Setting up Fabric trainer")
+        
+        # Set up Fabric
+        self._setup_fabric()
+        
+        # Set up model
+        self.model = self._setup_model()
+        
+        # Set up dataloaders
+        self.train_dataloader = self._setup_train_dataloader()
+        self.val_dataloader = self._setup_val_dataloader()
+        
+        # Set up optimizer and scheduler
+        self.optimizer = self._setup_optimizer()
+        self.scheduler = self._setup_scheduler()
+        
+        # Prepare model, optimizer, and dataloaders with Fabric
+        self.model, self.optimizer = self.fabric.setup(self.model, self.optimizer)
+        self.train_dataloader = self.fabric.setup_dataloaders(self.train_dataloader)
+        if self.val_dataloader is not None:
+            self.val_dataloader = self.fabric.setup_dataloaders(self.val_dataloader)
+        
+        # Log model to metrics logger if configured
+        self.metrics_logger.log_model(self.model, self.optimizer)
+        
+        self.cli_logger.info("Fabric trainer setup complete")
+    
+    def _setup_fabric(self) -> None:
+        """
+        Set up the Fabric instance based on the configuration.
+        """
+        # Get precision from config
+        precision = getattr(self.config, "precision", "32-true")
+        
+        # Get strategy from config
+        strategy_name = getattr(self.config, "strategy", "fsdp").lower()
+        
+        if strategy_name == "fsdp":
+            # FSDP strategy
+            fsdp_config = getattr(self.config, "fsdp", {})
+            sharding_strategy = fsdp_config.get("sharding_strategy", "full_shard")
+            
+            strategy = FSDPStrategy(
+                auto_wrap_policy=fsdp_config.get("auto_wrap_policy", None),
+                activation_checkpointing=fsdp_config.get("activation_checkpointing", False),
+                cpu_offload=fsdp_config.get("cpu_offload", False),
+                sharding_strategy=sharding_strategy,
+            )
+        elif strategy_name == "deepspeed":
+            # DeepSpeed strategy
+            deepspeed_config = getattr(self.config, "deepspeed", {})
+            
+            strategy = DeepSpeedStrategy(
+                config=deepspeed_config
+            )
+        elif strategy_name == "ddp":
+            # DDP strategy
+            strategy = DDPStrategy()
+        elif strategy_name == "dp":
+            # Single device strategy (DataParallel will be handled manually)
+            strategy = SingleDeviceStrategy(device="cuda:0" if torch.cuda.is_available() else "cpu")
+        else:
+            # Default to single device
+            strategy = SingleDeviceStrategy(device="cuda:0" if torch.cuda.is_available() else "cpu")
+        
+        # Create Fabric instance
+        self.fabric = Fabric(
+            accelerator="cuda" if torch.cuda.is_available() else "cpu",
+            devices=self.devices,
+            precision=precision,
+            strategy=strategy,
+        )
     
     def _setup_model(self) -> nn.Module:
         """
@@ -195,16 +283,153 @@ class InstructionTrainer(FabricTrainerBase):
         """
         # Forward pass
         outputs = self.model(**batch)
-        
-        # Get loss
         loss = outputs.loss
         
-        # Calculate perplexity
-        perplexity = torch.exp(loss)
-        
-        # Return loss and metrics
+        # Compute metrics
         metrics = {
-            "perplexity": perplexity.item(),
+            "perplexity": torch.exp(loss).item(),
         }
         
         return loss, metrics
+        
+    def train(self) -> None:
+        """
+        Train the model using Fabric.
+        
+        This method overrides the base train method to use Fabric for
+        distributed training.
+        """
+        self.cli_logger.info("Starting Fabric training")
+        
+        # Get training parameters
+        max_epochs = getattr(self.config, "max_epochs", 1)
+        max_steps = getattr(self.config, "max_steps", -1)
+        val_interval = getattr(self.config, "val_interval", -1)
+        save_interval = getattr(self.config, "save_interval", -1)
+        grad_accum_steps = getattr(self.config, "gradient_accumulation_steps", 1)
+        
+        # Initialize step counter
+        global_step = 0
+        
+        # Training loop
+        for epoch in range(max_epochs):
+            self.cli_logger.info(f"Starting epoch {epoch + 1}/{max_epochs}")
+            
+            # Reset metrics
+            epoch_loss = 0.0
+            epoch_metrics = {}
+            
+            # Set model to training mode
+            self.model.train()
+            
+            # Iterate over batches
+            for batch_idx, batch in enumerate(self.train_dataloader):
+                # Compute loss
+                loss, metrics = self._compute_loss(batch)
+                
+                # Scale loss for gradient accumulation
+                loss = loss / grad_accum_steps
+                
+                # Backward pass with Fabric
+                self.fabric.backward(loss)
+                
+                # Update metrics
+                epoch_loss += loss.item() * grad_accum_steps
+                for key, value in metrics.items():
+                    if key not in epoch_metrics:
+                        epoch_metrics[key] = 0.0
+                    epoch_metrics[key] += value
+                
+                # Optimizer step
+                if (batch_idx + 1) % grad_accum_steps == 0:
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+                    
+                    # Scheduler step
+                    if self.scheduler is not None:
+                        self.scheduler.step()
+                        # Log learning rate
+                        metrics["learning_rate"] = self.scheduler.get_last_lr()[0]
+                    
+                    # Increment global step
+                    global_step += 1
+                    
+                    # Log metrics
+                    avg_loss = epoch_loss / (batch_idx + 1)
+                    avg_metrics = {
+                        key: value / (batch_idx + 1)
+                        for key, value in epoch_metrics.items()
+                    }
+                    
+                    # Add loss to metrics
+                    avg_metrics["loss"] = avg_loss
+                    
+                    # Log to metrics logger
+                    self.metrics_logger.log_metrics(avg_metrics, global_step)
+                    
+                    # Validation
+                    if val_interval > 0 and global_step % val_interval == 0:
+                        val_metrics = self._validate()
+                        # Log validation metrics
+                        self.metrics_logger.log_metrics(
+                            {f"val_{key}": value for key, value in val_metrics.items()},
+                            global_step
+                        )
+                    
+                    # Save checkpoint
+                    if save_interval > 0 and global_step % save_interval == 0:
+                        self._save_checkpoint(global_step)
+                
+                # Check if max steps reached
+                if max_steps > 0 and global_step >= max_steps:
+                    self.cli_logger.info(f"Reached maximum steps ({max_steps})")
+                    break
+            
+            # End of epoch
+            # Validation at the end of each epoch
+            if val_interval <= 0:
+                val_metrics = self._validate()
+                # Log validation metrics
+                self.metrics_logger.log_metrics(
+                    {f"val_{key}": value for key, value in val_metrics.items()},
+                    global_step
+                )
+            
+            # Save checkpoint at the end of each epoch
+            if save_interval <= 0:
+                self._save_checkpoint(global_step)
+            
+            # Check if max steps reached
+            if max_steps > 0 and global_step >= max_steps:
+                break
+        
+        # End of training
+        self.cli_logger.info("Training completed")
+        
+        # Final save
+        self._save_checkpoint(global_step, is_final=True)
+        
+        # Close metrics logger
+        self.metrics_logger.close()
+    
+    def _save_checkpoint(self, step: int, is_final: bool = False) -> None:
+        """
+        Save a checkpoint using Fabric.
+        
+        Args:
+            step: Current step
+            is_final: Whether this is the final checkpoint
+        """
+        # Create checkpoint directory
+        checkpoint_dir = os.path.join(self.output_dir, "checkpoints")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        # Determine checkpoint path
+        if is_final:
+            checkpoint_path = os.path.join(checkpoint_dir, "final")
+        else:
+            checkpoint_path = os.path.join(checkpoint_dir, f"step_{step}")
+        
+        # Save checkpoint with Fabric
+        self.cli_logger.info(f"Saving checkpoint to {checkpoint_path}")
+        self.fabric.save(checkpoint_path, self.model, self.optimizer, self.scheduler)
