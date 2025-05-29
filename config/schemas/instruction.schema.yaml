@@ -34,6 +34,13 @@ allOf:
         required:
           - tokenizer
       
+      # Execution mode
+      execution_mode:
+        type: string
+        enum: ["process_only", "train"]
+        default: "process_only"
+        description: "Mode of execution: process dataset only or train model"
+      
       # Task configuration
       task_name:
         type: string
@@ -52,6 +59,24 @@ allOf:
           format:
             type: string
             enum: ["dataset", "files", "json", "jsonl", "csv"]
+          splits:
+            type: object
+            description: "Configuration for dataset splits"
+            properties:
+              train:
+                type: string
+                default: "train"
+                description: "Name of the training split"
+              validation:
+                type: string
+                description: "Name of the validation split"
+              test:
+                type: string
+                description: "Name of the test split"
+              use_all_splits:
+                type: boolean
+                default: false
+                description: "Whether to use all available splits in the dataset"
           input_column:
             type: string
             default: "input"
@@ -102,6 +127,10 @@ allOf:
             type: string
             default: "processed_label"
             description: "Column name for processed labels in output dataset"
+          save_processed:
+            type: boolean
+            default: true
+            description: "Whether to save the processed dataset when in train mode"
         required:
           - path
       
@@ -134,13 +163,110 @@ allOf:
             description: "Task-specific instructions"
             additionalProperties: true
       
+      # Training configuration
+      batch_size:
+        type: integer
+        minimum: 1
+        default: 4
+        description: "Batch size for training"
+      
+      num_epochs:
+        type: integer
+        minimum: 1
+        default: 3
+        description: "Number of training epochs"
+      
+      lr:
+        type: number
+        minimum: 0
+        default: 2e-5
+        description: "Learning rate"
+      
+      weight_decay:
+        type: number
+        minimum: 0
+        default: 0.01
+        description: "Weight decay for AdamW optimizer"
+      
+      grad_clip:
+        type: number
+        minimum: 0
+        default: 1.0
+        description: "Gradient clipping value"
+      
+      lr_scheduler:
+        type: string
+        enum: ["linear", "cosine", "cosine_with_restarts", "polynomial", "constant", "constant_with_warmup"]
+        default: "linear"
+        description: "Learning rate scheduler type"
+      
+      warmup_proportion:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.06
+        description: "Proportion of training steps for warmup"
+      
+      beta1:
+        type: number
+        default: 0.9
+        description: "Beta1 for AdamW optimizer"
+      
+      beta2:
+        type: number
+        default: 0.95
+        description: "Beta2 for AdamW optimizer"
+      
+      precision:
+        type: string
+        enum: ["32", "16", "bf16", "bf16-mixed", "16-mixed", "bf16-true"]
+        default: "bf16-true"
+        description: "Precision for training"
+      
+      num_workers:
+        type: integer
+        minimum: 0
+        default: 4
+        description: "Number of workers for data loading"
+      
+      save_iter_interval:
+        type: integer
+        minimum: 1
+        default: 100
+        description: "Save checkpoint every N iterations"
+      
+      log_iter_interval:
+        type: integer
+        minimum: 1
+        default: 10
+        description: "Log metrics every N iterations"
+      
+      validate_after_epoch:
+        type: boolean
+        default: true
+        description: "Whether to run validation after each epoch"
+      
+      # Parallelization configuration
+      parallelization_strategy:
+        type: string
+        enum: ["fsdp", "ddp", "dp", "deep_speed"]
+        default: "fsdp"
+        description: "Distributed training strategy"
+      
       # Test split configuration
       test_size:
         type: number
         minimum: 0
         maximum: 1
         default: null
-        description: "Fraction of dataset to use for testing"
+        description: "Fraction of dataset to use for testing (if no explicit test split provided)"
+      
+      validation_size:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: null
+        description: "Fraction of dataset to use for validation (if no explicit validation split provided)"
     
     required:
       - model

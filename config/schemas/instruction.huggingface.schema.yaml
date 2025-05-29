@@ -15,8 +15,26 @@ properties:
   
   split:
     type: string
-    default: "train"
-    description: "Dataset split to use (e.g., 'train', 'validation', 'test')"
+    description: "Single dataset split to use (e.g., 'train', 'validation', 'test') - use this or 'splits', not both"
+  
+  splits:
+    type: object
+    description: "Configuration for specific dataset splits"
+    properties:
+      train:
+        type: string
+        default: "train"
+        description: "Name of the training split in the dataset"
+      validation:
+        type: string
+        description: "Name of the validation split in the dataset"
+      test:
+        type: string
+        description: "Name of the test split in the dataset"
+      use_all_splits:
+        type: boolean
+        default: false
+        description: "Whether to use all available splits in the dataset"
   
   subset:
     type: string
@@ -28,8 +46,21 @@ properties:
     description: "Whether to stream the dataset or load it entirely into memory"
   
   max_samples:
-    type: integer
-    description: "Maximum number of samples to load (useful for testing or limiting dataset size)"
+    type: object
+    description: "Maximum number of samples to load per split"
+    properties:
+      train:
+        type: integer
+        description: "Maximum number of samples to load from the training split"
+      validation:
+        type: integer
+        description: "Maximum number of samples to load from the validation split"
+      test:
+        type: integer
+        description: "Maximum number of samples to load from the test split"
+      all:
+        type: integer
+        description: "Maximum number of samples to load from any split if not specified individually"
   
   cache_dir:
     type: string
@@ -44,6 +75,11 @@ properties:
     type: string
     default: "main"
     description: "Git revision of the dataset to load"
+  
+  auto_split:
+    type: boolean
+    default: false
+    description: "Whether to automatically split the dataset if no validation/test splits are provided"
 
 required:
   - source

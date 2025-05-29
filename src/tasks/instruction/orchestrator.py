@@ -9,7 +9,8 @@ the datasets for training or inference.
 
 from typing import Dict, Any, Optional, Union
 from box import Box
-from datasets import Dataset as HFDataset
+from datasets import Dataset as HFDataset, DatasetDict
+import torch
 from transformers import AutoTokenizer
 
 from src.utils.logging import get_logger, VerboseLevel
@@ -18,6 +19,7 @@ from src.tasks.instruction.instructions.manager import InstructionManager
 from src.tasks.instruction.instructions.datasets import DatasetHandler
 from src.tasks.instruction.templates.composer import PromptComposer
 from src.tasks.instruction.templates.base import PromptStyle
+from src.tasks.instruction.fabric.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
 from utils import inherit_init_params
 
 
@@ -42,6 +44,16 @@ class InstructionOrchestrator(BaseOrchestrator):
         super().__init__(config)
         self.instruction_manager = None
         self.tokenizer = None
+        
+        # Get all devices available in torch so we can set them to torch modules
+        if torch.cuda.is_available():
+            self.devices = torch.cuda.device_count()
+            self.logger.info(f"Found {self.devices} CUDA devices available for training")
+            if self.devices > 0:
+                return
+            
+        self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
+        self.devices = "cpu"
 
     def validate_config(self) -> None:
         """
@@ -145,6 +157,95 @@ class InstructionOrchestrator(BaseOrchestrator):
             output_label_column=output_label_column
         )
 
+    def fsdp(self, dataset: HFDataset) -> None:
+        """
+        Execute FSDP (Fully Sharded Data Parallel) instruction fine-tuning task.
+        
+        This method initializes and sets up the FSDP trainer using the given dataset and configuration.
+        It logs the start and finish of the FSDP training process.
+        
+        Args:
+            dataset: The dataset to be used for instruction fine-tuning.
+        """
+        self.logger.info("Starting FSDP instruction fine-tuning task")
+        
+        trainer = FSDP(
+            devices=self.devices,
+            config=self.config,
+            dataset=dataset,
+            checkpoint_path=self.config.get("checkpoint", None)
+        )
+        
+        trainer.setup()
+        self.logger.info("FSDP instruction fine-tuning finished")
+    
+    def ddp(self, dataset: HFDataset) -> None:
+        """
+        Execute DDP (Distributed Data Parallel) instruction fine-tuning task.
+        
+        This method sets up the trainer with DistributedDataParallel using the available devices.
+        It logs the overall process of the DDP training.
+        
+        Args:
+            dataset: The dataset to be used for instruction fine-tuning.
+        """
+        self.logger.info("Starting DDP instruction fine-tuning task")
+        
+        trainer = DistributedDataParallel(
+            devices=self.devices,
+            config=self.config,
+            dataset=dataset,
+            checkpoint_path=self.config.get("checkpoint", None)
+        )
+        
+        trainer.setup()
+        self.logger.info("DDP instruction fine-tuning finished")
+    
+    def dp(self, dataset: HFDataset) -> None:
+        """
+        Execute DP (Data Parallel) instruction fine-tuning task.
+        
+        This method initializes and configures the DataParallel trainer using the provided dataset
+        and configuration settings. It logs both the start and the completion of the DP training.
+        
+        Args:
+            dataset: The dataset used for instruction fine-tuning.
+        """
+        self.logger.info("Starting DP instruction fine-tuning task")
+        
+        trainer = DataParallel(
+            devices=self.devices,
+            config=self.config,
+            dataset=dataset,
+            checkpoint_path=self.config.get("checkpoint", None)
+        )
+        
+        trainer.setup()
+        self.logger.info("DP instruction fine-tuning finished")
+    
+    def deep_speed(self, dataset: HFDataset) -> None:
+        """
+        Execute DeepSpeed instruction fine-tuning task.
+        
+        This method sets up the DeepSpeed trainer by using the chosen configuration,
+        dataset, and available devices. It logs the commencement and the completion of the
+        DeepSpeed training process.
+        
+        Args:
+            dataset: The dataset to be used for instruction fine-tuning.
+        """
+        self.logger.info("Starting Deep Speed instruction fine-tuning task")
+        
+        trainer = DeepSpeed(
+            devices=self.devices,
+            config=self.config,
+            dataset=dataset,
+            checkpoint_path=self.config.get("checkpoint", None)
+        )
+        
+        trainer.setup()
+        self.logger.info("Deep Speed instruction fine-tuning finished")
+
     def execute(self) -> None:
         """
         Execute the complete instruction workflow.
@@ -154,7 +255,8 @@ class InstructionOrchestrator(BaseOrchestrator):
           2. Set up tokenizer and prompt composer.
           3. Load the dataset.
           4. Process the dataset with instructions and templates.
-          5. Save the processed dataset to disk.
+          5. Determine the execution mode (process-only or training).
+          6. If training, select the appropriate parallelization strategy.
 
         Logging is used throughout the process to provide debugging information.
         In the event of an error, a log message is produced and the exception is re-raised.
@@ -176,11 +278,39 @@ class InstructionOrchestrator(BaseOrchestrator):
             # 4. Process dataset with instructions
             processed_dataset = self.process_dataset(dataset)
             
-            # 5. Save results
-            self.logger.info(f"Saving processed dataset to {self.config.output.path}")
-            self.storage.save_to_disk(processed_dataset, self.config.output.path)
+            # 5. Determine execution mode
+            execution_mode = self.config.get("execution_mode", "process_only")
             
-            self.logger.info("Instruction workflow completed successfully")
+            if execution_mode == "process_only":
+                # Save processed dataset and exit
+                self.logger.info(f"Saving processed dataset to {self.config.output.path}")
+                self.storage.save_to_disk(processed_dataset, self.config.output.path)
+                self.logger.info("Instruction processing completed successfully")
+            
+            elif execution_mode == "train":
+                # Save processed dataset for future reference
+                if self.config.output.get("save_processed", True):
+                    self.logger.info(f"Saving processed dataset to {self.config.output.path}")
+                    self.storage.save_to_disk(processed_dataset, self.config.output.path)
+                
+                # 6. Select training strategy
+                strategy = self.config.get("parallelization_strategy", "fsdp").lower()
+                
+                if strategy == "fsdp":
+                    self.fsdp(processed_dataset)
+                elif strategy == "ddp":
+                    self.ddp(processed_dataset)
+                elif strategy == "deep_speed":
+                    self.deep_speed(processed_dataset)
+                elif strategy == "dp":
+                    self.dp(processed_dataset)
+                else:
+                    raise ValueError(f"Invalid parallelization strategy: {strategy}")
+                
+                self.logger.info("Instruction fine-tuning completed successfully")
+            
+            else:
+                raise ValueError(f"Invalid execution mode: {execution_mode}")
             
         except Exception as e:
             self.logger.error(f"Instruction workflow failed: {str(e)}")
