@@ -1,5 +1,7 @@
-from typing import Dict, Type, Literal
+from typing import Dict, Type, Literal, Optional, Any
+from transformers import PreTrainedTokenizerBase
 from .base import PromptStyle
+from .composer import PromptComposer
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,6 +37,8 @@ from .final_blocks import (
 # Export these types
 __all__ = [
     'get_prompt_component',
+    'create_composer',
+    'PromptComposer',
     'SYSTEM_BLOCKS',
     'USER_BLOCKS',
     'ASSISTANT_BLOCKS',
@@ -135,3 +139,64 @@ def get_prompt_component(component_type: ComponentType, model_name: str) -> Type
         logger.warning(f"No {component_type} component found for model '{model_name}'.")
         
     return components.get(model_name, components["default"])
+
+def create_composer(
+    tokenizer: PreTrainedTokenizerBase,
+    template_name: str = "default",
+    **kwargs: Any
+) -> PromptComposer:
+    """Create a preconfigured prompt composer.
+    
+    Args:
+        tokenizer: Hugging Face tokenizer instance
+        template_name: Name of the template style to use (e.g., 'default', 'llama2', 'alpaca')
+        **kwargs: Additional arguments to pass to PromptComposer
+        
+    Returns:
+        Configured PromptComposer instance
+        
+    Examples:
+        >>> composer = create_composer(tokenizer, "llama2")
+        >>> composer = create_composer(tokenizer, "alpaca", max_length=512)
+    """
+    # Import here to avoid circular imports
+    from .system_blocks import *
+    from .user_blocks import *
+    from .assistant_blocks import *
+    from .final_blocks import *
+    
+    # Map template names to style configurations
+    template_configs = {
+        "default": {
+            "system_style": DefaultSystem(),
+            "user_style": DefaultUser(),
+            "assistant_style": DefaultAssistant(),
+            "final_style": DefaultFinal(),
+        },
+        "alpaca": {
+            "system_style": DefaultSystem(),
+            "user_style": AlpacaUser(),
+            "assistant_style": DefaultAssistant(),
+            "final_style": DefaultFinal(),
+        },
+        "llama2": {
+            "system_style": Llama2System(),
+            "user_style": Llama2User(),
+            "assistant_style": Llama2Assistant(),
+            "final_style": DefaultFinal(),
+        },
+        "llama3": {
+            "system_style": Llama3System(),
+            "user_style": Llama3User(),
+            "assistant_style": Llama3Assistant(),
+            "final_style": Llama3Final(),
+        },
+    }
+    
+    # Get template config or default to 'default'
+    config = template_configs.get(template_name.lower(), template_configs["default"])
+    
+    # Update with any overrides from kwargs
+    config.update(kwargs)
+    
+    return PromptComposer(tokenizer=tokenizer, **config)
