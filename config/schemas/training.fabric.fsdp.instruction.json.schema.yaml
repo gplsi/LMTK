@@ -1,0 +1,148 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.fabric.fsdp.instruction.json.schema.yaml
+title: JSON Dataset Configuration for Instruction Fine-tuning with FSDP
+description: Schema for JSON dataset configuration in instruction fine-tuning tasks using Lightning Fabric with FSDP strategy
+
+type: object
+allOf:
+  - $ref: training.fabric.fsdp.instruction.schema.yaml
+
+properties:
+  # Dataset type must be JSON
+  dataset:
+    type: object
+    properties:
+      type:
+        type: string
+        enum: [json]
+        description: Must be json for this schema
+      
+      # JSON-specific dataset configuration
+      files:
+        type: object
+        properties:
+          train:
+            oneOf:
+              - type: string
+                description: Path to a single training JSON/JSONL file
+              - type: array
+                items:
+                  type: string
+                description: List of paths to training JSON/JSONL files
+            description: Training dataset file(s)
+          validation:
+            oneOf:
+              - type: string
+                description: Path to a single validation JSON/JSONL file
+              - type: array
+                items:
+                  type: string
+                description: List of paths to validation JSON/JSONL files
+            description: Validation dataset file(s)
+          test:
+            oneOf:
+              - type: string
+                description: Path to a single test JSON/JSONL file
+              - type: array
+                items:
+                  type: string
+                description: List of paths to test JSON/JSONL files
+            description: Test dataset file(s)
+        required:
+          - train
+        additionalProperties: false
+        description: JSON/JSONL files for each split
+      
+      # Field configuration
+      fields:
+        type: object
+        properties:
+          instruction:
+            type: string
+            description: Field name containing the instruction
+          input:
+            type: string
+            description: Field name containing the input
+          output:
+            type: string
+            description: Field name containing the output/response
+          system:
+            type: string
+            description: Field name containing the system prompt
+        required:
+          - instruction
+          - output
+        additionalProperties: false
+        description: Field names in the JSON/JSONL files
+      
+      # Split configuration
+      split_by:
+        type: string
+        enum: [files, field, random]
+        default: files
+        description: Method to split the dataset (by files, by field value, or randomly)
+      
+      # Field-based split configuration
+      split_field:
+        type: string
+        description: Field name to use for splitting when split_by is 'field'
+      
+      split_values:
+        type: object
+        properties:
+          train:
+            oneOf:
+              - type: string
+              - type: array
+                items:
+                  type: string
+            description: Value(s) of split_field for training data
+          validation:
+            oneOf:
+              - type: string
+              - type: array
+                items:
+                  type: string
+            description: Value(s) of split_field for validation data
+          test:
+            oneOf:
+              - type: string
+              - type: array
+                items:
+                  type: string
+            description: Value(s) of split_field for test data
+        additionalProperties: false
+        description: Values of split_field for each split
+      
+      # Random split configuration
+      split_ratios:
+        type: object
+        properties:
+          train:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.8
+            description: Proportion of data for training
+          validation:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.1
+            description: Proportion of data for validation
+          test:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.1
+            description: Proportion of data for testing
+        additionalProperties: false
+        description: Proportions for random splitting
+    required:
+      - type
+      - files
+      - fields
+    additionalProperties: false
+    description: JSON dataset configuration
+
+additionalProperties: false

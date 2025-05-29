@@ -1,0 +1,92 @@
+# Example configuration for instruction fine-tuning with FSDP using HuggingFace dataset
+# This configuration follows the training.fabric.fsdp.instruction.huggingface.schema.yaml schema
+
+task: instruction
+experiment_name: dolly-instruction-finetuning
+
+# Training mode (process_dataset or train)
+mode: train
+
+# Strategy configuration
+strategy: fsdp
+
+# Device configuration
+devices: 2  # Number of devices to use
+precision: bf16-mixed
+
+# Output configuration
+output_dir: output/dolly_instruction_finetuning
+
+# Model configuration
+model:
+  name: EleutherAI/pythia-2.8b
+  tokenizer: EleutherAI/pythia-2.8b
+  trust_remote_code: true
+  max_length: 2048
+  padding_side: right
+
+# Dataset configuration
+dataset:
+  type: huggingface
+  name: databricks/databricks-dolly-15k
+  splits:
+    train: train
+  fields:
+    instruction: instruction
+    input: context
+    output: response
+  streaming: false
+  filter:
+    min_length: 10
+    max_length: 2048
+    column: response
+
+# Instruction template configuration
+template:
+  type: alpaca
+  system_prompt: "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request."
+
+# Training configuration
+training:
+  batch_size: 4
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  lora:
+    enabled: true
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules:
+      - query_key_value
+      - dense
+      - dense_h_to_4h
+      - dense_4h_to_h
+
+# Training parameters
+max_epochs: 3
+val_interval: 500
+save_interval: 1000
+log_interval: 10
+
+# FSDP configuration
+fsdp:
+  sharding_strategy: full_shard
+  auto_wrap_policy: transformer
+  transformer_layers:
+    - GPTNeoXLayer
+  activation_checkpointing: true
+  cpu_offload: false
+  state_dict_type: full
+
+# Optimizer configuration
+optimizer:
+  name: adamw
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+
+# Scheduler configuration
+scheduler:
+  name: cosine
+  warmup_steps: 0.1  # 10% of total steps

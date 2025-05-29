@@ -1,0 +1,219 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.fabric.fsdp.instruction.schema.yaml
+title: Instruction Fine-tuning with FSDP Configuration
+description: Schema for instruction fine-tuning tasks using Lightning Fabric with FSDP strategy
+
+type: object
+allOf:
+  - $ref: training.fabric.fsdp.schema.yaml
+
+properties:
+  # Task type must be instruction
+  task:
+    type: string
+    enum: [instruction]
+    description: Must be instruction for this schema
+
+  # Model Configuration
+  model:
+    type: object
+    properties:
+      name:
+        type: string
+        description: Model name or path (HuggingFace model ID or local path)
+      tokenizer:
+        type: string
+        description: Tokenizer name or path (defaults to model name if not specified)
+      trust_remote_code:
+        type: boolean
+        default: false
+        description: Whether to trust remote code when loading the model
+      revision:
+        type: string
+        description: Model revision to use
+      use_auth_token:
+        type: boolean
+        default: false
+        description: Whether to use auth token for private models
+      max_length:
+        type: integer
+        minimum: 1
+        default: 2048
+        description: Maximum sequence length for the model
+      padding_side:
+        type: string
+        enum: [left, right]
+        default: right
+        description: Padding side for the tokenizer
+      load_in_8bit:
+        type: boolean
+        default: false
+        description: Whether to load the model in 8-bit precision
+      load_in_4bit:
+        type: boolean
+        default: false
+        description: Whether to load the model in 4-bit precision
+      device_map:
+        type: string
+        enum: [auto, balanced, balanced_low_0, sequential]
+        default: auto
+        description: Device map strategy for loading the model
+    required:
+      - name
+    additionalProperties: false
+    description: Model configuration
+
+  # Dataset Configuration
+  dataset:
+    type: object
+    properties:
+      type:
+        type: string
+        enum: [huggingface, json]
+        description: Type of dataset to use
+      # Dataset split configuration
+      splits:
+        type: object
+        properties:
+          train:
+            type: string
+            description: Training split name or path
+          validation:
+            type: string
+            description: Validation split name or path
+          test:
+            type: string
+            description: Test split name or path
+        required:
+          - train
+        additionalProperties: false
+        description: Dataset splits
+      # Maximum samples per split
+      max_samples:
+        type: object
+        properties:
+          train:
+            type: integer
+            minimum: 1
+            description: Maximum number of training samples
+          validation:
+            type: integer
+            minimum: 1
+            description: Maximum number of validation samples
+          test:
+            type: integer
+            minimum: 1
+            description: Maximum number of test samples
+        additionalProperties: false
+        description: Maximum samples per split
+      # Dataset processing
+      preprocessing:
+        type: object
+        properties:
+          shuffle:
+            type: boolean
+            default: true
+            description: Whether to shuffle the dataset
+          seed:
+            type: integer
+            default: 42
+            description: Random seed for shuffling
+          filter_by_length:
+            type: boolean
+            default: false
+            description: Whether to filter samples by length
+          min_length:
+            type: integer
+            minimum: 1
+            description: Minimum sequence length for filtering
+          max_length:
+            type: integer
+            minimum: 1
+            description: Maximum sequence length for filtering
+        additionalProperties: false
+        description: Dataset preprocessing options
+    required:
+      - type
+    additionalProperties: false
+    description: Dataset configuration
+
+  # Instruction Template Configuration
+  template:
+    type: object
+    properties:
+      type:
+        type: string
+        enum: [alpaca, vicuna, llama2, custom]
+        default: alpaca
+        description: Type of instruction template to use
+      system_prompt:
+        type: string
+        description: System prompt to use (for templates that support it)
+      input_format:
+        type: string
+        description: Custom input format template (for custom template type)
+      output_format:
+        type: string
+        description: Custom output format template (for custom template type)
+      field_mappings:
+        type: object
+        additionalProperties:
+          type: string
+        description: Mappings from dataset fields to template fields
+    required:
+      - type
+    additionalProperties: false
+    description: Instruction template configuration
+
+  # Training Configuration
+  training:
+    type: object
+    properties:
+      batch_size:
+        type: integer
+        minimum: 1
+        default: 8
+        description: Batch size per device
+      gradient_accumulation_steps:
+        type: integer
+        minimum: 1
+        default: 1
+        description: Number of gradient accumulation steps
+      gradient_checkpointing:
+        type: boolean
+        default: true
+        description: Whether to use gradient checkpointing
+      lora:
+        type: object
+        properties:
+          enabled:
+            type: boolean
+            default: false
+            description: Whether to use LoRA
+          r:
+            type: integer
+            minimum: 1
+            default: 8
+            description: LoRA attention dimension
+          alpha:
+            type: number
+            minimum: 0
+            default: 16
+            description: LoRA alpha parameter
+          dropout:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.05
+            description: LoRA dropout probability
+          target_modules:
+            type: array
+            items:
+              type: string
+            description: List of modules to apply LoRA to
+        additionalProperties: false
+        description: LoRA configuration
+    additionalProperties: false
+    description: Training configuration
+
+additionalProperties: false

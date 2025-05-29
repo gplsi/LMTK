@@ -1,0 +1,95 @@
+# Example configuration for instruction fine-tuning with FSDP using JSON dataset
+# This configuration follows the training.fabric.fsdp.instruction.json.schema.yaml schema
+
+task: instruction
+experiment_name: alpaca-instruction-finetuning
+
+# Training mode (process_dataset or train)
+mode: train
+
+# Strategy configuration
+strategy: fsdp
+
+# Device configuration
+devices: 2  # Number of devices to use
+precision: bf16-mixed
+
+# Output configuration
+output_dir: output/instruction_finetuning
+
+# Model configuration
+model:
+  name: meta-llama/Llama-2-7b-hf
+  tokenizer: meta-llama/Llama-2-7b-hf
+  trust_remote_code: true
+  max_length: 2048
+  padding_side: right
+  device_map: auto
+
+# Dataset configuration
+dataset:
+  type: json
+  files:
+    train: data/alpaca_data_cleaned_train.json
+    validation: data/alpaca_data_cleaned_val.json
+  fields:
+    instruction: instruction
+    input: input
+    output: output
+  split_by: files
+  max_samples:
+    train: 10000
+    validation: 1000
+  preprocessing:
+    shuffle: true
+    seed: 42
+
+# Instruction template configuration
+template:
+  type: alpaca
+  system_prompt: "Below is an instruction that describes a task. Write a response that appropriately completes the request."
+
+# Training configuration
+training:
+  batch_size: 4
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  lora:
+    enabled: true
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+
+# Training parameters
+max_epochs: 3
+val_interval: 500
+save_interval: 1000
+log_interval: 10
+
+# FSDP configuration
+fsdp:
+  sharding_strategy: full_shard
+  auto_wrap_policy: transformer
+  transformer_layers:
+    - LlamaDecoderLayer
+  activation_checkpointing: true
+  cpu_offload: false
+  state_dict_type: full
+
+# Optimizer configuration
+optimizer:
+  name: adamw
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+
+# Scheduler configuration
+scheduler:
+  name: cosine
+  warmup_steps: 0.1  # 10% of total steps

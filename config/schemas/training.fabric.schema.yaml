@@ -1,0 +1,237 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.fabric.schema.yaml
+title: Base Lightning Fabric Training Configuration
+description: Base schema for training tasks using Lightning Fabric
+
+type: object
+allOf:
+  - $ref: base.schema.yaml
+
+properties:
+  # Training Mode
+  mode:
+    type: string
+    enum: [train, process_dataset]
+    default: train
+    description: Execution mode for the training task
+
+  # Strategy Configuration
+  strategy:
+    type: string
+    enum: [fsdp, deepspeed, ddp, dp]
+    default: fsdp
+    description: Distributed training strategy to use
+
+  # Device Configuration
+  devices:
+    oneOf:
+      - type: integer
+        minimum: 1
+        description: Number of devices to use
+      - type: array
+        items:
+          type: integer
+          minimum: 0
+        description: List of device IDs to use
+    description: Devices to use for training
+
+  # Precision Configuration
+  precision:
+    type: string
+    enum: [32, 16, bf16, bf16-mixed, 16-mixed]
+    default: bf16-mixed
+    description: Precision to use for training
+
+  # Output Configuration
+  output_dir:
+    type: string
+    description: Directory to save outputs
+
+  # Training Parameters
+  max_epochs:
+    type: integer
+    minimum: 1
+    default: 1
+    description: Maximum number of epochs to train for
+
+  max_steps:
+    type: integer
+    minimum: 1
+    description: Maximum number of steps to train for (overrides max_epochs if specified)
+
+  val_interval:
+    type: integer
+    minimum: 1
+    default: 1000
+    description: Validation interval in steps
+
+  save_interval:
+    type: integer
+    minimum: 1
+    default: 1000
+    description: Checkpoint saving interval in steps
+
+  log_interval:
+    type: integer
+    minimum: 1
+    default: 10
+    description: Logging interval in steps
+
+  # Checkpoint Configuration
+  resume_from_checkpoint:
+    type: string
+    description: Path to checkpoint to resume from
+
+  # Optimizer Configuration
+  optimizer:
+    type: object
+    properties:
+      name:
+        type: string
+        enum: [adamw, adam, sgd]
+        default: adamw
+        description: Optimizer to use
+      learning_rate:
+        type: number
+        minimum: 0
+        default: 1.0e-4
+        description: Learning rate
+      weight_decay:
+        type: number
+        minimum: 0
+        default: 0.01
+        description: Weight decay
+      beta1:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.9
+        description: Beta1 for Adam/AdamW
+      beta2:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.999
+        description: Beta2 for Adam/AdamW
+      eps:
+        type: number
+        minimum: 0
+        default: 1.0e-8
+        description: Epsilon for Adam/AdamW
+      momentum:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.9
+        description: Momentum for SGD
+    required:
+      - name
+    additionalProperties: false
+    description: Optimizer configuration
+
+  # Scheduler Configuration
+  scheduler:
+    type: object
+    properties:
+      name:
+        type: string
+        enum: [linear, cosine, constant]
+        default: linear
+        description: Scheduler to use
+      warmup_steps:
+        oneOf:
+          - type: integer
+            minimum: 0
+            description: Number of warmup steps
+          - type: number
+            minimum: 0
+            maximum: 1
+            description: Fraction of total steps to use for warmup
+        default: 0
+        description: Warmup steps or fraction
+    required:
+      - name
+    additionalProperties: false
+    description: Scheduler configuration
+
+  # FSDP Configuration
+  fsdp:
+    type: object
+    properties:
+      sharding_strategy:
+        type: string
+        enum: [full_shard, shard_grad_op, no_shard]
+        default: full_shard
+        description: FSDP sharding strategy
+      auto_wrap_policy:
+        type: string
+        enum: [size_based, transformer]
+        default: size_based
+        description: FSDP auto wrap policy
+      min_params:
+        type: number
+        minimum: 1
+        default: 1.0e8
+        description: Minimum number of parameters for size-based auto wrap policy
+      transformer_layers:
+        type: array
+        items:
+          type: string
+        description: Transformer layer class names for transformer auto wrap policy
+      activation_checkpointing:
+        type: boolean
+        default: false
+        description: Whether to use activation checkpointing
+      cpu_offload:
+        type: boolean
+        default: false
+        description: Whether to offload parameters to CPU
+      state_dict_type:
+        type: string
+        enum: [full, sharded, local]
+        default: full
+        description: State dict type for FSDP
+    additionalProperties: false
+    description: FSDP configuration
+
+  # DeepSpeed Configuration
+  deepspeed:
+    type: object
+    properties:
+      zero_stage:
+        type: integer
+        enum: [1, 2, 3]
+        default: 2
+        description: ZeRO optimization stage
+      offload_optimizer:
+        type: boolean
+        default: false
+        description: Whether to offload optimizer states to CPU
+      offload_parameters:
+        type: boolean
+        default: false
+        description: Whether to offload parameters to CPU
+    additionalProperties: false
+    description: DeepSpeed configuration
+
+  # DDP Configuration
+  ddp:
+    type: object
+    properties:
+      find_unused_parameters:
+        type: boolean
+        default: false
+        description: Whether to find unused parameters in DDP
+      process_group_backend:
+        type: string
+        enum: [nccl, gloo]
+        default: nccl
+        description: Process group backend for DDP
+      static_graph:
+        type: boolean
+        default: true
+        description: Whether to use static graph optimization
+    additionalProperties: false
+    description: DDP configuration
+
+additionalProperties: false

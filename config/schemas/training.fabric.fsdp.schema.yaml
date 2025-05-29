@@ -1,0 +1,59 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.fabric.fsdp.schema.yaml
+title: FSDP Training Configuration
+description: Schema for training tasks using Lightning Fabric with FSDP strategy
+
+type: object
+allOf:
+  - $ref: training.fabric.schema.yaml
+
+properties:
+  # Strategy must be FSDP
+  strategy:
+    type: string
+    enum: [fsdp]
+    default: fsdp
+    description: Must be FSDP for this schema
+
+  # FSDP-specific configurations
+  fsdp:
+    type: object
+    properties:
+      sharding_strategy:
+        type: string
+        enum: [full_shard, shard_grad_op, no_shard]
+        default: full_shard
+        description: FSDP sharding strategy
+      auto_wrap_policy:
+        type: string
+        enum: [size_based, transformer]
+        default: transformer
+        description: FSDP auto wrap policy
+      min_params:
+        type: number
+        minimum: 1
+        default: 1.0e8
+        description: Minimum number of parameters for size-based auto wrap policy
+      transformer_layers:
+        type: array
+        items:
+          type: string
+        default: ["GPTJBlock", "LlamaDecoderLayer", "OPTDecoderLayer", "BloomBlock"]
+        description: Transformer layer class names for transformer auto wrap policy
+      activation_checkpointing:
+        type: boolean
+        default: true
+        description: Whether to use activation checkpointing
+      cpu_offload:
+        type: boolean
+        default: false
+        description: Whether to offload parameters to CPU
+      state_dict_type:
+        type: string
+        enum: [full, sharded, local]
+        default: full
+        description: State dict type for FSDP
+    additionalProperties: false
+    description: FSDP configuration
+
+additionalProperties: false
