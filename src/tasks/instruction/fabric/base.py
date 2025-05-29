@@ -27,7 +27,7 @@ import wandb
 import os
 
 # Import custom utilities
-from src.tasks.instruction.fabric.speed_monitor import SpeedMonitorFabric as Monitor
+from src.tasks.pretraining.fabric.speed_monitor import SpeedMonitorFabric as Monitor
 from src.tasks.instruction.fabric.logger import step_csv_logger
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy

@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from src.training.metrics_logger import MetricsLogger, create_metrics_logger
+from src.abstract_tasks.training.metrics_logger import MetricsLogger, create_metrics_logger
 
 logger = logging.getLogger(__name__)
 

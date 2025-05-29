@@ -13,13 +13,16 @@ import torch
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Union, Tuple
 
-from src.training.metrics_logger import create_metrics_logger
-from src.training.fabric.distributed import (
+# Import distributed training strategies from pretraining implementation
+from src.tasks.pretraining.fabric.distributed import (
     FSDP,
     DeepSpeed,
     DistributedDataParallel as DDP,
     DataParallel as DP,
 )
+
+# Import metrics logger
+from src.abstract_tasks.training.metrics_logger import create_metrics_logger
 
 logger = logging.getLogger(__name__)
 
