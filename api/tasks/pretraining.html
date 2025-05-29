@@ -1,0 +1,1136 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Pretraining API &#8212; ML Training Framework 0.1.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="../../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="../../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css?v=0a3b3ea7" />
+    <link rel="stylesheet" type="text/css" href="../../_static/css/custom.css?v=877aac19" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="../../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script src="../../_static/documentation_options.js?v=38b66d78"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=4a39c7ea"></script>
+    <script src="../../_static/design-tabs.js?v=36754332"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api/tasks/pretraining';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.14.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://yourusername.github.io/workspace/_static/switcher.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.1.0';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = false;
+        </script>
+    <script src="../../_static/js/custom.js?v=1d6e43f3"></script>
+    <link rel="icon" href="../../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Tokenization API" href="tokenization.html" />
+    <link rel="prev" title="Tokenization Guide" href="../../guides/tokenization.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+<div class="bd-header__inner bd-page-width">
+  <label class="sidebar-toggle primary-toggle" for="__primary">
+    <span class="fa-solid fa-bars"></span>
+  </label>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">ML Training Framework</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav class="navbar-nav">
+  <p class="sidebar-header-items__title"
+     role="heading"
+     aria-level="1"
+     aria-label="Site Navigation">
+    Site Navigation
+  </p>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../guides/pretraining.html">
+                        Pretraining Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../guides/tokenization.html">
+                        Tokenization Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item current active">
+                      <a class="nav-link nav-internal" href="#">
+                        Pretraining API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="tokenization.html">
+                        Tokenization API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../config/index.html">
+                        Configuration API
+                      </a>
+                    </li>
+                
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+                    <li class="nav-item">
+                      <a class="nav-link dropdown-item nav-internal" href="../utils/index.html">
+                        Utilities API
+                      </a>
+                    </li>
+                
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fab fa-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+    </div>
+  
+
+  
+    <label class="sidebar-toggle secondary-toggle" for="__secondary" tabindex="0">
+      <span class="fa-solid fa-outdent"></span>
+    </label>
+  
+</div>
+
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          <div class="navbar-item">
+<nav class="navbar-nav">
+  <p class="sidebar-header-items__title"
+     role="heading"
+     aria-level="1"
+     aria-label="Site Navigation">
+    Site Navigation
+  </p>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../guides/pretraining.html">
+                        Pretraining Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../guides/tokenization.html">
+                        Tokenization Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item current active">
+                      <a class="nav-link nav-internal" href="#">
+                        Pretraining API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="tokenization.html">
+                        Tokenization API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../config/index.html">
+                        Configuration API
+                      </a>
+                    </li>
+                
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links-2">
+                    More
+                </button>
+                <ul id="pst-nav-more-links-2" class="dropdown-menu">
+                    
+                    <li class="nav-item">
+                      <a class="nav-link dropdown-item nav-internal" href="../utils/index.html">
+                        Utilities API
+                      </a>
+                    </li>
+                
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fab fa-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page">Pretraining API</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+  <section id="pretraining-api">
+<span id="api-pretraining"></span><h1>Pretraining API<a class="headerlink" href="#pretraining-api" title="Link to this heading">#</a></h1>
+<p>This API reference provides detailed documentation for the pretraining module components.</p>
+<section id="module-src.tasks.pretraining.orchestrator">
+<span id="orchestrator"></span><h2>Orchestrator<a class="headerlink" href="#module-src.tasks.pretraining.orchestrator" title="Link to this heading">#</a></h2>
+</section>
+<section id="fabric-base">
+<h2>Fabric Base<a class="headerlink" href="#fabric-base" title="Link to this heading">#</a></h2>
+</section>
+<section id="module-src.tasks.pretraining.fabric.distributed">
+<span id="distributed-training"></span><h2>Distributed Training<a class="headerlink" href="#module-src.tasks.pretraining.fabric.distributed" title="Link to this heading">#</a></h2>
+</section>
+<section id="module-src.tasks.pretraining.fabric.wrappers.policies">
+<span id="fsdp-wrappers"></span><h2>FSDP Wrappers<a class="headerlink" href="#module-src.tasks.pretraining.fabric.wrappers.policies" title="Link to this heading">#</a></h2>
+<p>Module: wrap_policies.py
+This module provides functionality to determine and create an auto wrap policy
+for transformer-based model architectures used in distributed training setups.
+It inspects the model name or the model instance for specific transformer layer classes
+and returns a partial function for auto-wrapping policies based on the model type.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.wrappers.policies.</span></span><span class="sig-name descname"><span class="pre">get_transformer_layer_class</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/wrappers/policies.html#get_transformer_layer_class"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class" title="Link to this definition">#</a></dt>
+<dd><p>Retrieve the transformer layer class name based on a prefix found in the model name.</p>
+<p>This function iterates through a predefined mapping of model name prefixes to their
+corresponding transformer block class names. It returns the class name if the prefix is
+found within the lowercased model name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>model_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The name of the model (e.g., “gpt2”, “llama”).</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>The transformer layer class name if a matching prefix is found;</dt><dd><p>otherwise, None.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Optional[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)">str</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class_from_model">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.wrappers.policies.</span></span><span class="sig-name descname"><span class="pre">get_transformer_layer_class_from_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/wrappers/policies.html#get_transformer_layer_class_from_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class_from_model" title="Link to this definition">#</a></dt>
+<dd><p>Identify transformer layer classes within the provided model by inspecting its sub-modules.</p>
+<p>This function inspects all sub-modules of the given model and collects those whose class names
+contain common transformer-related substrings such as “Block”, “Layer”, “DecoderLayer”, or “EncoderLayer”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>model</strong> (<em>nn.Module</em>) – The PyTorch model instance to inspect.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A set of transformer layer classes found in the model or</dt><dd><p>None if no such classes are detected.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Optional[Set[Type[nn.Module]]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.wrappers.policies.create_auto_wrap_policy">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.wrappers.policies.</span></span><span class="sig-name descname"><span class="pre">create_auto_wrap_policy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_num_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100000000.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/wrappers/policies.html#create_auto_wrap_policy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.wrappers.policies.create_auto_wrap_policy" title="Link to this definition">#</a></dt>
+<dd><p>Determine and create an appropriate auto wrap policy based on the model architecture.</p>
+<p>This function generates a partial function that serves as an auto wrap policy for the provided
+model type by either dynamically importing specific transformer layers or by inspecting the model
+instance. If neither approach identifies transformer layers, it falls back to a size-based policy.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The name of the model (e.g., “gpt2”, “llama”).</p></li>
+<li><p><strong>model</strong> (<em>Optional</em><em>[</em><em>nn.Module</em><em>]</em>) – An optional PyTorch model instance to inspect for transformer layers.</p></li>
+<li><p><strong>min_num_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – The minimum number of parameters for triggering the size-based policy.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A partial function representing the auto wrap policy configured with the detected</dt><dd><p>transformer layer(s), or None if default behavior is to be used.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Union[Callable, None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="model-generation">
+<h2>Model Generation<a class="headerlink" href="#model-generation" title="Link to this heading">#</a></h2>
+</section>
+<section id="module-src.tasks.pretraining.fabric.speed_monitor">
+<span id="performance-monitoring"></span><h2>Performance Monitoring<a class="headerlink" href="#module-src.tasks.pretraining.fabric.speed_monitor" title="Link to this heading">#</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.get_flops_available">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.speed_monitor.</span></span><span class="sig-name descname"><span class="pre">get_flops_available</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">precision</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#get_flops_available"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.get_flops_available" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Optional" title="(in Python v3.13)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code></a>[<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a>]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>device</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/tensor_attributes.html#torch.device" title="(in PyTorch v2.7)"><em>torch.device</em></a>)</p></li>
+<li><p><strong>precision</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.speed_monitor.</span></span><span class="sig-name descname"><span class="pre">SpeedMonitorBase</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flops_available</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_unit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'hours'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_iter_interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorBase"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Logs the training throughput and utilization.</p>
+<table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Logged data</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><cite>throughput/batches_per_sec</cite></p></td>
+<td><p>Rolling average (over <cite>window_size</cite> most recent
+batches) of the number of batches processed per second</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>throughput/samples_per_sec</cite></p></td>
+<td><p>Rolling average (over <cite>window_size</cite> most recent
+batches) of the number of samples processed per second</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>throughput/tokens_per_sec</cite></p></td>
+<td><p>Rolling average (over <cite>window_size</cite> most recent
+batches) of the number of tokens processed per second.
+This may include padding depending on dataset</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>throughput/flops_per_sec</cite></p></td>
+<td><p>Estimates flops by <cite>flops_per_batch * batches_per_sec</cite></p></td>
+</tr>
+<tr class="row-even"><td><p><cite>throughput/device/batches_per_sec</cite></p></td>
+<td><p><cite>throughput/batches_per_sec</cite> divided by world size</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>throughput/device/samples_per_sec</cite></p></td>
+<td><p><cite>throughput/samples_per_sec</cite> divided by world size</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>throughput/device/tokens_per_sec</cite></p></td>
+<td><p><cite>throughput/tokens_per_sec</cite> divided by world size. This
+may include pad tokens depending on dataset</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>throughput/device/flops_per_sec</cite></p></td>
+<td><p><cite>throughput/flops_per_sec</cite> divided by world size. Only
+logged when model has attribute <cite>flops_per_batch</cite></p></td>
+</tr>
+<tr class="row-even"><td><p><cite>throughput/device/mfu</cite></p></td>
+<td><p><cite>throughput/device/flops_per_sec</cite> divided by world size.</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>time/train</cite></p></td>
+<td><p>Total elapsed training time</p></td>
+</tr>
+<tr class="row-even"><td><p><cite>time/val</cite></p></td>
+<td><p>Total elapsed validation time</p></td>
+</tr>
+<tr class="row-odd"><td><p><cite>time/total</cite></p></td>
+<td><p>Total elapsed time (time/train + time/val)</p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition-notes admonition">
+<p class="admonition-title">Notes</p>
+<ul class="simple">
+<li><p>The implementation assumes that devices are homogeneous as it normalizes by the world size.</p></li>
+<li><p>Tokens/sec, flops/sec and MFU do not account for padding tokens if present. We suggest using samples/sec or
+batches/sec to measure throughput under this circumstance.</p></li>
+<li><p>Be careful when comparing MFU numbers across projects, as this will highly depend on the <code class="docutils literal notranslate"><span class="pre">flops_per_batch</span></code>.
+There is no widespread, realistic, and reliable implementation to compute them.
+We suggest using our <code class="docutils literal notranslate"><span class="pre">measure_flops</span></code> function, but many other works will use <code class="docutils literal notranslate"><span class="pre">estimated_flops</span></code> which
+will almost always be an overestimate when compared to the true value.</p></li>
+</ul>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>window_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>optional</em>) – Number of batches to use for a rolling average of throughput.
+Defaults to 100.</p></li>
+<li><p><strong>time_unit</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>optional</em>) – Time unit to use for <cite>time</cite> logging. Can be one of
+‘seconds’, ‘minutes’, ‘hours’, or ‘days’. Defaults to ‘hours’.</p></li>
+<li><p><strong>flops_available</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>log_dict</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><em>Dict</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em><em>, </em><em>None</em><em>]</em>)</p></li>
+<li><p><strong>log_iter_interval</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flops_available</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_unit</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'hours'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_iter_interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorBase.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.__init__" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>flops_available</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>log_dict</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.13)"><em>Dict</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em><em>, </em><em>None</em><em>]</em>)</p></li>
+<li><p><strong>window_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+<li><p><strong>time_unit</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>)</p></li>
+<li><p><strong>log_iter_interval</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.on_train_batch_end">
+<span class="sig-name descname"><span class="pre">on_train_batch_end</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">samples</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_elapsed</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">world_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step_count</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flops_per_batch</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lengths</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_loss</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorBase.on_train_batch_end"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.on_train_batch_end" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+<li><p><strong>train_elapsed</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p></li>
+<li><p><strong>world_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+<li><p><strong>step_count</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+<li><p><strong>flops_per_batch</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>lengths</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><em>None</em>)</p></li>
+<li><p><strong>train_loss</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.eval_end">
+<span class="sig-name descname"><span class="pre">eval_end</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">eval_elapsed</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorBase.eval_end"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.eval_end" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>eval_elapsed</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.speed_monitor.</span></span><span class="sig-name descname"><span class="pre">SpeedMonitorFabric</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fabric</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorFabric"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase" title="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpeedMonitorBase</span></code></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fabric</strong> (<em>lightning.Fabric</em>)</p></li>
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fabric</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorFabric.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.__init__" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fabric</strong> (<em>lightning.Fabric</em>)</p></li>
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.on_train_batch_end">
+<span class="sig-name descname"><span class="pre">on_train_batch_end</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.on_train_batch_end" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>args</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.speed_monitor.</span></span><span class="sig-name descname"><span class="pre">SpeedMonitorCallback</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">length_fn</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorCallback"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Callback</span></code></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>length_fn</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em>)</p></li>
+<li><p><strong>batch_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">length_fn</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorCallback.__init__"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.__init__" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>length_fn</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Callable" title="(in Python v3.13)"><em>Callable</em></a><em>[</em><em>[</em><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a><em>]</em><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>]</em>)</p></li>
+<li><p><strong>batch_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+<li><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pl_module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stage</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/speed_monitor.html#SpeedMonitorCallback.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.setup" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>trainer</strong> (<em>lightning.Trainer</em>)</p></li>
+<li><p><strong>pl_module</strong> (<em>lightning.LightningModule</em>)</p></li>
+<li><p><strong>stage</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_start">
+<span class="sig-name descname"><span class="pre">on_train_start</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pl_module</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_start" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>trainer</strong> (<em>lightning.Trainer</em>)</p></li>
+<li><p><strong>pl_module</strong> (<em>lightning.LightningModule</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_batch_end">
+<span class="sig-name descname"><span class="pre">on_train_batch_end</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pl_module</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">outputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_idx</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_batch_end" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>trainer</strong> (<em>lightning.Trainer</em>)</p></li>
+<li><p><strong>pl_module</strong> (<em>lightning.LightningModule</em>)</p></li>
+<li><p><strong>outputs</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+<li><p><strong>batch</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><em>Any</em></a>)</p></li>
+<li><p><strong>batch_idx</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_start">
+<span class="sig-name descname"><span class="pre">on_validation_start</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pl_module</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_start" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>trainer</strong> (<em>lightning.Trainer</em>)</p></li>
+<li><p><strong>pl_module</strong> (<em>lightning.LightningModule</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_end">
+<span class="sig-name descname"><span class="pre">on_validation_end</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">trainer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pl_module</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_end" title="Link to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>trainer</strong> (<em>lightning.Trainer</em>)</p></li>
+<li><p><strong>pl_module</strong> (<em>lightning.LightningModule</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-src.tasks.pretraining.fabric.logger">
+<span id="logging"></span><h2>Logging<a class="headerlink" href="#module-src.tasks.pretraining.fabric.logger" title="Link to this heading">#</a></h2>
+<p>This module defines a custom logger creation function that builds on CSVLogger.
+It overrides the experiment.save method to merge CSV log entries by their ‘step’ key.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.fabric.logger.step_csv_logger">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.fabric.logger.</span></span><span class="sig-name descname"><span class="pre">step_csv_logger</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">lightning.fabric.loggers.CSVLogger</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/fabric/logger.html#step_csv_logger"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.fabric.logger.step_csv_logger" title="Link to this definition">#</a></dt>
+<dd><p>Create a customized logger instance with an overridden experiment.save method.</p>
+<p>This function instantiates a logger (by default a CSVLogger) using provided positional
+and keyword arguments. It then replaces the logger’s experiment.save method with a
+custom implementation that merges CSV log rows by a specified key, ‘step’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>*args</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code></a></span>) – Positional arguments to pass to the CSVLogger (or a subclass) constructor.</p></li>
+<li><p><strong>cls</strong> (<em>Type</em><em>[</em><em>T</em><em>]</em><em>, </em><em>optional</em>) – The logger class to instantiate. Defaults to CSVLogger.</p></li>
+<li><p><strong>**kwargs</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.13)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code></a></span>) – Keyword arguments to pass to the CSVLogger (or a subclass) constructor.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An instance of the logger with the customized ‘save’ method.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>T</p>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The customized ‘save’ method leverages a helper function <cite>merge_by</cite> to combine logs
+sharing the same step number before writing them to a CSV file.</p>
+</div>
+</dd></dl>
+
+</section>
+<section id="module-src.tasks.pretraining.utils">
+<span id="utilities"></span><h2>Utilities<a class="headerlink" href="#module-src.tasks.pretraining.utils" title="Link to this heading">#</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.utils.select_scheduler">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.utils.</span></span><span class="sig-name descname"><span class="pre">select_scheduler</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">optimizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lr_scheduler</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">number_epochs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">world_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_dataset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warmup_proportion</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gradient_accumulation_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/utils.html#select_scheduler"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.utils.select_scheduler" title="Link to this definition">#</a></dt>
+<dd><p>Selects and returns an appropriate learning rate scheduler based on the specified configuration.</p>
+<dl class="simple">
+<dt>This function supports three types of schedulers:</dt><dd><ul class="simple">
+<li><p>‘fixed’: a constant learning rate scheduler.</p></li>
+<li><p>‘warmup_constant’: a scheduler with initial warmup followed by a constant learning rate.</p></li>
+<li><p>‘warmup_linear’: a scheduler with an initial warmup and subsequent linear decay.</p></li>
+</ul>
+</dd>
+</dl>
+<p>It computes warmup steps and total training steps based on training dataset size, number of epochs, batch size,
+world size, and optionally the number of gradient accumulation steps.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>optimizer</strong> (<a class="reference external" href="https://docs.pytorch.org/docs/stable/optim.html#torch.optim.Optimizer" title="(in PyTorch v2.7)"><em>torch.optim.Optimizer</em></a>) – The optimizer instance used during training.</p></li>
+<li><p><strong>lr_scheduler</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – The type of scheduler to use (‘fixed’, ‘warmup_constant’, or ‘warmup_linear’).</p></li>
+<li><p><strong>number_epochs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Total number of epochs for training.</p></li>
+<li><p><strong>world_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of processing units (e.g., GPUs) used in distributed training.</p></li>
+<li><p><strong>batch_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Batch size per processing unit.</p></li>
+<li><p><strong>train_dataset</strong> (<em>HFDataset</em>) – The dataset used for training.</p></li>
+<li><p><strong>warmup_proportion</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Fraction of total training steps to use for warmup.</p></li>
+<li><p><strong>gradient_accumulation_steps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>optional</em>) – Number of steps to accumulate gradients before an optimizer update.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The configured learning rate scheduler.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.LambdaLR.html#torch.optim.lr_scheduler.LambdaLR" title="(in PyTorch v2.7)">torch.optim.lr_scheduler.LambdaLR</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If the scheduler type provided does not match any of the supported schedulers.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.utils.select_optimizer">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.utils.</span></span><span class="sig-name descname"><span class="pre">select_optimizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">optimizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight_decay</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta2</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/utils.html#select_optimizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.utils.select_optimizer" title="Link to this definition">#</a></dt>
+<dd><p>Creates and returns an optimizer instance based on the specified configuration.</p>
+<p>This function selects the appropriate optimizer using a predefined dictionary mapping and configures it
+with the model’s parameters and hyperparameters like learning rate, weight decay, and beta values.
+The ‘foreach’ flag is enabled to potentially streamline parameter updates on supported hardware.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>optimizer</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Identifier of the optimizer to be used. Must be a key in the OPTIMIZERS dictionary.</p></li>
+<li><p><strong>model</strong> – The model whose parameters are to be optimized.</p></li>
+<li><p><strong>lr</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Learning rate for optimizer updates.</p></li>
+<li><p><strong>weight_decay</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Weight decay (L2 regularization coefficient).</p></li>
+<li><p><strong>beta1</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – First beta coefficient for optimizers like Adam.</p></li>
+<li><p><strong>beta2</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Second beta coefficient for optimizers like Adam.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Configured optimizer instance.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.pytorch.org/docs/stable/optim.html#torch.optim.Optimizer" title="(in PyTorch v2.7)">torch.optim.Optimizer</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.tasks.pretraining.utils.deterministic">
+<span class="sig-prename descclassname"><span class="pre">src.tasks.pretraining.utils.</span></span><span class="sig-name descname"><span class="pre">deterministic</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seed</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/src/tasks/pretraining/utils.html#deterministic"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.tasks.pretraining.utils.deterministic" title="Link to this definition">#</a></dt>
+<dd><p>Configures the environment to produce deterministic results.</p>
+<p>This function sets various backend options and seeds for PyTorch’s CUDA,
+NumPy, and Python’s random module to ensure reproducible results across runs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>seed</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – The seed value for random number generators.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="../../guides/tokenization.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Tokenization Guide</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="tokenization.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Tokenization API</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+  <div class="sidebar-secondary-item">
+
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-src.tasks.pretraining.orchestrator">Orchestrator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fabric-base">Fabric Base</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-src.tasks.pretraining.fabric.distributed">Distributed Training</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-src.tasks.pretraining.fabric.wrappers.policies">FSDP Wrappers</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class"><code class="docutils literal notranslate"><span class="pre">get_transformer_layer_class()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class_from_model"><code class="docutils literal notranslate"><span class="pre">get_transformer_layer_class_from_model()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.wrappers.policies.create_auto_wrap_policy"><code class="docutils literal notranslate"><span class="pre">create_auto_wrap_policy()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#model-generation">Model Generation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-src.tasks.pretraining.fabric.speed_monitor">Performance Monitoring</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.get_flops_available"><code class="docutils literal notranslate"><span class="pre">get_flops_available()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorBase</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.__init__"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorBase.__init__()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.on_train_batch_end"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorBase.on_train_batch_end()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.eval_end"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorBase.eval_end()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorFabric</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.__init__"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorFabric.__init__()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.on_train_batch_end"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorFabric.on_train_batch_end()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorCallback</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.__init__"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorCallback.__init__()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.setup"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorCallback.setup()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_start"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorCallback.on_train_start()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_batch_end"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorCallback.on_train_batch_end()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_start"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorCallback.on_validation_start()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_end"><code class="docutils literal notranslate"><span class="pre">SpeedMonitorCallback.on_validation_end()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-src.tasks.pretraining.fabric.logger">Logging</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.fabric.logger.step_csv_logger"><code class="docutils literal notranslate"><span class="pre">step_csv_logger()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-src.tasks.pretraining.utils">Utilities</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.utils.select_scheduler"><code class="docutils literal notranslate"><span class="pre">select_scheduler()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.utils.select_optimizer"><code class="docutils literal notranslate"><span class="pre">select_optimizer()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.tasks.pretraining.utils.deterministic"><code class="docutils literal notranslate"><span class="pre">deterministic()</span></code></a></li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+  <div class="sidebar-secondary-item">
+
+  <div class="tocsection sourcelink">
+    <a href="../../_sources/api/tasks/pretraining.rst.txt">
+      <i class="fa-solid fa-file-lines"></i> Show Source
+    </a>
+  </div>
+</div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, Your Name.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.4.7.
+    <br/>
+  </p>
+</div>
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.14.4.
+</p></div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.14.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>

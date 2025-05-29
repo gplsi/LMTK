@@ -1,0 +1,908 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Index &#8212; ML Training Framework 0.1.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css?v=0a3b3ea7" />
+    <link rel="stylesheet" type="text/css" href="_static/css/custom.css?v=877aac19" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script src="_static/documentation_options.js?v=38b66d78"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="_static/togglebutton.js?v=4a39c7ea"></script>
+    <script src="_static/design-tabs.js?v=36754332"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs"></script>
+    <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs";mermaid.registerLayoutLoaders(elkLayouts);mermaid.initialize({startOnLoad:false});</script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";
+window.addEventListener("load", () => mermaid.run());
+</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'genindex';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.14.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://yourusername.github.io/workspace/_static/switcher.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.1.0';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = false;
+        </script>
+    <script src="_static/js/custom.js?v=1d6e43f3"></script>
+    <link rel="icon" href="_static/favicon.ico"/>
+    <link rel="index" title="Index" href="#" />
+    <link rel="search" title="Search" href="search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+<div class="bd-header__inner bd-page-width">
+  <label class="sidebar-toggle primary-toggle" for="__primary">
+    <span class="fa-solid fa-bars"></span>
+  </label>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">ML Training Framework</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav class="navbar-nav">
+  <p class="sidebar-header-items__title"
+     role="heading"
+     aria-level="1"
+     aria-label="Site Navigation">
+    Site Navigation
+  </p>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="guides/pretraining.html">
+                        Pretraining Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="guides/tokenization.html">
+                        Tokenization Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="api/tasks/pretraining.html">
+                        Pretraining API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="api/tasks/tokenization.html">
+                        Tokenization API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="api/config/index.html">
+                        Configuration API
+                      </a>
+                    </li>
+                
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+                    <li class="nav-item">
+                      <a class="nav-link dropdown-item nav-internal" href="api/utils/index.html">
+                        Utilities API
+                      </a>
+                    </li>
+                
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fab fa-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+    </div>
+  
+
+  
+</div>
+
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          <div class="navbar-item">
+<nav class="navbar-nav">
+  <p class="sidebar-header-items__title"
+     role="heading"
+     aria-level="1"
+     aria-label="Site Navigation">
+    Site Navigation
+  </p>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="guides/pretraining.html">
+                        Pretraining Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="guides/tokenization.html">
+                        Tokenization Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="api/tasks/pretraining.html">
+                        Pretraining API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="api/tasks/tokenization.html">
+                        Tokenization API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="api/config/index.html">
+                        Configuration API
+                      </a>
+                    </li>
+                
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links-2">
+                    More
+                </button>
+                <ul id="pst-nav-more-links-2" class="dropdown-menu">
+                    
+                    <li class="nav-item">
+                      <a class="nav-link dropdown-item nav-internal" href="api/utils/index.html">
+                        Utilities API
+                      </a>
+                    </li>
+                
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fab fa-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article"></div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+
+<h1 id="index">Index</h1>
+
+<div class="genindex-jumpbox">
+ <a href="#_"><strong>_</strong></a>
+ | <a href="#B"><strong>B</strong></a>
+ | <a href="#C"><strong>C</strong></a>
+ | <a href="#D"><strong>D</strong></a>
+ | <a href="#E"><strong>E</strong></a>
+ | <a href="#F"><strong>F</strong></a>
+ | <a href="#G"><strong>G</strong></a>
+ | <a href="#I"><strong>I</strong></a>
+ | <a href="#L"><strong>L</strong></a>
+ | <a href="#M"><strong>M</strong></a>
+ | <a href="#N"><strong>N</strong></a>
+ | <a href="#O"><strong>O</strong></a>
+ | <a href="#P"><strong>P</strong></a>
+ | <a href="#R"><strong>R</strong></a>
+ | <a href="#S"><strong>S</strong></a>
+ | <a href="#T"><strong>T</strong></a>
+ | <a href="#V"><strong>V</strong></a>
+ | <a href="#W"><strong>W</strong></a>
+ 
+</div>
+<h2 id="_">_</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/config/index.html#src.config.config_loader.ConfigValidator.__init__">__init__() (src.config.config_loader.ConfigValidator method)</a>
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.__init__">(src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase method)</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.__init__">(src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback method)</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.__init__">(src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric method)</a>
+</li>
+        <li><a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.__init__">(src.tasks.tokenization.tokenizer.config.TokenizerConfig method)</a>
+</li>
+        <li><a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.__init__">(src.utils.dataset.storage.DatasetStorage method)</a>
+</li>
+        <li><a href="api/utils/index.html#src.utils.orchestrator.BaseOrchestrator.__init__">(src.utils.orchestrator.BaseOrchestrator method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="B">B</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.orchestrator.BaseOrchestrator">BaseOrchestrator (class in src.utils.orchestrator)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/tokenization.html#id4">batch_size (src.tasks.tokenization.tokenizer.config.TokenizerConfig attribute)</a>, <a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.batch_size">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="C">C</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#id5">COLORS (src.utils.logging.CustomFormatter attribute)</a>, <a href="api/utils/index.html#src.utils.logging.CustomFormatter.COLORS">[1]</a>
+</li>
+      <li><a href="api/config/index.html#src.config.config_loader.ConfigValidator">ConfigValidator (class in src.config.config_loader)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/tokenization.html#id0">context_length (src.tasks.tokenization.tokenizer.config.TokenizerConfig attribute)</a>, <a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.context_length">[1]</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.wrappers.policies.create_auto_wrap_policy">create_auto_wrap_policy() (in module src.tasks.pretraining.fabric.wrappers.policies)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.logging.CustomFormatter">CustomFormatter (class in src.utils.logging)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="D">D</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage">DatasetStorage (class in src.utils.dataset.storage)</a>
+</li>
+      <li><a href="api/utils/index.html#id4">DEBUG (src.utils.logging.VerboseLevel attribute)</a>, <a href="api/utils/index.html#src.utils.logging.VerboseLevel.DEBUG">[1]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.utils.deterministic">deterministic() (in module src.tasks.pretraining.utils)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.version.display_version_info">display_version_info() (in module src.utils.version)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="E">E</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#id8">enable_txt_samples (src.utils.dataset.storage.DatasetStorage attribute)</a>, <a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.enable_txt_samples">[1]</a>
+</li>
+      <li><a href="api/utils/index.html#id1">ERRORS (src.utils.logging.VerboseLevel attribute)</a>, <a href="api/utils/index.html#src.utils.logging.VerboseLevel.ERRORS">[1]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.eval_end">eval_end() (src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase method)</a>
+</li>
+      <li><a href="api/utils/index.html#id10">extension_to_method (src.utils.dataset.storage.DatasetStorage attribute)</a>, <a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.extension_to_method">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="F">F</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.logging.CustomFormatter.format">format() (src.utils.logging.CustomFormatter method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="G">G</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.get_flops_available">get_flops_available() (in module src.tasks.pretraining.fabric.speed_monitor)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.logging.get_logger">get_logger() (in module src.utils.logging)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.version.get_system_info">get_system_info() (in module src.utils.version)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class">get_transformer_layer_class() (in module src.tasks.pretraining.fabric.wrappers.policies)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.wrappers.policies.get_transformer_layer_class_from_model">get_transformer_layer_class_from_model() (in module src.tasks.pretraining.fabric.wrappers.policies)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.version.get_version">get_version() (in module src.utils.version)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="I">I</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#id3">INFO (src.utils.logging.VerboseLevel attribute)</a>, <a href="api/utils/index.html#src.utils.logging.VerboseLevel.INFO">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="L">L</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.orchestrator.BaseOrchestrator.load_dataset">load_dataset() (src.utils.orchestrator.BaseOrchestrator method)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.load_from_disk">load_from_disk() (src.utils.dataset.storage.DatasetStorage method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.load_from_hub">load_from_hub() (src.utils.dataset.storage.DatasetStorage method)</a>
+</li>
+      <li><a href="api/utils/index.html#id9">logger (src.utils.dataset.storage.DatasetStorage attribute)</a>, <a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.logger">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="M">M</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    module
+
+      <ul>
+        <li><a href="api/config/index.html#module-src.config.config_loader">src.config.config_loader</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.distributed">src.tasks.pretraining.fabric.distributed</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.logger">src.tasks.pretraining.fabric.logger</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.speed_monitor">src.tasks.pretraining.fabric.speed_monitor</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.wrappers.policies">src.tasks.pretraining.fabric.wrappers.policies</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.orchestrator">src.tasks.pretraining.orchestrator</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.utils">src.tasks.pretraining.utils</a>
+</li>
+        <li><a href="api/tasks/tokenization.html#module-src.tasks.tokenization.tokenizer.config">src.tasks.tokenization.tokenizer.config</a>
+</li>
+        <li><a href="api/utils/index.html#module-src.utils.dataset.storage">src.utils.dataset.storage</a>
+</li>
+        <li><a href="api/utils/index.html#module-src.utils.dataset.utils">src.utils.dataset.utils</a>
+</li>
+        <li><a href="api/utils/index.html#module-src.utils.logging">src.utils.logging</a>
+</li>
+        <li><a href="api/utils/index.html#module-src.utils.orchestrator">src.utils.orchestrator</a>
+</li>
+        <li><a href="api/utils/index.html#module-src.utils.version">src.utils.version</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
+<h2 id="N">N</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#id0">NONE (src.utils.logging.VerboseLevel attribute)</a>, <a href="api/utils/index.html#src.utils.logging.VerboseLevel.NONE">[1]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.num_proc">num_proc (src.tasks.tokenization.tokenizer.config.TokenizerConfig attribute)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="O">O</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase.on_train_batch_end">on_train_batch_end() (src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase method)</a>
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_batch_end">(src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback method)</a>
+</li>
+        <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric.on_train_batch_end">(src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric method)</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_train_start">on_train_start() (src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback method)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_end">on_validation_end() (src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback method)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.on_validation_start">on_validation_start() (src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback method)</a>
+</li>
+      <li><a href="api/tasks/tokenization.html#id1">overlap (src.tasks.tokenization.tokenizer.config.TokenizerConfig attribute)</a>, <a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.overlap">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="P">P</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.process_files">process_files() (src.utils.dataset.storage.DatasetStorage method)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="R">R</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#id6">RESET (src.utils.logging.CustomFormatter attribute)</a>, <a href="api/utils/index.html#src.utils.logging.CustomFormatter.RESET">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="S">S</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.save_to_disk">save_to_disk() (src.utils.dataset.storage.DatasetStorage method)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.dataset.utils.scan_directory">scan_directory() (in module src.utils.dataset.utils)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.utils.select_optimizer">select_optimizer() (in module src.tasks.pretraining.utils)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.utils.select_scheduler">select_scheduler() (in module src.tasks.pretraining.utils)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.logging.set_logger_level">set_logger_level() (in module src.utils.logging)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback.setup">setup() (src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback method)</a>
+</li>
+      <li><a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.show_progress">show_progress (src.tasks.tokenization.tokenizer.config.TokenizerConfig attribute)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorBase">SpeedMonitorBase (class in src.tasks.pretraining.fabric.speed_monitor)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorCallback">SpeedMonitorCallback (class in src.tasks.pretraining.fabric.speed_monitor)</a>
+</li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.speed_monitor.SpeedMonitorFabric">SpeedMonitorFabric (class in src.tasks.pretraining.fabric.speed_monitor)</a>
+</li>
+      <li><a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.split">split() (src.utils.dataset.storage.DatasetStorage method)</a>
+</li>
+      <li>
+    src.config.config_loader
+
+      <ul>
+        <li><a href="api/config/index.html#module-src.config.config_loader">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.tasks.pretraining.fabric.distributed
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.distributed">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.tasks.pretraining.fabric.logger
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.logger">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.tasks.pretraining.fabric.speed_monitor
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.speed_monitor">module</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li>
+    src.tasks.pretraining.fabric.wrappers.policies
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.fabric.wrappers.policies">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.tasks.pretraining.orchestrator
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.orchestrator">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.tasks.pretraining.utils
+
+      <ul>
+        <li><a href="api/tasks/pretraining.html#module-src.tasks.pretraining.utils">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.tasks.tokenization.tokenizer.config
+
+      <ul>
+        <li><a href="api/tasks/tokenization.html#module-src.tasks.tokenization.tokenizer.config">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.dataset.storage
+
+      <ul>
+        <li><a href="api/utils/index.html#module-src.utils.dataset.storage">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.dataset.utils
+
+      <ul>
+        <li><a href="api/utils/index.html#module-src.utils.dataset.utils">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.logging
+
+      <ul>
+        <li><a href="api/utils/index.html#module-src.utils.logging">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.orchestrator
+
+      <ul>
+        <li><a href="api/utils/index.html#module-src.utils.orchestrator">module</a>
+</li>
+      </ul></li>
+      <li>
+    src.utils.version
+
+      <ul>
+        <li><a href="api/utils/index.html#module-src.utils.version">module</a>
+</li>
+      </ul></li>
+      <li><a href="api/tasks/pretraining.html#src.tasks.pretraining.fabric.logger.step_csv_logger">step_csv_logger() (in module src.tasks.pretraining.fabric.logger)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="T">T</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/tokenization.html#id2">tokenizer_name (src.tasks.tokenization.tokenizer.config.TokenizerConfig attribute)</a>, <a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.tokenizer_name">[1]</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig">TokenizerConfig (class in src.tasks.tokenization.tokenizer.config)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="V">V</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/config/index.html#src.config.config_loader.ConfigValidator.validate">validate() (src.config.config_loader.ConfigValidator method)</a>
+</li>
+      <li><a href="api/tasks/tokenization.html#id3">verbose_level (src.tasks.tokenization.tokenizer.config.TokenizerConfig attribute)</a>, <a href="api/tasks/tokenization.html#src.tasks.tokenization.tokenizer.config.TokenizerConfig.verbose_level">[1]</a>
+
+      <ul>
+        <li><a href="api/utils/index.html#id7">(src.utils.dataset.storage.DatasetStorage attribute)</a>, <a href="api/utils/index.html#src.utils.dataset.storage.DatasetStorage.verbose_level">[1]</a>
+</li>
+      </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#src.utils.logging.VerboseLevel">VerboseLevel (class in src.utils.logging)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="W">W</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils/index.html#id2">WARNINGS (src.utils.logging.VerboseLevel attribute)</a>, <a href="api/utils/index.html#src.utils.logging.VerboseLevel.WARNINGS">[1]</a>
+</li>
+  </ul></td>
+</tr></table>
+
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, Your Name.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.4.7.
+    <br/>
+  </p>
+</div>
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.14.4.
+</p></div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.14.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>

@@ -1,0 +1,694 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>src.tasks.pretraining.utils &#8212; ML Training Framework 0.1.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../../../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../../../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="../../../../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css?v=0a3b3ea7" />
+    <link rel="stylesheet" type="text/css" href="../../../../_static/css/custom.css?v=877aac19" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="../../../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="../../../../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script src="../../../../_static/documentation_options.js?v=38b66d78"></script>
+    <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../../_static/togglebutton.js?v=4a39c7ea"></script>
+    <script src="../../../../_static/design-tabs.js?v=36754332"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs"></script>
+    <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";import elkLayouts from "https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1.4/dist/mermaid-layout-elk.esm.min.mjs";mermaid.registerLayoutLoaders(elkLayouts);mermaid.initialize({startOnLoad:false});</script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.2.0/dist/mermaid.esm.min.mjs";
+window.addEventListener("load", () => mermaid.run());
+</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/src/tasks/pretraining/utils';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.14.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://yourusername.github.io/workspace/_static/switcher.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = '0.1.0';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = false;
+        </script>
+    <script src="../../../../_static/js/custom.js?v=1d6e43f3"></script>
+    <link rel="icon" href="../../../../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+<div class="bd-header__inner bd-page-width">
+  <label class="sidebar-toggle primary-toggle" for="__primary">
+    <span class="fa-solid fa-bars"></span>
+  </label>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+
+<a class="navbar-brand logo" href="../../../../index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">ML Training Framework</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav class="navbar-nav">
+  <p class="sidebar-header-items__title"
+     role="heading"
+     aria-level="1"
+     aria-label="Site Navigation">
+    Site Navigation
+  </p>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../guides/pretraining.html">
+                        Pretraining Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../guides/tokenization.html">
+                        Tokenization Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../api/tasks/pretraining.html">
+                        Pretraining API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../api/tasks/tokenization.html">
+                        Tokenization API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../api/config/index.html">
+                        Configuration API
+                      </a>
+                    </li>
+                
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+                    <li class="nav-item">
+                      <a class="nav-link dropdown-item nav-internal" href="../../../../api/utils/index.html">
+                        Utilities API
+                      </a>
+                    </li>
+                
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fab fa-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+    </div>
+  
+
+  
+</div>
+
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          <div class="navbar-item">
+<nav class="navbar-nav">
+  <p class="sidebar-header-items__title"
+     role="heading"
+     aria-level="1"
+     aria-label="Site Navigation">
+    Site Navigation
+  </p>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../guides/pretraining.html">
+                        Pretraining Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../guides/tokenization.html">
+                        Tokenization Guide
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../api/tasks/pretraining.html">
+                        Pretraining API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../api/tasks/tokenization.html">
+                        Tokenization API
+                      </a>
+                    </li>
+                
+
+                    <li class="nav-item">
+                      <a class="nav-link nav-internal" href="../../../../api/config/index.html">
+                        Configuration API
+                      </a>
+                    </li>
+                
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links-2">
+                    More
+                </button>
+                <ul id="pst-nav-more-links-2" class="dropdown-menu">
+                    
+                    <li class="nav-item">
+                      <a class="nav-link dropdown-item nav-internal" href="../../../../api/utils/index.html">
+                        Utilities API
+                      </a>
+                    </li>
+                
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/gplsi/continual-pretraining-framework/tree/last-llama-fsdp" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fab fa-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="../../../../index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="../../../index.html" class="nav-link">Module code</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">src.tasks.pr...</li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+  <h1>Source code for src.tasks.pretraining.utils</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">transformers.models.llama.modeling_llama</span><span class="w"> </span><span class="kn">import</span> <span class="n">LlamaDecoderLayer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">transformers.optimization</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_constant_schedule</span><span class="p">,</span> <span class="n">get_constant_schedule_with_warmup</span><span class="p">,</span> <span class="n">get_linear_schedule_with_warmup</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">transformers.models.gpt2.modeling_gpt2</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPT2Block</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dataset</span> <span class="k">as</span> <span class="n">HFDataset</span>
+
+<span class="c1"># TODO: Add more wrappers for other models, and make clear the keys for the wrappers</span>
+
+<span class="n">AUTO_WRAPPER</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;llama&quot;</span><span class="p">:</span> <span class="n">LlamaDecoderLayer</span><span class="p">,</span>
+    <span class="s2">&quot;gpt2&quot;</span><span class="p">:</span> <span class="n">GPT2Block</span>
+<span class="p">}</span>
+
+<span class="n">OPTIMIZERS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;adam&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">,</span>
+    <span class="s2">&quot;adamw&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">,</span>
+    <span class="s2">&quot;sgd&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">SGD</span><span class="p">,</span>
+    <span class="s2">&quot;adamax&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adamax</span><span class="p">,</span>
+    <span class="s2">&quot;adagrad&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adagrad</span><span class="p">,</span>
+    <span class="s2">&quot;adadelta&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adadelta</span><span class="p">,</span>
+    <span class="s2">&quot;rmsprop&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">RMSprop</span>
+<span class="p">}</span>
+
+
+<span class="c1"># Scheduler for dealing with training with and without gradient accumulation</span>
+<div class="viewcode-block" id="select_scheduler">
+<a class="viewcode-back" href="../../../../api/tasks/pretraining.html#src.tasks.pretraining.utils.select_scheduler">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_scheduler</span><span class="p">(</span><span class="n">optimizer</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">,</span> <span class="n">lr_scheduler</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">number_epochs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">world_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">train_dataset</span><span class="p">:</span> <span class="n">HFDataset</span><span class="p">,</span> <span class="n">warmup_proportion</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">gradient_accumulation_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">lr_scheduler</span><span class="o">.</span><span class="n">LambdaLR</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Selects and returns an appropriate learning rate scheduler based on the specified configuration.</span>
+<span class="sd">    </span>
+<span class="sd">    This function supports three types of schedulers:</span>
+<span class="sd">      - &#39;fixed&#39;: a constant learning rate scheduler.</span>
+<span class="sd">      - &#39;warmup_constant&#39;: a scheduler with initial warmup followed by a constant learning rate.</span>
+<span class="sd">      - &#39;warmup_linear&#39;: a scheduler with an initial warmup and subsequent linear decay.</span>
+<span class="sd">      </span>
+<span class="sd">    It computes warmup steps and total training steps based on training dataset size, number of epochs, batch size, </span>
+<span class="sd">    world size, and optionally the number of gradient accumulation steps.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">        optimizer (torch.optim.Optimizer): The optimizer instance used during training.</span>
+<span class="sd">        lr_scheduler (str): The type of scheduler to use (&#39;fixed&#39;, &#39;warmup_constant&#39;, or &#39;warmup_linear&#39;).</span>
+<span class="sd">        number_epochs (int): Total number of epochs for training.</span>
+<span class="sd">        world_size (int): Number of processing units (e.g., GPUs) used in distributed training.</span>
+<span class="sd">        batch_size (int): Batch size per processing unit.</span>
+<span class="sd">        train_dataset (HFDataset): The dataset used for training.</span>
+<span class="sd">        warmup_proportion (float): Fraction of total training steps to use for warmup.</span>
+<span class="sd">        gradient_accumulation_steps (int, optional): Number of steps to accumulate gradients before an optimizer update.</span>
+<span class="sd">            </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        torch.optim.lr_scheduler.LambdaLR: The configured learning rate scheduler.</span>
+<span class="sd">        </span>
+<span class="sd">    Raises:</span>
+<span class="sd">        ValueError: If the scheduler type provided does not match any of the supported schedulers.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_warmup_steps</span><span class="p">(</span><span class="n">number_epochs</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">warmup_proportion</span><span class="p">,</span> <span class="n">train_dataset</span><span class="p">,</span> <span class="n">gradient_accumulation_steps</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Calculates the number of warmup steps and total training steps based on the training configuration.</span>
+<span class="sd">        </span>
+<span class="sd">        The number of steps per epoch is computed by dividing the size of the training dataset by the product </span>
+<span class="sd">        of batch size and world size. Total steps are calculated by multiplying steps per epoch by the number of epochs,</span>
+<span class="sd">        with an adjustment for gradient accumulation if applicable. Warmup steps are then determined as a fixed proportion </span>
+<span class="sd">        of the total training steps.</span>
+<span class="sd">        </span>
+<span class="sd">        Parameters:</span>
+<span class="sd">            number_epochs (int): Total number of training epochs.</span>
+<span class="sd">            world_size (int): Number of processing units (GPUs) used.</span>
+<span class="sd">            batch_size (int): Batch size per unit.</span>
+<span class="sd">            warmup_proportion (float): Proportion of steps allocated for warmup.</span>
+<span class="sd">            train_dataset (HFDataset): The training dataset.</span>
+<span class="sd">            gradient_accumulation_steps (int, optional): Number of gradient accumulation steps.</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            tuple: A tuple containing:</span>
+<span class="sd">                - warmup_steps (int): Number of steps allocated for warmup.</span>
+<span class="sd">                - total_steps (int): Total number of training steps after adjusting for gradient accumulation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">steps_per_epoch</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">)</span> <span class="o">//</span> <span class="p">(</span><span class="n">batch_size</span> <span class="o">*</span> <span class="n">world_size</span><span class="p">)</span>
+        <span class="n">total_steps</span> <span class="o">=</span> <span class="n">number_epochs</span> <span class="o">*</span> <span class="n">steps_per_epoch</span>
+        <span class="k">if</span> <span class="n">gradient_accumulation_steps</span><span class="p">:</span>
+            <span class="n">total_steps</span> <span class="o">=</span> <span class="n">total_steps</span> <span class="o">//</span> <span class="n">gradient_accumulation_steps</span>
+        <span class="n">warmup_steps</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">total_steps</span> <span class="o">*</span> <span class="n">warmup_proportion</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">warmup_steps</span><span class="p">,</span> <span class="n">total_steps</span>
+
+    <span class="k">if</span> <span class="n">lr_scheduler</span> <span class="o">==</span> <span class="s1">&#39;fixed&#39;</span><span class="p">:</span>
+        <span class="n">scheduler</span> <span class="o">=</span> <span class="n">get_constant_schedule</span><span class="p">(</span><span class="n">optimizer</span><span class="p">)</span>
+
+    <span class="k">elif</span> <span class="n">lr_scheduler</span> <span class="o">==</span> <span class="s1">&#39;warmup_constant&#39;</span><span class="p">:</span>
+        <span class="n">warmup_steps</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">calculate_warmup_steps</span><span class="p">(</span><span class="n">number_epochs</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">warmup_proportion</span><span class="p">,</span> <span class="n">train_dataset</span><span class="p">)</span>
+        <span class="n">scheduler</span> <span class="o">=</span> <span class="n">get_constant_schedule_with_warmup</span><span class="p">(</span>
+            <span class="n">optimizer</span><span class="p">,</span> 
+            <span class="n">num_warmup_steps</span><span class="o">=</span><span class="n">warmup_steps</span>
+        <span class="p">)</span>
+
+    <span class="k">elif</span> <span class="n">lr_scheduler</span> <span class="o">==</span> <span class="s1">&#39;warmup_linear&#39;</span><span class="p">:</span>
+        <span class="n">warmup_steps</span><span class="p">,</span> <span class="n">total_steps</span> <span class="o">=</span> <span class="n">calculate_warmup_steps</span><span class="p">(</span><span class="n">number_epochs</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">warmup_proportion</span><span class="p">,</span> <span class="n">train_dataset</span><span class="p">)</span>  
+        <span class="n">scheduler</span> <span class="o">=</span> <span class="n">get_linear_schedule_with_warmup</span><span class="p">(</span>
+            <span class="n">optimizer</span><span class="p">,</span>
+            <span class="n">num_warmup_steps</span><span class="o">=</span><span class="n">warmup_steps</span><span class="p">,</span>
+            <span class="n">num_training_steps</span><span class="o">=</span><span class="n">total_steps</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Scheduler type not recognized.&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">scheduler</span></div>
+
+
+
+<div class="viewcode-block" id="select_optimizer">
+<a class="viewcode-back" href="../../../../api/tasks/pretraining.html#src.tasks.pretraining.utils.select_optimizer">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_optimizer</span><span class="p">(</span><span class="n">optimizer</span><span class="p">:</span><span class="nb">str</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">lr</span><span class="p">:</span><span class="nb">float</span><span class="p">,</span> <span class="n">weight_decay</span><span class="p">:</span><span class="nb">float</span><span class="p">,</span> <span class="n">beta1</span><span class="p">:</span><span class="nb">float</span><span class="p">,</span> <span class="n">beta2</span><span class="p">:</span><span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Optimizer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Creates and returns an optimizer instance based on the specified configuration.</span>
+<span class="sd">    </span>
+<span class="sd">    This function selects the appropriate optimizer using a predefined dictionary mapping and configures it </span>
+<span class="sd">    with the model&#39;s parameters and hyperparameters like learning rate, weight decay, and beta values. </span>
+<span class="sd">    The &#39;foreach&#39; flag is enabled to potentially streamline parameter updates on supported hardware.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">        optimizer (str): Identifier of the optimizer to be used. Must be a key in the OPTIMIZERS dictionary.</span>
+<span class="sd">        model: The model whose parameters are to be optimized.</span>
+<span class="sd">        lr (float): Learning rate for optimizer updates.</span>
+<span class="sd">        weight_decay (float): Weight decay (L2 regularization coefficient).</span>
+<span class="sd">        beta1 (float): First beta coefficient for optimizers like Adam.</span>
+<span class="sd">        beta2 (float): Second beta coefficient for optimizers like Adam.</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        torch.optim.Optimizer: Configured optimizer instance.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">OPTIMIZERS</span><span class="p">[</span><span class="n">optimizer</span><span class="p">](</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> 
+                                                <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span> 
+                                                <span class="n">weight_decay</span><span class="o">=</span><span class="n">weight_decay</span><span class="p">,</span>
+                                                <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">beta1</span><span class="p">,</span> <span class="n">beta2</span><span class="p">),</span>
+                                                <span class="n">foreach</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">optimizer</span></div>
+
+
+
+<div class="viewcode-block" id="deterministic">
+<a class="viewcode-back" href="../../../../api/tasks/pretraining.html#src.tasks.pretraining.utils.deterministic">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">deterministic</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Configures the environment to produce deterministic results.</span>
+<span class="sd">    </span>
+<span class="sd">    This function sets various backend options and seeds for PyTorch&#39;s CUDA, </span>
+<span class="sd">    NumPy, and Python&#39;s random module to ensure reproducible results across runs.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">        seed (int): The seed value for random number generators.</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">cudnn</span><span class="o">.</span><span class="n">deterministic</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">cudnn</span><span class="o">.</span><span class="n">benchmark</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">manual_seed_all</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span></div>
+
+    
+</pre></div>
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="../../../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, Your Name.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.4.7.
+    <br/>
+  </p>
+</div>
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.14.4.
+</p></div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.14.4.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>
