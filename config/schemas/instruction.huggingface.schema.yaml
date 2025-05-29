@@ -1,0 +1,50 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "instruction.huggingface.schema.yaml"
+description: "Schema for HuggingFace dataset configuration in instruction tasks"
+
+type: object
+properties:
+  source:
+    type: string
+    enum: ["huggingface"]
+    description: "Specifies that the dataset source is HuggingFace"
+  
+  nameOrPath:
+    type: string
+    description: "HuggingFace dataset name or path (e.g., 'tatsu-lab/alpaca')"
+  
+  split:
+    type: string
+    default: "train"
+    description: "Dataset split to use (e.g., 'train', 'validation', 'test')"
+  
+  subset:
+    type: string
+    description: "Optional dataset subset name"
+  
+  streaming:
+    type: boolean
+    default: false
+    description: "Whether to stream the dataset or load it entirely into memory"
+  
+  max_samples:
+    type: integer
+    description: "Maximum number of samples to load (useful for testing or limiting dataset size)"
+  
+  cache_dir:
+    type: string
+    description: "Directory to cache the downloaded dataset"
+  
+  use_auth_token:
+    type: boolean
+    default: false
+    description: "Whether to use the HuggingFace auth token for accessing private datasets"
+  
+  revision:
+    type: string
+    default: "main"
+    description: "Git revision of the dataset to load"
+
+required:
+  - source
+  - nameOrPath

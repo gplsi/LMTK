@@ -1,0 +1,76 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "instruction.json.schema.yaml"
+description: "Schema for JSON/JSONL dataset configuration in instruction tasks"
+
+type: object
+properties:
+  source:
+    type: string
+    enum: ["local"]
+    description: "Specifies that the dataset source is local"
+  
+  nameOrPath:
+    type: string
+    description: "Path to the JSON/JSONL file or directory containing JSON/JSONL files"
+  
+  format:
+    type: string
+    enum: ["json", "jsonl"]
+    description: "Format of the local dataset files"
+  
+  file_config:
+    type: object
+    properties:
+      encoding:
+        type: string
+        default: "utf-8"
+        description: "Character encoding of the files"
+      
+      lines:
+        type: boolean
+        default: true
+        description: "Whether each line is a separate JSON object (for JSONL)"
+      
+      orient:
+        type: string
+        enum: ["records", "split", "index", "columns", "values"]
+        default: "records"
+        description: "Expected JSON structure for pandas reading (for JSON)"
+      
+      nested_keys:
+        type: array
+        items:
+          type: string
+        description: "List of keys to navigate nested JSON structures"
+      
+      flatten:
+        type: boolean
+        default: false
+        description: "Whether to flatten nested JSON structures"
+    
+    required:
+      - encoding
+  
+  recursive:
+    type: boolean
+    default: false
+    description: "Whether to recursively search for JSON/JSONL files in subdirectories"
+  
+  pattern:
+    type: string
+    default: "*.json*"
+    description: "File pattern to match when loading multiple files"
+  
+  max_files:
+    type: integer
+    description: "Maximum number of files to process"
+  
+  sample_files:
+    type: boolean
+    default: false
+    description: "Whether to randomly sample files instead of taking the first N"
+
+required:
+  - source
+  - nameOrPath
+  - format

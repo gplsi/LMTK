@@ -1,0 +1,160 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "instruction.schema.yaml"
+description: "Schema for instruction-following task configuration"
+
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      # Model configuration
+      model:
+        type: object
+        properties:
+          name:
+            type: string
+            description: "Name of the model to use for instruction templates"
+          tokenizer:
+            type: string
+            description: "HuggingFace tokenizer name"
+          max_length:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 2048
+            description: "Maximum sequence length for tokenization"
+          truncation_side:
+            type: string
+            enum: ["left", "right"]
+            default: "right"
+            description: "Which side to truncate from when sequences exceed max_length"
+          template_variables:
+            type: object
+            description: "Additional variables to pass to templates"
+            additionalProperties: true
+        required:
+          - tokenizer
+      
+      # Task configuration
+      task_name:
+        type: string
+        description: "Optional task name to select specific instructions"
+      
+      # Dataset configuration
+      dataset:
+        type: object
+        properties:
+          source:
+            type: string
+            enum: ["huggingface", "local"]
+          nameOrPath:
+            type: string
+            description: "Dataset name for HuggingFace or local path"
+          format:
+            type: string
+            enum: ["dataset", "files", "json", "jsonl", "csv"]
+          input_column:
+            type: string
+            default: "input"
+            description: "Column containing input text"
+          instruction_column:
+            type: string
+            description: "Column containing instruction text"
+          label_column:
+            type: string
+            default: "output"
+            description: "Column containing label/response text"
+          task_type_column:
+            type: string
+            description: "Column containing task type identifiers"
+          combined_column:
+            type: string
+            description: "Column containing both instruction and input"
+          system_prompt_column:
+            type: string
+            description: "Column containing system prompts"
+          file_config:
+            type: object
+            properties:
+              encoding:
+                type: string
+                default: "utf-8"
+              delimiter:
+                type: string
+                default: ","
+                description: "For CSV files, the delimiter character"
+        required:
+          - source
+          - nameOrPath
+          - format
+      
+      # Output configuration
+      output:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Path to save processed dataset"
+          input_column:
+            type: string
+            default: "processed_input"
+            description: "Column name for processed inputs in output dataset"
+          label_column:
+            type: string
+            default: "processed_label"
+            description: "Column name for processed labels in output dataset"
+        required:
+          - path
+      
+      # Template configuration
+      templates:
+        type: object
+        properties:
+          system_style:
+            type: string
+            description: "Template style for system prompts"
+          user_style:
+            type: string
+            description: "Template style for user inputs"
+          assistant_style:
+            type: string
+            description: "Template style for assistant responses"
+          final_style:
+            type: string
+            description: "Template style for final block"
+      
+      # Instruction configuration
+      instructions:
+        type: object
+        properties:
+          default_instruction:
+            type: string
+            description: "Default instruction to use if none specified"
+          task_specific:
+            type: object
+            description: "Task-specific instructions"
+            additionalProperties: true
+      
+      # Test split configuration
+      test_size:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: null
+        description: "Fraction of dataset to use for testing"
+    
+    required:
+      - model
+      - dataset
+      - output
+    
+    dependentSchemas:
+      huggingface:
+        properties:
+          dataset:
+            allOf:
+              - $ref: "instruction.huggingface.schema.yaml"
+      json:
+        properties:
+          dataset:
+            allOf:
+              - $ref: "instruction.json.schema.yaml"
