@@ -1,0 +1,65 @@
+# Instruction fine-tuning configuration for testing with FSDP on a single GPU (16GB)
+task: instruction
+experiment_name: instruction_test_fsdp
+output_dir: outputs/instruction_test_fsdp
+verbose_level: 2
+
+# Model configuration
+model:
+  name: facebook/opt-350m  # Small model that fits in 16GB GPU
+  tokenizer: facebook/opt-350m
+  max_length: 512
+  truncation_side: right
+
+# Execution mode
+execution_mode: train
+
+# Dataset configuration
+dataset:
+  source: huggingface
+  nameOrPath: tatsu-lab/alpaca
+  format: json
+  split: train
+  text_column: text
+  instruction_column: instruction
+  response_column: output
+  max_samples: 1000  # Limit samples for testing
+
+# Output configuration
+output:
+  path: outputs/instruction_test_fsdp
+  save_model: true
+  save_steps: 50
+
+# Training configuration
+training:
+  batch_size: 2
+  gradient_accumulation_steps: 8
+  num_epochs: 1
+  max_steps: 100
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_steps: 10
+  evaluation_strategy: steps
+  eval_steps: 20
+  save_strategy: steps
+  save_steps: 50
+  logging_steps: 10
+  fp16: true
+  bf16: false
+
+# Prompt template configuration
+template:
+  style: alpaca
+  system_prompt: "Below is an instruction that describes a task. Write a response that appropriately completes the request."
+
+# FSDP configuration
+parallelization_strategy: fsdp
+parallelization_config:
+  sharding_strategy: full_shard
+  auto_wrap_policy: transformer
+  activation_checkpointing: true
+  cpu_offload: false
+
+# Logging configuration
+logging_config: none

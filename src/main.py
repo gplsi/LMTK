@@ -1,69 +1,171 @@
 from box import Box
 import yaml
 import sys
+import os
+import logging
+from pathlib import Path
 from src.config.config_loader import ConfigValidator
 from src.utils.version import display_version_info
+from src.utils.logging import get_logger, setup_logging, VerboseLevel
+
+
+logger = get_logger(__name__)
 
 
 def execute_task(config_path: str):
+    """Execute a task based on the provided configuration file.
+    
+    Args:
+        config_path: Path to the configuration file
+        
+    Raises:
+        ValueError: If the task is missing or invalid
+        ImportError: If the task module cannot be imported
+        Exception: For any other errors during task execution
+    """
     # Load the YAML file (to extract the task value)
     with open(config_path, "r") as f:
         raw_data = yaml.safe_load(f)
     raw_config = Box(raw_data, box_dots=True)
 
-    # Ensure the 'task' key exists.
+    # Ensure the 'task' key exists
     task = raw_config.get("task")
     if not task:
         raise ValueError("Missing 'task' key in configuration.")
+        
+    # Set up logging based on configuration
+    verbose_level = raw_config.get("verbose_level", VerboseLevel.INFO)
+    setup_logging(verbose_level)
+    
+    # Log the task being executed
+    logger.info(f"Executing task: {task}")
+    logger.info(f"Using configuration file: {config_path}")
 
-    # Validate using the task-specific schema (which, if desired, may include the base fields)
+    # Validate using the task-specific schema
     validator = ConfigValidator()
     config = validator.validate(config_path, task)
-
-    # Dynamically import and dispatch to the task handler.
-    task_module = __import__(f"tasks.{task}", fromlist=[""])
-    task_module.execute(config)
     
+    # Create output directory if it doesn't exist
+    output_dir = config.get("output_dir", f"outputs/{config.experiment_name}")
+    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Output directory: {output_dir}")
+
+    # Dynamically import and dispatch to the task handler
+    try:
+        task_module = __import__(f"tasks.{task}", fromlist=[""])
+        logger.info(f"Successfully imported task module: tasks.{task}")
+        task_module.execute(config)
+    except ImportError as e:
+        logger.error(f"Failed to import task module: tasks.{task}")
+        raise ImportError(f"Task '{task}' is not implemented or could not be imported: {e}")
+    except Exception as e:
+        logger.error(f"Error executing task '{task}': {e}")
+        raise
+    
+def list_available_tasks():
+    """List all available tasks in the framework.
+    
+    Returns:
+        List of available task names
+    """
+    tasks_dir = Path(__file__).parent / "tasks"
+    tasks = []
+    
+    for item in tasks_dir.iterdir():
+        if item.is_dir() and not item.name.startswith("__") and (item / "__init__.py").exists():
+            tasks.append(item.name)
+    
+    return sorted(tasks)
+
+
+def validate_config(config_path: str, verbose: bool = False):
+    """Validate a configuration file without executing the task.
+    
+    Args:
+        config_path: Path to the configuration file
+        verbose: Whether to print verbose output
+        
+    Returns:
+        True if the configuration is valid, False otherwise
+    """
+    try:
+        # Load the configuration
+        with open(config_path, "r") as f:
+            raw_data = yaml.safe_load(f)
+        raw_config = Box(raw_data, box_dots=True)
+        
+        # Check for task key
+        task = raw_config.get("task")
+        if not task:
+            logger.error("Missing 'task' key in configuration.")
+            return False
+        
+        # Validate the configuration
+        validator = ConfigValidator()
+        validator.validate(config_path, task)
+        
+        if verbose:
+            logger.info(f"Configuration is valid: {config_path}")
+            logger.info(f"Task: {task}")
+            logger.info(f"Experiment name: {raw_config.get('experiment_name', 'Not specified')}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Invalid configuration: {e}")
+        return False
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Continual Pretraining Framework')
     parser.add_argument('--config', '-c', help='Path to experiment config')
     parser.add_argument('--version', '-v', action='store_true', help='Display version information')
     parser.add_argument('--validate', action='store_true', help='Validate configuration without execution')
+    parser.add_argument('--list-tasks', '-l', action='store_true', help='List available tasks')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     args = parser.parse_args()
+    
+    # Set up basic logging
+    setup_logging(VerboseLevel.INFO if args.verbose else VerboseLevel.WARN)
     
     # Handle version command
     if args.version:
         display_version_info()
         sys.exit(0)
+    
+    # Handle list tasks command
+    if args.list_tasks:
+        tasks = list_available_tasks()
+        print("Available tasks:")
+        for task in tasks:
+            print(f"  - {task}")
+        sys.exit(0)
         
     # Ensure a config is provided when needed
-    if not args.config:
+    if not args.config and not args.list_tasks and not args.version:
         parser.print_help()
         sys.exit(1)
         
     # Handle validation only
     if args.validate:
-        print(f"Validating configuration: {args.config}")
-        validator = ConfigValidator()
-        with open(args.config, "r") as f:
-            raw_data = yaml.safe_load(f)
-        raw_config = Box(raw_data, box_dots=True)
-        task = raw_config.get("task")
-        if not task:
-            print("ERROR: Missing 'task' key in configuration.")
-            sys.exit(1)
-        try:
-            validator.validate(args.config, task)
-            print("Configuration is valid!")
+        logger.info(f"Validating configuration: {args.config}")
+        if validate_config(args.config, args.verbose):
+            logger.info("Configuration is valid!")
             sys.exit(0)
-        except Exception as e:
-            print(f"ERROR: Invalid configuration: {e}")
+        else:
+            logger.error("Configuration validation failed.")
             sys.exit(1)
     
     # Execute the task
-    try:
-        execute_task(args.config)
-    except Exception as e:
-        print(f"ERROR: {e}")
-        sys.exit(1)
+    if args.config:
+        try:
+            execute_task(args.config)
+        except ValueError as e:
+            logger.error(f"Configuration error: {e}")
+            sys.exit(1)
+        except ImportError as e:
+            logger.error(f"Task import error: {e}")
+            sys.exit(1)
+        except Exception as e:
+            logger.error(f"Execution error: {e}")
+            sys.exit(1)

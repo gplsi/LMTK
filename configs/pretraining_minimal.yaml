@@ -1,0 +1,31 @@
+# Minimal pretraining configuration for testing
+task: pretraining
+experiment_name: pretraining_minimal_test
+output_dir: outputs/pretraining_minimal_test
+
+# Required fields from pretraining.schema.yaml
+model_name: gpt2
+precision: bf16-true
+number_epochs: 1
+batch_size: 4
+gradient_accumulation_steps: 8
+grad_clip: 1.0
+lr: 5.0e-5
+lr_decay: true
+lr_scheduler: warmup_linear
+warmup_proportion: 0.1
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+parallelization_strategy: none  # Start with no parallelization for testing
+
+# Dataset configuration
+dataset:
+  source: huggingface
+  nameOrPath: wikitext
+  subset: wikitext-2-raw-v1
+  split: train
+  text_field: text
+
+# Logging configuration
+logging_config: none

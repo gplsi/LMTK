@@ -1,0 +1,44 @@
+# Pretraining configuration for testing with FSDP on a single GPU (16GB)
+task: pretraining
+experiment_name: pretraining_test_fsdp
+output_dir: outputs/pretraining_test_fsdp
+verbose_level: 2
+
+# Required fields from pretraining.schema.yaml
+model_name: gpt2  # Small model that fits in 16GB GPU
+precision: 16-mixed  # Use mixed precision to save memory
+number_epochs: 1
+batch_size: 4  # Small batch size to fit in memory
+gradient_accumulation_steps: 8  # Accumulate gradients to simulate larger batch sizes
+grad_clip: 1.0
+lr: 5.0e-5
+lr_decay: true
+lr_scheduler: warmup_linear
+warmup_proportion: 0.1
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+parallelization_strategy: fsdp
+
+# Dataset configuration
+dataset:
+  source: huggingface
+  nameOrPath: wikitext
+  subset: wikitext-2-raw-v1
+  split: train
+  text_field: text
+
+# FSDP-specific configurations (parallelization_config)
+parallelization_config:
+  sharding_strategy: full_shard
+  auto_wrap_policy: transformer
+  activation_checkpointing: true  # Enable activation checkpointing to save memory
+  cpu_offload: false  # Disable CPU offloading for faster training
+
+# Additional training configuration
+validate_after_k_steps: 20  # Validate every 20 steps
+validate_after_epoch: true
+validate_on_end: true
+
+# Logging configuration
+logging_config: none  # We'll use our own logging implementation

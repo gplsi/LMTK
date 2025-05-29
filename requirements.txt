@@ -10,10 +10,11 @@ types-pyyaml
 scikit-learn
 lightning
 pytorch-lightning
-wandb==0.17
+wandb
 flash-attn
 pydantic==1.10.11
 peft
+
 
 # Testing dependencies
 pytest

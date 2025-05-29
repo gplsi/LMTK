@@ -1,8 +1,8 @@
 """
-Metrics logging module for training tasks.
+Metrics logger for training tasks.
 
-This module provides a unified interface for logging training metrics to various backends
-(console, CSV, WandB, TensorBoard).
+This module provides a unified interface for logging training metrics
+across different backends (console, CSV, WandB, TensorBoard).
 """
 
 import os
@@ -15,16 +15,9 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 import torch
 import torch.nn as nn
 
-logger = logging.getLogger(__name__)
-
 
 class MetricsLogger:
-    """
-    Logger for training metrics.
-    
-    This class provides a unified interface for logging training metrics to various backends
-    (console, CSV, WandB, TensorBoard).
-    """
+    """Base class for logging training metrics."""
     
     def __init__(
         self,
@@ -40,8 +33,7 @@ class MetricsLogger:
         wandb_tags: Optional[List[str]] = None,
         tensorboard_log_dir: Optional[str] = None,
     ) -> None:
-        """
-        Initialize the metrics logger.
+        """Initialize the metrics logger.
         
         Args:
             output_dir: Directory to save outputs

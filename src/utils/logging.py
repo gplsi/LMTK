@@ -146,10 +146,53 @@ def set_logger_level(logger: logging.Logger, level: VerboseLevel) -> logging.Log
         logging.Logger: The logger with the updated logging level.
     """
     
-    logger.setLevel(level_mapping.get(level, logging.INFO))
+    # Get the numeric level from the mapping
+    numeric_level = level_mapping.get(level, logging.INFO)
     
-    # Disable logging completely if NONE
+    # Set the logger's level
+    logger.setLevel(numeric_level)
+    
+    # If level is NONE, disable the logger
     if level == VerboseLevel.NONE:
         logger.disabled = True
+    else:
+        logger.disabled = False
         
     return logger
+
+
+def setup_logging(level: VerboseLevel = VerboseLevel.INFO) -> None:
+    """
+    Set up logging for the entire application.
+    
+    This function configures the root logger with the specified verbosity level
+    and adds a console handler with the custom formatter.
+    
+    Args:
+        level (VerboseLevel): The desired verbosity level. Defaults to VerboseLevel.INFO.
+    """
+    # Get the root logger
+    root_logger = logging.getLogger()
+    
+    # Clear existing handlers to avoid duplicate logs
+    for handler in root_logger.handlers[:]:  
+        root_logger.removeHandler(handler)
+    
+    # Set the root logger level
+    numeric_level = level_mapping.get(level, logging.INFO)
+    root_logger.setLevel(numeric_level)
+    
+    # Create console handler and set level
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(numeric_level)
+    
+    # Create formatter and add it to the handler
+    formatter = CustomFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    
+    # Add the handler to the root logger
+    root_logger.addHandler(console_handler)
+    
+    # If level is NONE, disable the logger
+    if level == VerboseLevel.NONE:
+        root_logger.disabled = True
