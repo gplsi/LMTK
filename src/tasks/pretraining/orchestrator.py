@@ -216,6 +216,13 @@ class ContinualOrchestrator(BaseOrchestrator):
         """
         self.logger.info("Starting training pipeline")
         try:
+            # Debug: Log configuration types that might cause issues
+            config_keys_to_check = ['gradient_accumulation_steps', 'validate_after_k_steps', 'max_epochs', 'max_steps', 'batch_size', 'eval_batch_size']
+            for key in config_keys_to_check:
+                if hasattr(self.config, key):
+                    value = getattr(self.config, key)
+                    self.logger.debug(f"Orchestrator config {key}: value={value}, type={type(value)}")
+            
             # 1. Validate configuration
             self.validate_config()
             
@@ -238,5 +245,7 @@ class ContinualOrchestrator(BaseOrchestrator):
             self.logger.info("Continual Pretraining completed successfully")
 
         except Exception as e:
+            import traceback
             self.logger.error(f"Continual Pretraining pipeline failed: {str(e)}")
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             raise

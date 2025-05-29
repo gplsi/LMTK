@@ -8,6 +8,7 @@ class, providing a template for custom training strategies.
 import math
 from pathlib import Path
 import time
+from tasks.pretraining.utils import deterministic
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_from_disk, DatasetDict
@@ -17,6 +18,7 @@ from abc import ABC, abstractmethod
 import itertools
 from typing import Tuple, Union
 from box import Box
+from transformers import AutoTokenizer
 
 # Import Lightning and other necessary libraries
 import lightning as L
@@ -33,7 +35,7 @@ from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
 
 
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class FabricTrainerBase(ABC):
     """
@@ -88,6 +90,15 @@ class FabricTrainerBase(ABC):
 
         This method configures the training strategy, sets up loggers, and then launches the training pipeline using Lightning Fabric.
         """
+        self.cli_logger.info("Setting up FSDP strategy.")
+        
+        # Debug logging for configuration values that might cause type issues
+        config_keys_to_check = ['gradient_accumulation_steps', 'validate_after_k_steps', 'max_epochs', 'max_steps', 'batch_size', 'eval_batch_size']
+        for key in config_keys_to_check:
+            if hasattr(self.config, key):
+                value = getattr(self.config, key)
+                self.cli_logger.debug(f"Config {key}: value={value}, type={type(value)}")
+        
         strategy = self._setup_strategy()
         loggers = self._set_loggers()
         fabric = L.Fabric(
@@ -170,7 +181,7 @@ class FabricTrainerBase(ABC):
         - fabric (L.Fabric): The Fabric instance handling the training.
         """
         if self.checkpoint_path is not None:
-            self.cli_logger.debug(f"Resuming training from '{self.checkpoint_path}'")
+            self.cli_logger.info(f"Resuming training from '{self.checkpoint_path}'")
             fabric.load(self.checkpoint_path, self.state)
     
     def _train_logs(self, fabric: L.Fabric, loss: torch.Tensor) -> None:
@@ -218,13 +229,22 @@ class FabricTrainerBase(ABC):
         Returns:
         - tuple: Contains the outputs from the training step and the loss tensor.
         """
-        is_accumulating = (self.state["iter_num"] + 1) % self.config.gradient_accumulation_steps != 0
+        # Debug logging for gradient accumulation steps
+        gradient_accumulation_steps_raw = self.config.gradient_accumulation_steps
+        self.cli_logger.debug(f"gradient_accumulation_steps raw value: {gradient_accumulation_steps_raw}, type: {type(gradient_accumulation_steps_raw)}")
+        
+        gradient_accumulation_steps = int(self.config.gradient_accumulation_steps)
+        self.cli_logger.debug(f"gradient_accumulation_steps converted: {gradient_accumulation_steps}, type: {type(gradient_accumulation_steps)}")
+        self.cli_logger.debug(f"iter_num value: {self.state['iter_num']}, type: {type(self.state['iter_num'])}")
+        self.cli_logger.debug(f"About to check: (iter_num + 1) % gradient_accumulation_steps != 0 -> ({self.state['iter_num']} + 1) % {gradient_accumulation_steps} != 0")
+        
+        is_accumulating = (self.state["iter_num"] + 1) % gradient_accumulation_steps != 0
         with fabric.no_backward_sync(model, enabled=is_accumulating):
             training_output = model.training_step(batch, step)
             outputs = training_output["outputs"]
             loss = training_output["loss"]
             
-            real_loss = (loss / self.config.gradient_accumulation_steps) if is_accumulating else loss
+            real_loss = (loss / gradient_accumulation_steps) if is_accumulating else loss
             fabric.backward(real_loss)
         if not is_accumulating:
             optimizer = self.state["optimizer"]
@@ -253,8 +273,18 @@ class FabricTrainerBase(ABC):
         - trainingFinished (bool): Flag indicating if training has completed.
         """
         validate_after_k_steps = self.config.get("validate_after_k_steps", None)
+        if validate_after_k_steps is not None:
+            # Debug logging for type issues
+            self.cli_logger.debug(f"validate_after_k_steps value: {validate_after_k_steps}, type: {type(validate_after_k_steps)}")
+            self.cli_logger.debug(f"step_count value: {self.state['step_count']}, type: {type(self.state['step_count'])}")
+            validate_after_k_steps = int(validate_after_k_steps)
         validate_on_end = self.config.get("validate_on_end", False)
         validate_after_epoch = self.config.get("validate_after_epoch", False)
+        
+        # Debug logging before the condition check
+        self.cli_logger.debug(f"Validation condition check - epochFinished: {epochFinished}, trainingFinished: {trainingFinished}")
+        if validate_after_k_steps is not None:
+            self.cli_logger.debug(f"About to check: step_count % validate_after_k_steps == 0 -> {self.state['step_count']} % {validate_after_k_steps} == 0")
         
         steps_condition = epochFinished == False and trainingFinished == False and (validate_after_k_steps is not None and self.state["step_count"] % validate_after_k_steps == 0)
         epoch_condition = validate_after_epoch and epochFinished
@@ -294,7 +324,8 @@ class FabricTrainerBase(ABC):
             outputs = training_output["outputs"]
             loss = training_output["loss"]
             
-            fabric.backward(loss / self.config.gradient_accumulation_steps)
+            gradient_accumulation_steps = int(self.config.gradient_accumulation_steps)
+            fabric.backward(loss / gradient_accumulation_steps)
             optimizer = self.state["optimizer"]
             scheduler = self.state["scheduler"]
             self._gradient_clipping(fabric, model, optimizer)
@@ -382,7 +413,7 @@ class FabricTrainerBase(ABC):
             fabric.log_dict({"metric/val_ppl": math.exp(loss.item())}, self.state["step_count"])
         fabric_eval_log(out)
         fabric.barrier()
-    
+      
     def _load_fabric_datasets_dataloaders(self, config: Box, dataset: Union[HFDataset, DatasetDict]) -> dict[DatasetDict, Union[dict[str, DataLoader], DataLoader]]:
         """
         Load datasets and create dataloaders from the given dataset and configuration.
@@ -440,7 +471,7 @@ class FabricTrainerBase(ABC):
             "datasets": dataset,
             "dataloaders": dataloaders
         }
-    
+        
     def _pipeline(self, fabric: L.Fabric) -> None:
         """
         Orchestrate the complete training pipeline.

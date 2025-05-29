@@ -7,6 +7,9 @@ tokenizer:
   context_length: 1024
   overlap: 256
   task: "causal_pretraining"
+  batch_size: 2000      # Adjust based on your RAM - higher values = faster processing
+  num_proc: 4           # Use multiple CPU cores for parallel processing
+  show_progress: true   # Show progress bars during tokenization
 
 dataset:
   source: "local"

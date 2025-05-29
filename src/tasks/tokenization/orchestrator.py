@@ -42,8 +42,8 @@ class TokenizationOrchestrator(BaseOrchestrator):
         """
         if not self.config.tokenizer:
             raise ValueError("Tokenizer configuration must be provided")
-        if not self.config.tokenizer.name:
-            raise ValueError("Tokenizer name must be provided")
+        if not self.config.tokenizer.tokenizer_name:
+            raise ValueError("Tokenizer tokenizer_name must be provided")
         if not self.config.dataset:
             raise ValueError("Dataset configuration must be provided")
         if not self.config.output or not self.config.output.path:
@@ -62,11 +62,13 @@ class TokenizationOrchestrator(BaseOrchestrator):
 
         Returns:
             HFDataset: The tokenized version of the input dataset.
-        """
-
+        """        
         context_length = self.config.tokenizer.context_length
         overlap = self.config.tokenizer.get("overlap")
-        tokenizer_name = self.config.tokenizer.name
+        tokenizer_name = self.config.tokenizer.tokenizer_name
+        batch_size = self.config.tokenizer.get("batch_size", 2000)  # Default batch size if not specified
+        num_proc = self.config.tokenizer.get("num_proc", None)
+        show_progress = self.config.tokenizer.get("show_progress", True)
         
         
         # Create the tokenizer configuration using parameters from the orchestrator's configuration.
@@ -74,6 +76,9 @@ class TokenizationOrchestrator(BaseOrchestrator):
             context_length=context_length,
             overlap=overlap,
             tokenizer_name=tokenizer_name,
+            batch_size=batch_size,
+            num_proc=num_proc,
+            show_progress=show_progress,
             verbose_level=VerboseLevel(
                 self.config.get("verbose_level", VerboseLevel.INFO)
             ),

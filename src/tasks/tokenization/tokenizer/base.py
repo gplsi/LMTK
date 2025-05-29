@@ -7,10 +7,17 @@ implementation adheres to a common interface, aiding in scalability and maintain
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import os
 from typing import Dict, List, Optional, Union
 from transformers import PreTrainedTokenizer, AutoTokenizer
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 from src.utils.logging import get_logger
+from utils import get_optimal_thread_count
+
+optimal_threads = get_optimal_thread_count()
+# Set Rayon threads to match CPU cores
+os.environ["RAYON_RS_NUM_THREADS"] = str(optimal_threads)
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 class BaseTokenizer(ABC):
     """
@@ -43,7 +50,7 @@ class BaseTokenizer(ABC):
         
         # Initialize the tokenizer instance as None. It will be set during explicit initialization.
         self._tokenizer: Optional[PreTrainedTokenizer] = None
-        
+    
     def _initialize_tokenizer(self) -> None:
         """
         Initialize the HuggingFace tokenizer based on the tokenizer name in the configuration.
@@ -59,7 +66,12 @@ class BaseTokenizer(ABC):
             raise ValueError("Tokenizer name must be specified")
             
         self.logger.info(f"Initializing tokenizer: {self.config.tokenizer_name}")
-        self._tokenizer = AutoTokenizer.from_pretrained(self.config.tokenizer_name)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.config.tokenizer_name,
+            use_fast=True,           # ← the big speed boost
+            padding_side="right",
+            truncation_side="right",
+        )
         self._tokenizer.pad_token = self._tokenizer.eos_token
         
     @abstractmethod

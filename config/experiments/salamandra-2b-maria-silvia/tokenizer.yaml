@@ -1,0 +1,23 @@
+task: "tokenization"
+experiment_name: "maria-silvia-tokenization"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "BSC-LT/salamandra-2b"
+  context_length: 1024  # Power of 2 for optimal performance
+  overlap: 128          # Power of 2, 25% overlap ratio
+  task: "causal_pretraining"
+  batch_size: 4000     # Adjusted for 1024 context length
+  
+dataset:
+  source: "local"
+  nameOrPath: "/workspace/data/maria-silvia-dataset"
+  format: "files"
+  file_config:
+    format: "txt"
+    encoding: "utf-8"
+
+output:
+  path: "data/tokenized/maria-silvia-tokenized-dataset-v2"
+
+test_size: 0

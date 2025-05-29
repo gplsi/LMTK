@@ -1,6 +1,6 @@
 # Multi-stage build for production deployment
 # Stage 1: Build environment
-FROM nvcr.io/nvidia/pytorch:24.02-py3 AS builder
+FROM nvcr.io/nvidia/pytorch:25.02-py3 AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \

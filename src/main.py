@@ -1,3 +1,9 @@
+# Set environment variables for HuggingFace cache directories to use workspace
+import os
+os.environ["HF_DATASETS_CACHE"] = "/workspace/.cache/datasets"
+os.environ["HF_HOME"] = "/workspace/.cache/huggingface"
+os.environ["TRANSFORMERS_CACHE"] = "/workspace/.cache/transformers"
+
 from box import Box
 import yaml
 import sys

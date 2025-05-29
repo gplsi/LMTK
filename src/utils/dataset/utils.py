@@ -52,7 +52,7 @@ def scan_directory(path, extension: str = None, logger = local_logger) -> Dict:
     
     for root, dirs, files in os.walk(path):
         total_dirs_scanned += 1
-        source = os.path.basename(root)
+        source = os.path.relpath(root, path)  # Use relative path from base path to avoid key collisions
         
         if extension is not None:
             data_files = [

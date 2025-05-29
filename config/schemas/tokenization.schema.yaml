@@ -3,11 +3,11 @@ $id: "tokenization.schema.yaml"
 allOf:
   - $ref: "base.schema.yaml"
   - type: object
-    properties:
+    properties:      
       tokenizer:
         type: object
         properties:
-          name:
+          tokenizer_name:
             type: string
             description: "HuggingFace tokenizer name"
           context_length:
@@ -21,8 +21,23 @@ allOf:
             type: string
             enum: ["causal_pretraining"]
             default: "causal_pretraining"
+          batch_size:
+            type: integer
+            minimum: 1
+            default: 2000
+            description: "Batch size for processing datasets. Higher values improve performance but use more memory."
+          num_proc:
+            type: integer
+            minimum: 1
+            maximum: 32
+            default: 1
+            description: "Number of processes for parallel tokenization. Set > 1 for faster processing of large datasets."
+          show_progress:
+            type: boolean
+            default: true
+            description: "Whether to show progress bars during tokenization"
         required:
-          - name
+          - tokenizer_name
           - context_length
       
       dataset:

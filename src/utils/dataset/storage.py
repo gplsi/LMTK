@@ -130,7 +130,6 @@ class DatasetStorage:
         # Default behavior: use Hugging Face's built-in loaders
         return load_dataset(data_type, data_files=files)
     
-    
     def __load_json_with_text_key(self, files: list[str]) -> DatasetDict:
         """
         Load JSON/JSONL files and extract text.
@@ -244,8 +243,7 @@ class DatasetStorage:
                     'text': content
                 })
             except Exception as e:
-                self.logger.error(f"Error loading file {file_path}: {e}")
-        
+                self.logger.error(f"Error loading file {file_path}: {e}")        
         # Create a dataset from the list of dictionaries.
         dataset = HFDataset.from_list(data)
         return DatasetDict({"train": dataset})
@@ -255,11 +253,11 @@ class DatasetStorage:
         extension_files = {}
         for source, files in source_dict.items():
             for file in files:
-                extension = file.split(".")[-1]
+                extension = file.split(".")[-1].lower()
                 if extension not in extension_files:
-                    extension_files[extension] = [os.path.join(files_path, file)]
+                    extension_files[extension] = [file]  # file is already a full path from scan_directory
                 else:
-                    extension_files[extension].append(os.path.join(files_path, file))
+                    extension_files[extension].append(file)  # file is already a full path from scan_directory
 
         self.logger.debug(
             f"Grouped files by extensions: {[f'{k} ({len(v)})' for k, v in extension_files.items()]}"

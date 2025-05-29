@@ -49,6 +49,7 @@ class FSDP(FabricTrainerBase):
         settings, and initializes the strategy accordingly.
         """
         self.cli_logger.info("Setting up FSDP strategy.")
+        self.cli_logger.info("Using Devices: %s", self.devices)
         if self.devices > 1:
             # Resolve FSDP configuration with sensible defaults
             fsdp_config = resolve_fsdp_config(

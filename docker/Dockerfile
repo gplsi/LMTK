@@ -1,5 +1,5 @@
 # Use official PyTorch image with pinned versions
-FROM nvcr.io/nvidia/pytorch:24.02-py3
+FROM nvcr.io/nvidia/pytorch:25.02-py3
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \

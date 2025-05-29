@@ -3,13 +3,10 @@ experiment_name: "anonymized_corpus_va"
 verbose_level: 4
 
 tokenizer:
-  name: "meta-llama/Llama-3.2-3B"
+  name: "BSC-LT/salamandra-2b"
   context_length: 2048
   overlap: 512
   task: "causal_pretraining"
-  batch_size: 2000      # High-performance batch size for large datasets
-  num_proc: 4           # Parallel processing for faster tokenization
-  show_progress: true   # Monitor progress on large datasets
 
 dataset:
   source: "local"
@@ -21,6 +18,6 @@ dataset:
     encoding: "utf-8"
 
 output:
-  path: "data/tokenized/anonymized-va-llama"
+  path: "data/tokenized/anonymized-va"
 
 test_size: 0

@@ -39,8 +39,24 @@ class TokenizerConfig:
         verbose_level (VerboseLevel): 
             Determines the verbosity of logging during the tokenization process.
             Typical levels are defined in the VerboseLevel enum, with a default set to INFO.
+            
+        batch_size (Optional[int]):
+            The batch size for processing datasets. If None, uses the dataset's default batch size.
+            Larger batch sizes can improve performance but require more memory.
+              num_proc (Optional[int]):
+            Number of processes to use for parallel processing. If None, uses intelligent defaults:
+            - For fast tokenizers: None (relies on internal Rust parallelism)
+            - For slow tokenizers: Half of available CPU cores
+            Setting to 1 forces single-process mode. Setting to a value > 1 enables Python multiprocessing
+            for slow tokenizers (ignored for fast tokenizers).
+              show_progress (bool):
+            Whether to show progress bars during tokenization. Useful for monitoring progress
+            on large datasets. Defaults to True.
     """
     context_length: int
     overlap: Optional[int] = None
     tokenizer_name: Optional[str] = None
     verbose_level: VerboseLevel = VerboseLevel.INFO
+    batch_size: Optional[int] = None
+    num_proc: Optional[int] = None
+    show_progress: bool = True
