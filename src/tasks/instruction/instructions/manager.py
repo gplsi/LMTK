@@ -5,11 +5,13 @@ This module provides the InstructionManager class that coordinates between
 instruction sets and the template composer to create complete prompts.
 """
 from typing import Dict, Any, Optional, Union, List
+from datasets import Dataset
 from transformers import PreTrainedTokenizerBase
 
 from .base import BaseInstruction, InstructionSet
-from .model_instructions import get_model_instruction
+from .model_instructions import get_model_instruction, TASK_TYPES
 from ..templates.composer import PromptComposer
+from .datasets import DatasetHandler
 
 class InstructionManager:
     """Manages instructions and integrates them with the template composer.
@@ -23,7 +25,8 @@ class InstructionManager:
         self,
         composer: PromptComposer,
         default_instruction: Optional[Union[BaseInstruction, InstructionSet]] = None,
-        model_name: Optional[str] = None
+        model_name: Optional[str] = None,
+        dataset_handler: Optional[DatasetHandler] = None
     ):
         """Initialize the instruction manager.
         
@@ -31,6 +34,7 @@ class InstructionManager:
             composer: The PromptComposer instance to use
             default_instruction: Default instruction to use if none specified
             model_name: Name of the model to get optimized instructions for
+            dataset_handler: Optional DatasetHandler instance (creates one if None)
         """
         self.composer = composer
         self.model_name = model_name
@@ -43,6 +47,9 @@ class InstructionManager:
         
         # Dictionary to store task-specific instruction sets
         self.task_instructions: Dict[str, Union[BaseInstruction, InstructionSet]] = {}
+        
+        # Set up dataset handler
+        self.dataset_handler = dataset_handler or DatasetHandler()
         
         # Get logger from composer
         self.logger = composer.logger
@@ -154,6 +161,151 @@ class InstructionManager:
             label=label,
             **kwargs
         )
+    
+    def process_dataset(
+        self,
+        dataset_source: Union[str, Dataset],
+        instruction_column: Optional[str] = None,
+        input_column: Optional[str] = None,
+        label_column: Optional[str] = None,
+        task_type_column: Optional[str] = None,
+        combined_column: Optional[str] = None,
+        task_name: Optional[str] = None,
+        instruction_kwargs: Optional[Dict[str, Any]] = None,
+        output_column: str = "processed_input",
+        output_label_column: str = "processed_label",
+        map_task_types: bool = True,
+        **kwargs
+    ) -> Dataset:
+        """Process a dataset with instructions and prepare it for training or inference.
+        
+        This method handles both Hugging Face and local JSON datasets.
+        
+        Args:
+            dataset_source: Path to JSON file, Hugging Face dataset name, or Dataset object
+            instruction_column: Column containing instructions
+            input_column: Column containing inputs
+            label_column: Optional column containing labels/responses
+            task_type_column: Optional column containing task types
+            combined_column: Optional column containing both instruction and input
+            task_name: Optional task name to select instruction
+            instruction_kwargs: Additional arguments for the instruction
+            output_column: Column to store processed inputs
+            output_label_column: Column to store processed labels
+            map_task_types: Whether to map dataset task types to standardized TASK_TYPES
+            **kwargs: Additional arguments for dataset loading and processing
+            
+        Returns:
+            Processed dataset ready for training or inference
+        """
+        # Load dataset if source is a string
+        if isinstance(dataset_source, str):
+            dataset = self.dataset_handler.load_dataset(dataset_source, **kwargs)
+        else:
+            dataset = dataset_source
+        
+        self.logger.info(f"Processing dataset with {len(dataset)} items")
+        
+        # Map task types if requested
+        if map_task_types and task_type_column and task_type_column in dataset.features:
+            # Infer mapping from dataset task types to standardized ones
+            mapping = self.dataset_handler.infer_task_type_mapping(
+                dataset, task_type_column
+            )
+            
+            # Apply mapping
+            if mapping:
+                self.logger.info(f"Mapping {len(mapping)} task types to standardized TASK_TYPES")
+                if isinstance(dataset_source, str) and dataset_source.endswith('.json'):
+                    dataset = self.dataset_handler.json_handler.map_custom_task_types(
+                        dataset, task_type_column, mapping
+                    )
+                else:
+                    dataset = self.dataset_handler.huggingface_handler.map_task_types(
+                        dataset, task_type_column, mapping
+                    )
+        
+        # Get the appropriate instruction
+        instruction = self.get_instruction_for_task(task_name)
+        
+        # Process dataset based on available columns
+        if label_column:
+            # Training mode with labels
+            self.logger.info("Processing dataset for training (with labels)")
+            dataset = self.dataset_handler.prepare_for_training(
+                dataset=dataset,
+                instruction_column=instruction_column,
+                input_column=input_column,
+                label_column=label_column,
+                instruction=instruction,
+                task_type_column=task_type_column,
+                additional_kwargs=instruction_kwargs
+            )
+            
+            # Rename output columns if needed
+            if 'processed_input' != output_column:
+                dataset = dataset.rename_column('processed_input', output_column)
+            if 'processed_label' != output_label_column:
+                dataset = dataset.rename_column('processed_label', output_label_column)
+                
+        else:
+            # Inference mode without labels
+            self.logger.info("Processing dataset for inference (no labels)")
+            dataset = self.dataset_handler.apply_instruction_to_dataset(
+                dataset=dataset,
+                instruction=instruction,
+                instruction_column=instruction_column,
+                input_column=input_column,
+                output_column=output_column,
+                task_type_column=task_type_column,
+                additional_kwargs=instruction_kwargs
+            )
+        
+        return dataset
+    
+    def batch_compose(
+        self,
+        dataset: Dataset,
+        input_column: str,
+        system_prompt: Optional[str] = None,
+        label_column: Optional[str] = None,
+        batch_size: int = 32,
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        """Compose prompts for a batch of dataset items.
+        
+        Args:
+            dataset: The dataset to process
+            input_column: Column containing processed inputs
+            system_prompt: Optional system prompt
+            label_column: Optional column containing labels
+            batch_size: Number of items to process at once
+            **kwargs: Additional arguments for the composer
+            
+        Returns:
+            List of composed prompt dictionaries
+        """
+        self.logger.info(f"Batch composing prompts for {len(dataset)} items")
+        
+        results = []
+        for i in range(0, len(dataset), batch_size):
+            batch = dataset.select(range(i, min(i + batch_size, len(dataset))))
+            
+            for item in batch:
+                user_input = item[input_column]
+                label = item[label_column] if label_column and label_column in item else None
+                
+                # Use the composer to create the prompt
+                result = self.composer.compose(
+                    user_input=user_input,
+                    system_prompt=system_prompt,
+                    label=label,
+                    **kwargs
+                )
+                
+                results.append(result)
+        
+        return results
     
     def __call__(self, *args, **kwargs):
         """Alias for compose_with_instruction method."""
