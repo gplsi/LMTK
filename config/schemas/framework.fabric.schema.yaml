@@ -1,0 +1,103 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: framework.fabric.schema.yaml
+title: Fabric Framework Configuration
+description: Schema for Lightning Fabric framework configuration
+
+type: object
+oneOf:
+  - allOf:
+      - $ref: task.pretraining.schema.yaml
+      - type: object
+        properties:
+          task:
+            enum: [pretraining]
+  - allOf:
+      - $ref: task.instruction.schema.yaml
+      - type: object
+        properties:
+          task:
+            enum: [instruction]
+
+properties:
+  # Framework must be fabric
+  framework:
+    type: string
+    enum: [fabric]
+    default: fabric
+    description: Framework type, must be 'fabric'
+  
+  # Fabric-specific configurations
+  precision:
+    type: string
+    enum: [32, 16, bf16, 32-true, 16-mixed, bf16-mixed]
+    default: bf16-mixed
+    description: Precision to use for training
+  
+  # Fabric-specific logging
+  fabric_logging:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+        description: Whether to enable Fabric-specific logging
+      
+      log_gradients:
+        type: boolean
+        default: false
+        description: Whether to log gradients
+      
+      log_parameters:
+        type: boolean
+        default: false
+        description: Whether to log parameters
+      
+      log_every_n_steps:
+        type: integer
+        minimum: 1
+        default: 50
+        description: Log every N steps
+    additionalProperties: false
+  
+  # Checkpoint configuration
+  checkpoint:
+    type: object
+    properties:
+      save_top_k:
+        type: integer
+        minimum: -1
+        default: 1
+        description: Number of best checkpoints to keep (-1 for all)
+      
+      monitor:
+        type: string
+        default: val_loss
+        description: Metric to monitor for checkpoint saving
+      
+      mode:
+        type: string
+        enum: [min, max]
+        default: min
+        description: Mode for checkpoint saving (min or max)
+      
+      save_last:
+        type: boolean
+        default: true
+        description: Whether to save the last checkpoint
+      
+      every_n_train_steps:
+        type: integer
+        minimum: 1
+        description: Save checkpoint every N training steps
+      
+      every_n_epochs:
+        type: integer
+        minimum: 1
+        description: Save checkpoint every N epochs
+      
+      filename:
+        type: string
+        description: Filename pattern for checkpoints
+    additionalProperties: false
+
+additionalProperties: false

@@ -1,0 +1,223 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.schema.yaml
+title: Base Training Configuration
+description: Base schema for all training tasks, frameworks, and strategies
+
+type: object
+allOf:
+  - $ref: base.schema.yaml
+
+properties:
+  # Task Type
+  task:
+    type: string
+    enum: [pretraining, instruction]
+    description: Type of training task to perform
+  
+  # Framework Selection
+  framework:
+    type: string
+    enum: [fabric]
+    default: fabric
+    description: Training framework to use
+  
+  # Strategy Configuration
+  strategy:
+    type: string
+    enum: [fsdp, deepspeed, ddp, dataparallel]
+    default: fsdp
+    description: Distributed training strategy to use
+  
+  # Training Mode
+  mode:
+    type: string
+    enum: [train, process_dataset]
+    default: train
+    description: Execution mode for the training task
+  
+  # Device Configuration
+  devices:
+    oneOf:
+      - type: integer
+        minimum: 1
+        description: Number of devices to use
+      - type: array
+        items:
+          type: integer
+          minimum: 0
+        description: List of device IDs to use
+    description: Devices to use for training
+  
+  # Output Configuration
+  output_dir:
+    type: string
+    description: Directory to save outputs
+  
+  # Training Parameters
+  max_epochs:
+    type: integer
+    minimum: 1
+    default: 1
+    description: Maximum number of epochs to train for
+  
+  max_steps:
+    type: integer
+    minimum: 1
+    description: Maximum number of steps to train for (overrides max_epochs if specified)
+  
+  val_interval:
+    type: integer
+    minimum: 1
+    default: 1000
+    description: Validation interval in steps
+  
+  save_interval:
+    type: integer
+    minimum: 1
+    default: 1000
+    description: Checkpoint saving interval in steps
+  
+  log_interval:
+    type: integer
+    minimum: 1
+    default: 10
+    description: Logging interval in steps
+  
+  # Checkpoint Configuration
+  resume_from_checkpoint:
+    type: string
+    description: Path to checkpoint to resume from
+  
+  # Optimizer Configuration
+  optimizer:
+    type: object
+    properties:
+      name:
+        type: string
+        enum: [adamw, adam, sgd]
+        default: adamw
+        description: Optimizer to use
+      learning_rate:
+        type: number
+        minimum: 0
+        default: 1.0e-4
+        description: Learning rate
+      weight_decay:
+        type: number
+        minimum: 0
+        default: 0.01
+        description: Weight decay
+      betas:
+        type: array
+        items:
+          type: number
+        minItems: 2
+        maxItems: 2
+        default: [0.9, 0.999]
+        description: Beta parameters for Adam-based optimizers
+      eps:
+        type: number
+        minimum: 0
+        default: 1.0e-8
+        description: Epsilon parameter for Adam-based optimizers
+    required:
+      - name
+    additionalProperties: false
+  
+  # Scheduler Configuration
+  scheduler:
+    type: object
+    properties:
+      name:
+        type: string
+        enum: [cosine, linear, constant, cosine_with_restarts, polynomial, constant_with_warmup]
+        default: cosine
+        description: Learning rate scheduler to use
+      warmup_steps:
+        type: integer
+        minimum: 0
+        default: 0
+        description: Number of warmup steps
+      warmup_ratio:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.0
+        description: Ratio of total steps to use for warmup
+      num_cycles:
+        type: integer
+        minimum: 1
+        default: 1
+        description: Number of cycles for cosine_with_restarts scheduler
+      power:
+        type: number
+        default: 1.0
+        description: Power factor for polynomial scheduler
+    required:
+      - name
+    additionalProperties: false
+  
+  # Logging Configuration
+  logging:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+        description: Whether to enable logging
+      log_level:
+        type: string
+        enum: [debug, info, warning, error, critical]
+        default: info
+        description: Log level
+      log_to_file:
+        type: boolean
+        default: true
+        description: Whether to log to file
+      log_file:
+        type: string
+        description: Path to log file
+      log_to_console:
+        type: boolean
+        default: true
+        description: Whether to log to console
+      wandb:
+        type: object
+        properties:
+          enabled:
+            type: boolean
+            default: false
+            description: Whether to enable W&B logging
+          project:
+            type: string
+            description: W&B project name
+          entity:
+            type: string
+            description: W&B entity name
+          name:
+            type: string
+            description: W&B run name
+          tags:
+            type: array
+            items:
+              type: string
+            description: W&B tags
+        additionalProperties: false
+      tensorboard:
+        type: object
+        properties:
+          enabled:
+            type: boolean
+            default: false
+            description: Whether to enable TensorBoard logging
+          log_dir:
+            type: string
+            description: TensorBoard log directory
+        additionalProperties: false
+    additionalProperties: false
+
+required:
+  - task
+  - output_dir
+
+additionalProperties: false
