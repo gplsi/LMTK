@@ -1,0 +1,54 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.fabric.ddp.schema.yaml
+title: DDP Strategy Configuration
+description: Schema for Distributed Data Parallel strategy configuration
+
+type: object
+allOf:
+  - $ref: training.fabric.schema.yaml
+
+properties:
+  # Strategy must be ddp
+  strategy:
+    type: string
+    enum: [ddp]
+    default: ddp
+    description: Strategy type, must be 'ddp'
+  
+  # DDP-specific configurations
+  ddp:
+    type: object
+    properties:
+      find_unused_parameters:
+        type: boolean
+        default: false
+        description: Whether to find unused parameters in DDP
+      
+      process_group_backend:
+        type: string
+        enum: [nccl, gloo]
+        default: nccl
+        description: Process group backend for DDP
+      
+      static_graph:
+        type: boolean
+        default: true
+        description: Whether to use static graph optimization
+      
+      gradient_as_bucket_view:
+        type: boolean
+        default: true
+        description: Whether to use gradient as bucket view
+      
+      broadcast_buffers:
+        type: boolean
+        default: true
+        description: Whether to broadcast buffers
+      
+      bucket_cap_mb:
+        type: number
+        default: 25
+        description: Bucket capacity in MB
+    additionalProperties: false
+
+additionalProperties: false

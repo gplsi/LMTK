@@ -1,0 +1,47 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.fabric.dataparallel.schema.yaml
+title: DataParallel Strategy Configuration
+description: Schema for DataParallel strategy configuration
+
+type: object
+allOf:
+  - $ref: training.fabric.schema.yaml
+
+properties:
+  # Strategy must be dp
+  strategy:
+    type: string
+    enum: [dp]
+    default: dp
+    description: Strategy type, must be 'dp'
+  
+  # DataParallel-specific configurations
+  dp:
+    type: object
+    properties:
+      sync_batch_norm:
+        type: boolean
+        default: false
+        description: Whether to use synchronized batch normalization
+      
+      process_group_backend:
+        type: string
+        enum: [nccl, gloo]
+        default: nccl
+        description: Process group backend for DataParallel
+      
+      device_ids:
+        type: array
+        items:
+          type: integer
+          minimum: 0
+        description: Device IDs to use for DataParallel
+      
+      output_device:
+        type: integer
+        minimum: 0
+        default: 0
+        description: Output device for DataParallel
+    additionalProperties: false
+
+additionalProperties: false
