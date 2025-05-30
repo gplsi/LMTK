@@ -69,6 +69,8 @@ class ConfigValidator:
         Returns:
             str: The name of the schema file to use for validation.
         """
+        # No strategy mapping needed - use strategy names directly
+        
         # For training tasks, build the schema name based on task, framework, and strategy
         if schema_name == "training" and config_data:
             # Start with the base training schema
@@ -87,7 +89,11 @@ class ConfigValidator:
                     # Add strategy if present (only for training tasks with framework)
                     strategy = config_data.get("strategy")
                     if strategy:
-                        schema_file = f"{schema_file}.{strategy}"
+                        # For DataParallel strategy, map dp to dataparallel
+                        if strategy == "dp":
+                            schema_file = f"{schema_file}.dataparallel"
+                        else:
+                            schema_file = f"{schema_file}.{strategy}"
             
             return f"{schema_file}.schema.yaml"
         

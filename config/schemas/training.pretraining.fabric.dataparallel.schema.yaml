@@ -8,12 +8,11 @@ allOf:
   - $ref: training.pretraining.fabric.schema.yaml
 
 properties:
-  # Strategy must be dp
   strategy:
     type: string
     enum: [dp]
     default: dp
-    description: Strategy type, must be 'dp'
+    description: DataParallel strategy from fabric
   
   # DataParallel-specific configurations
   dp:
@@ -24,24 +23,20 @@ properties:
         default: false
         description: Whether to use synchronized batch normalization
       
-      process_group_backend:
-        type: string
-        enum: [nccl, gloo]
-        default: nccl
-        description: Process group backend for DataParallel
+      find_unused_parameters:
+        type: boolean
+        default: false
+        description: Whether to find unused parameters
       
-      device_ids:
-        type: array
-        items:
-          type: integer
-          minimum: 0
-        description: Device IDs to use for DataParallel
+      broadcast_buffers:
+        type: boolean
+        default: true
+        description: Whether to broadcast buffers
       
-      output_device:
-        type: integer
-        minimum: 0
-        default: 0
-        description: Output device for DataParallel
+      bucket_cap_mb:
+        type: number
+        default: 25
+        description: Bucket capacity in MB
     additionalProperties: false
 
 additionalProperties: false

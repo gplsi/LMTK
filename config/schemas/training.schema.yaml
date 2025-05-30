@@ -24,7 +24,7 @@ properties:
   # Strategy Configuration
   strategy:
     type: string
-    enum: [fsdp, deepspeed, ddp, dataparallel]
+    enum: [fsdp, deepspeed, ddp, dataparallel, dp]
     default: fsdp
     description: Distributed training strategy to use
   
