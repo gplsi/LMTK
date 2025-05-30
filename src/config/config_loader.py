@@ -54,6 +54,46 @@ class ConfigValidator:
                 schema_id = f"file://{schema_path.resolve()}"  # Match actual file URI
                 self.schema_store[schema_id] = schema
 
+    def _get_schema_file(self, schema_name: str, config_data: dict = None) -> str:
+        """
+        Determine the appropriate schema file based on the schema name and configuration data.
+        
+        For training tasks, this builds the schema name based on task, framework, and strategy.
+        For non-training tasks, it uses the original schema name.
+        
+        Parameters:
+            schema_name (str): The base name of the schema file.
+            config_data (dict, optional): The configuration data, used to extract framework and strategy.
+                Defaults to None.
+                
+        Returns:
+            str: The name of the schema file to use for validation.
+        """
+        # For training tasks, build the schema name based on task, framework, and strategy
+        if schema_name == "training" and config_data:
+            # Start with the base training schema
+            schema_file = schema_name
+            
+            # Add task if present
+            task = config_data.get("task")
+            if task:
+                schema_file = f"{schema_file}.{task}"
+                
+                # Add framework if present (only for training tasks)
+                framework = config_data.get("framework")
+                if framework:
+                    schema_file = f"{schema_file}.{framework}"
+                    
+                    # Add strategy if present (only for training tasks with framework)
+                    strategy = config_data.get("strategy")
+                    if strategy:
+                        schema_file = f"{schema_file}.{strategy}"
+            
+            return f"{schema_file}.schema.yaml"
+        
+        # For non-training tasks, use the original schema name
+        return f"{schema_name}.schema.yaml"
+
     def validate(self, config_path: Path, schema_name: str) -> Box:
         """
         Validate a configuration file against a specified JSON schema.
@@ -78,8 +118,11 @@ class ConfigValidator:
         with open(config_path, 'r') as f:
             config_data = yaml.safe_load(f)
 
+        # Determine the appropriate schema file
+        schema_file = self._get_schema_file(schema_name, config_data)
+        task_schema_path = self.schema_dir / schema_file
+
         # Load task schema
-        task_schema_path = self.schema_dir / f"{schema_name}.schema.yaml"
         with open(task_schema_path, 'r') as f:
             task_schema = yaml.safe_load(f)
 

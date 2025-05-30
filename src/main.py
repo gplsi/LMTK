@@ -41,9 +41,32 @@ def execute_task(config_path: str):
     logger.info(f"Executing task: {task}")
     logger.info(f"Using configuration file: {config_path}")
 
-    # Validate using the task-specific schema
+    # Log framework and strategy if available (for training tasks)
+    framework = raw_config.get("framework")
+    strategy = raw_config.get("strategy")
+    
+    # Only log framework and strategy for training tasks that have them
+    if task in ["pretraining", "instruction"]:
+        if framework:
+            logger.info(f"Using framework: {framework}")
+        if strategy:
+            logger.info(f"Using strategy: {strategy}")
+
+    # Determine the appropriate schema name based on task type
+    if task in ["pretraining", "instruction"]:
+        # For training tasks, use the base training schema
+        schema_name = "training"
+    else:
+        # For non-training tasks, use the task name directly
+        schema_name = task
+
+    # Validate using the appropriate schema
     validator = ConfigValidator()
-    config = validator.validate(config_path, task)
+    try:
+        config = validator.validate(config_path, schema_name)
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        sys.exit(1)
     
     # Create output directory if it doesn't exist
     output_dir = config.get("output_dir", f"outputs/{config.experiment_name}")
@@ -61,7 +84,8 @@ def execute_task(config_path: str):
     except Exception as e:
         logger.error(f"Error executing task '{task}': {e}")
         raise
-    
+
+
 def list_available_tasks():
     """List all available tasks in the framework.
     
@@ -100,13 +124,47 @@ def validate_config(config_path: str, verbose: bool = False):
             logger.error("Missing 'task' key in configuration.")
             return False
         
+        # Log framework and strategy if available (for training tasks)
+        framework = raw_config.get("framework")
+        strategy = raw_config.get("strategy")
+        
+        # Extract task, framework, and strategy for logging
+        task = raw_config.get("task")
+        framework = raw_config.get("framework")
+        strategy = raw_config.get("strategy")
+        
+        if not task:
+            logger.error("Task not specified in configuration file.")
+            sys.exit(1)
+        
+        logger.info(f"Executing task: {task}")
+        if framework:
+            logger.info(f"Using framework: {framework}")
+        if strategy:
+            logger.info(f"Using strategy: {strategy}")
+        
+        # For training tasks, use the base training schema
+        if task in ["pretraining", "instruction"]:
+            schema_name = "training"
+        else:
+            # For non-training tasks, use the task name directly
+            schema_name = task
+        
         # Validate the configuration
         validator = ConfigValidator()
-        validator.validate(config_path, task)
+        try:
+            validator.validate(config_path, schema_name)
+        except Exception as e:
+            logger.error(f"Configuration validation failed: {e}")
+            sys.exit(1)
         
         if verbose:
             logger.info(f"Configuration is valid: {config_path}")
             logger.info(f"Task: {task}")
+            if framework:
+                logger.info(f"Framework: {framework}")
+            if strategy:
+                logger.info(f"Strategy: {strategy}")
             logger.info(f"Experiment name: {raw_config.get('experiment_name', 'Not specified')}")
         
         return True
