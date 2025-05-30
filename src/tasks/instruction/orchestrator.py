@@ -8,6 +8,10 @@ the datasets for training or inference.
 """
 
 from typing import Dict, Any, Optional, Union
+import importlib
+import logging
+from pathlib import Path
+
 from box import Box
 from datasets import Dataset as HFDataset, DatasetDict
 import torch
@@ -19,7 +23,6 @@ from src.tasks.instruction.instructions.manager import InstructionManager
 from src.tasks.instruction.instructions.datasets import DatasetHandler
 from src.tasks.instruction.templates.composer import PromptComposer
 from src.tasks.instruction.templates.base import PromptStyle
-from src.tasks.instruction.fabric.trainer import InstructionTrainer
 from utils import inherit_init_params
 
 
@@ -223,86 +226,58 @@ class InstructionOrchestrator(TrainingOrchestrator):
         processed_dataset.save_to_disk(output_path)
         
         self.logger.info("Dataset processing completed successfully")
-
-    def _setup_fsdp(self) -> InstructionTrainer:
-        """
-        Set up the FSDP trainer for instruction fine-tuning.
-        
-        This method overrides the parent method to use the InstructionTrainer
-        instead of the generic FSDP trainer.
-        
-        Returns:
-            Configured InstructionTrainer with FSDP strategy
-        """
-        self.logger.info("Setting up FSDP trainer for instruction fine-tuning")
-        
-        return InstructionTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
     
-    def _setup_deepspeed(self) -> InstructionTrainer:
+    def _get_framework_orchestrator(self):
         """
-        Set up the DeepSpeed trainer for instruction fine-tuning.
-        
-        This method overrides the parent method to use the InstructionTrainer
-        instead of the generic DeepSpeed trainer.
+        Get the framework-specific orchestrator based on the configuration.
         
         Returns:
-            Configured InstructionTrainer with DeepSpeed strategy
-        """
-        self.logger.info("Setting up DeepSpeed trainer for instruction fine-tuning")
+            An instance of the framework-specific orchestrator
         
-        return InstructionTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
+        Raises:
+            ValueError: If the specified framework is not supported
+        """
+        # Get the framework from the configuration, defaulting to "fabric"
+        framework = getattr(self.config, "framework", "fabric").lower()
+        
+        try:
+            # Dynamically import the framework-specific orchestrator
+            module_path = f"src.tasks.instruction.{framework}.orchestrator"
+            module = importlib.import_module(module_path)
+            
+            # Get the orchestrator class name based on the framework
+            class_name = f"Instruction{framework.capitalize()}Orchestrator"
+            orchestrator_class = getattr(module, class_name)
+            
+            # Create an instance of the orchestrator
+            self.logger.info(f"Using {framework} framework for instruction fine-tuning")
+            return orchestrator_class(self.config)
+            
+        except (ImportError, AttributeError) as e:
+            self.logger.error(f"Failed to load {framework} orchestrator: {str(e)}")
+            raise ValueError(f"Unsupported framework: {framework}. Please check your configuration.")
     
-    def _setup_ddp(self) -> InstructionTrainer:
+    def _get_training_strategy(self) -> str:
         """
-        Set up the DDP trainer for instruction fine-tuning.
-        
-        This method overrides the parent method to use the InstructionTrainer
-        instead of the generic DDP trainer.
+        Determine the training strategy based on the configuration.
         
         Returns:
-            Configured InstructionTrainer with DDP strategy
+            The name of the training strategy to use
         """
-        self.logger.info("Setting up DDP trainer for instruction fine-tuning")
+        # Get the strategy from the configuration, defaulting to "fsdp"
+        strategy = getattr(self.config, "strategy", "fsdp").lower()
         
-        return InstructionTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
-    
-    def _setup_dp(self) -> InstructionTrainer:
-        """
-        Set up the DataParallel trainer for instruction fine-tuning.
+        # Map strategy names to standardized values
+        strategy_mapping = {
+            "fsdp": "fsdp",
+            "deepspeed": "deepspeed",
+            "ddp": "ddp",
+            "dataparallel": "dataparallel",
+            "dp": "dataparallel",
+        }
         
-        This method overrides the parent method to use the InstructionTrainer
-        instead of the generic DataParallel trainer.
-        
-        Returns:
-            Configured InstructionTrainer with DataParallel strategy
-        """
-        self.logger.info("Setting up DataParallel trainer for instruction fine-tuning")
-        
-        return InstructionTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
+        # Return the standardized strategy name
+        return strategy_mapping.get(strategy, strategy)
 
     def execute(self) -> None:
         """
@@ -341,10 +316,29 @@ class InstructionOrchestrator(TrainingOrchestrator):
                         self.logger.info(f"Saving processed dataset to {output_path}")
                         self.processed_dataset.save_to_disk(output_path)
                 
-                # Call parent method to handle training
-                super().execute()
+                # Get the framework-specific orchestrator
+                framework_orchestrator = self._get_framework_orchestrator()
+                
+                # Ensure the processed dataset is passed to the framework orchestrator
+                if hasattr(framework_orchestrator, "processed_dataset") and self.processed_dataset is not None:
+                    framework_orchestrator.processed_dataset = self.processed_dataset
+                
+                # Determine the training strategy
+                strategy = self._get_training_strategy()
+                self.logger.info(f"Using '{strategy}' training strategy")
+                
+                # Train using the framework-specific orchestrator's train method directly
+                trainer = framework_orchestrator._create_trainer(strategy)
+                
+                # Set up the trainer
+                trainer.setup()
+                
+                # Start training
+                trainer.train()
             else:
                 raise ValueError(f"Unknown execution mode: {mode}")
+            
+            self.logger.info("Instruction workflow completed successfully")
             
         except Exception as e:
             self.logger.error(f"Instruction workflow failed: {str(e)}")

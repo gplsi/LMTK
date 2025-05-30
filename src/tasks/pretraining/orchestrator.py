@@ -283,8 +283,25 @@ class PretrainingOrchestrator(TrainingOrchestrator):
                 framework = getattr(self.config, "framework", "fabric").lower()
                 self.logger.info(f"Using '{framework}' framework for training")
                 
-                # Call parent method to handle training
-                super().execute()
+                # Get the framework-specific orchestrator
+                framework_orchestrator = self._get_framework_orchestrator()
+                
+                # Ensure the processed dataset is passed to the framework orchestrator
+                if hasattr(framework_orchestrator, "processed_dataset") and self.processed_dataset is not None:
+                    framework_orchestrator.processed_dataset = self.processed_dataset
+                
+                # Determine the training strategy
+                strategy = self._get_training_strategy()
+                self.logger.info(f"Using '{strategy}' training strategy")
+                
+                # Train using the framework-specific orchestrator's train method directly
+                trainer = framework_orchestrator._create_trainer(strategy)
+                
+                # Set up the trainer
+                trainer.setup()
+                
+                # Start training
+                trainer.train()
             else:
                 raise ValueError(f"Unknown execution mode: {mode}")
             
