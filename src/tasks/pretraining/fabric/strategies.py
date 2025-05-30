@@ -1,5 +1,5 @@
 """
-Pretraining-specific implementations of Fabric-based trainers.
+Pretraining-specific implementations of Fabric-based strategies.
 
 This module provides concrete implementations of the abstract Fabric-based
 training strategies for pretraining tasks.
@@ -12,51 +12,22 @@ import torch
 from box import Box
 from datasets import Dataset as HFDataset, DatasetDict
 
-from src.abstract_tasks.training.fabric.strategies import (
-    FabricFSDPTrainer,
-    FabricDeepSpeedTrainer,
-    FabricDDPTrainer,
-    FabricDataParallelTrainer,
+from src.abstract_tasks.training.fabric.base_strategies import (
+    BaseFabricFSDPStrategy,
+    BaseFabricDeepSpeedStrategy,
+    BaseFabricDDPStrategy,
+    BaseFabricDataParallelStrategy,
 )
-from src.tasks.pretraining.fabric.base import PretrainingFabricBase
-import lightning as L
 
 logger = logging.getLogger(__name__)
 
 
-class PretrainingFabricFSDPTrainer(FabricFSDPTrainer):
+class PretrainingFabricFSDPStrategy(BaseFabricFSDPStrategy):
     """
-    Pretraining-specific implementation of the Fabric FSDP trainer.
-    """
+    Pretraining-specific implementation of the Fabric FSDP strategy.
     
-    def __init__(
-        self,
-        config: Any,
-        devices: Union[int, List[int]],
-        output_dir: str,
-        dataset: Union[HFDataset, DatasetDict],
-        cli_logger: Optional[logging.Logger] = None,
-    ) -> None:
-        """
-        Initialize the pretraining FSDP trainer.
-        
-        Args:
-            config: Configuration object or dictionary
-            devices: Number of devices or list of device IDs
-            output_dir: Directory to save outputs
-            dataset: Dataset for training
-            cli_logger: Logger for CLI output
-        """
-        super().__init__(config, devices, output_dir, cli_logger)
-        self.dataset = dataset
-    
-    # Implementation of abstract methods from FabricFSDPTrainer
-    # ...
-
-
-class PretrainingFabricDeepSpeedTrainer(FabricDeepSpeedTrainer):
-    """
-    Pretraining-specific implementation of the Fabric DeepSpeed trainer.
+    This class extends the base FSDP strategy to implement pretraining-specific
+    functionality, such as model setup, data loading, and loss computation.
     """
     
     def __init__(
@@ -68,7 +39,7 @@ class PretrainingFabricDeepSpeedTrainer(FabricDeepSpeedTrainer):
         cli_logger: Optional[logging.Logger] = None,
     ) -> None:
         """
-        Initialize the pretraining DeepSpeed trainer.
+        Initialize the pretraining FSDP strategy.
         
         Args:
             config: Configuration object or dictionary
@@ -77,16 +48,59 @@ class PretrainingFabricDeepSpeedTrainer(FabricDeepSpeedTrainer):
             dataset: Dataset for training
             cli_logger: Logger for CLI output
         """
-        super().__init__(config, devices, output_dir, cli_logger)
-        self.dataset = dataset
+        super().__init__(config, devices, output_dir, dataset, cli_logger)
     
-    # Implementation of abstract methods from FabricDeepSpeedTrainer
-    # ...
+    def _setup_model(self) -> torch.nn.Module:
+        """
+        Set up and return the model for pretraining.
+        
+        Returns:
+            A configured model
+        """
+        # Implement pretraining-specific model setup
+        # This would typically load a pretrained model or create a new one
+        pass
+    
+    def _setup_train_dataloader(self) -> torch.utils.data.DataLoader:
+        """
+        Set up and return the training dataloader for pretraining.
+        
+        Returns:
+            A configured training dataloader
+        """
+        # Implement pretraining-specific dataloader setup
+        pass
+    
+    def _setup_val_dataloader(self) -> Optional[torch.utils.data.DataLoader]:
+        """
+        Set up and return the validation dataloader for pretraining.
+        
+        Returns:
+            A configured validation dataloader, or None if validation is not used
+        """
+        # Implement pretraining-specific validation dataloader setup
+        pass
+    
+    def _compute_loss(self, batch: Dict[str, torch.Tensor]) -> tuple[torch.Tensor, Dict[str, Any]]:
+        """
+        Compute the loss for a batch during pretraining.
+        
+        Args:
+            batch: A batch of data
+            
+        Returns:
+            A tuple containing the loss tensor and a dictionary of additional metrics
+        """
+        # Implement pretraining-specific loss computation
+        pass
 
 
-class PretrainingFabricDDPTrainer(FabricDDPTrainer):
+class PretrainingFabricDeepSpeedStrategy(BaseFabricDeepSpeedStrategy):
     """
-    Pretraining-specific implementation of the Fabric DDP trainer.
+    Pretraining-specific implementation of the Fabric DeepSpeed strategy.
+    
+    This class extends the base DeepSpeed strategy to implement pretraining-specific
+    functionality, such as model setup, data loading, and loss computation.
     """
     
     def __init__(
@@ -98,7 +112,7 @@ class PretrainingFabricDDPTrainer(FabricDDPTrainer):
         cli_logger: Optional[logging.Logger] = None,
     ) -> None:
         """
-        Initialize the pretraining DDP trainer.
+        Initialize the pretraining DeepSpeed strategy.
         
         Args:
             config: Configuration object or dictionary
@@ -107,16 +121,58 @@ class PretrainingFabricDDPTrainer(FabricDDPTrainer):
             dataset: Dataset for training
             cli_logger: Logger for CLI output
         """
-        super().__init__(config, devices, output_dir, cli_logger)
-        self.dataset = dataset
+        super().__init__(config, devices, output_dir, dataset, cli_logger)
     
-    # Implementation of abstract methods from FabricDDPTrainer
-    # ...
+    def _setup_model(self) -> torch.nn.Module:
+        """
+        Set up and return the model for pretraining.
+        
+        Returns:
+            A configured model
+        """
+        # Implement pretraining-specific model setup
+        pass
+    
+    def _setup_train_dataloader(self) -> torch.utils.data.DataLoader:
+        """
+        Set up and return the training dataloader for pretraining.
+        
+        Returns:
+            A configured training dataloader
+        """
+        # Implement pretraining-specific dataloader setup
+        pass
+    
+    def _setup_val_dataloader(self) -> Optional[torch.utils.data.DataLoader]:
+        """
+        Set up and return the validation dataloader for pretraining.
+        
+        Returns:
+            A configured validation dataloader, or None if validation is not used
+        """
+        # Implement pretraining-specific validation dataloader setup
+        pass
+    
+    def _compute_loss(self, batch: Dict[str, torch.Tensor]) -> tuple[torch.Tensor, Dict[str, Any]]:
+        """
+        Compute the loss for a batch during pretraining.
+        
+        Args:
+            batch: A batch of data
+            
+        Returns:
+            A tuple containing the loss tensor and a dictionary of additional metrics
+        """
+        # Implement pretraining-specific loss computation
+        pass
 
 
-class PretrainingFabricDataParallelTrainer(FabricDataParallelTrainer):
+class PretrainingFabricDDPStrategy(BaseFabricDDPStrategy):
     """
-    Pretraining-specific implementation of the Fabric DataParallel trainer.
+    Pretraining-specific implementation of the Fabric DDP strategy.
+    
+    This class extends the base DDP strategy to implement pretraining-specific
+    functionality, such as model setup, data loading, and loss computation.
     """
     
     def __init__(
@@ -128,7 +184,7 @@ class PretrainingFabricDataParallelTrainer(FabricDataParallelTrainer):
         cli_logger: Optional[logging.Logger] = None,
     ) -> None:
         """
-        Initialize the pretraining DataParallel trainer.
+        Initialize the pretraining DDP strategy.
         
         Args:
             config: Configuration object or dictionary
@@ -137,8 +193,119 @@ class PretrainingFabricDataParallelTrainer(FabricDataParallelTrainer):
             dataset: Dataset for training
             cli_logger: Logger for CLI output
         """
-        super().__init__(config, devices, output_dir, cli_logger)
-        self.dataset = dataset
+        super().__init__(config, devices, output_dir, dataset, cli_logger)
     
-    # Implementation of abstract methods from FabricDataParallelTrainer
-    # ...
+    def _setup_model(self) -> torch.nn.Module:
+        """
+        Set up and return the model for pretraining.
+        
+        Returns:
+            A configured model
+        """
+        # Implement pretraining-specific model setup
+        pass
+    
+    def _setup_train_dataloader(self) -> torch.utils.data.DataLoader:
+        """
+        Set up and return the training dataloader for pretraining.
+        
+        Returns:
+            A configured training dataloader
+        """
+        # Implement pretraining-specific dataloader setup
+        pass
+    
+    def _setup_val_dataloader(self) -> Optional[torch.utils.data.DataLoader]:
+        """
+        Set up and return the validation dataloader for pretraining.
+        
+        Returns:
+            A configured validation dataloader, or None if validation is not used
+        """
+        # Implement pretraining-specific validation dataloader setup
+        pass
+    
+    def _compute_loss(self, batch: Dict[str, torch.Tensor]) -> tuple[torch.Tensor, Dict[str, Any]]:
+        """
+        Compute the loss for a batch during pretraining.
+        
+        Args:
+            batch: A batch of data
+            
+        Returns:
+            A tuple containing the loss tensor and a dictionary of additional metrics
+        """
+        # Implement pretraining-specific loss computation
+        pass
+
+
+class PretrainingFabricDataParallelStrategy(BaseFabricDataParallelStrategy):
+    """
+    Pretraining-specific implementation of the Fabric DataParallel strategy.
+    
+    This class extends the base DataParallel strategy to implement pretraining-specific
+    functionality, such as model setup, data loading, and loss computation.
+    """
+    
+    def __init__(
+        self,
+        config: Any,
+        devices: Union[int, List[int]],
+        output_dir: str,
+        dataset: Union[HFDataset, DatasetDict],
+        cli_logger: Optional[logging.Logger] = None,
+    ) -> None:
+        """
+        Initialize the pretraining DataParallel strategy.
+        
+        Args:
+            config: Configuration object or dictionary
+            devices: Number of devices or list of device IDs
+            output_dir: Directory to save outputs
+            dataset: Dataset for training
+            cli_logger: Logger for CLI output
+        """
+        super().__init__(config, devices, output_dir, dataset, cli_logger)
+    
+    def _setup_model(self) -> torch.nn.Module:
+        """
+        Set up and return the model for pretraining.
+        
+        Returns:
+            A configured model
+        """
+        # Implement pretraining-specific model setup
+        pass
+    
+    def _setup_train_dataloader(self) -> torch.utils.data.DataLoader:
+        """
+        Set up and return the training dataloader for pretraining.
+        
+        Returns:
+            A configured training dataloader
+        """
+        # Implement pretraining-specific dataloader setup
+        pass
+    
+    def _setup_val_dataloader(self) -> Optional[torch.utils.data.DataLoader]:
+        """
+        Set up and return the validation dataloader for pretraining.
+        
+        Returns:
+            A configured validation dataloader, or None if validation is not used
+        """
+        # Implement pretraining-specific validation dataloader setup
+        pass
+    
+    def _compute_loss(self, batch: Dict[str, torch.Tensor]) -> tuple[torch.Tensor, Dict[str, Any]]:
+        """
+        Compute the loss for a batch during pretraining.
+        
+        Args:
+            batch: A batch of data
+            
+        Returns:
+            A tuple containing the loss tensor and a dictionary of additional metrics
+        """
+        # Implement pretraining-specific loss computation
+        pass

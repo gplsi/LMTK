@@ -1,20 +1,17 @@
 """
-Fabric-based instruction orchestrator.
+Instruction-specific implementation of the Fabric orchestrator.
 
-This module provides a Fabric-based implementation of the instruction orchestrator,
-handling the setup and execution of distributed training using Lightning Fabric strategies.
+This module provides a concrete implementation of the abstract Fabric orchestrator
+for instruction fine-tuning tasks.
 """
 
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 from box import Box
 from datasets import Dataset as HFDataset, DatasetDict
 
-# Import the abstract fabric orchestrator
 from src.abstract_tasks.training.fabric.orchestrator import FabricOrchestrator
-
-# Import instruction-specific trainers
 from src.tasks.instruction.fabric.strategies import (
     InstructionFabricFSDPStrategy,
     InstructionFabricDeepSpeedStrategy,
@@ -27,15 +24,15 @@ logger = logging.getLogger(__name__)
 
 class InstructionFabricOrchestrator(FabricOrchestrator):
     """
-    Fabric-based orchestrator for instruction fine-tuning tasks.
+    Instruction-specific implementation of the Fabric orchestrator.
     
-    This class implements the abstract fabric orchestrator for instruction fine-tuning,
-    providing concrete implementations of the trainer factory methods.
+    This class extends the base Fabric orchestrator to implement instruction-specific
+    functionality, such as dataset processing and strategy creation.
     """
     
     def __init__(self, config: Box) -> None:
         """
-        Initialize the instruction fabric orchestrator.
+        Initialize the instruction Fabric orchestrator.
         
         Args:
             config: Configuration object
@@ -43,16 +40,15 @@ class InstructionFabricOrchestrator(FabricOrchestrator):
         super().__init__(config)
         self.processed_dataset = None
     
-    def _create_fsdp_trainer(self) -> InstructionFabricFSDPStrategy:
+    def _create_fsdp_strategy(self) -> InstructionFabricFSDPStrategy:
         """
-        Create an FSDP trainer for instruction fine-tuning.
+        Create an FSDP strategy for instruction fine-tuning.
         
         Returns:
-            Configured InstructionFabricFSDPStrategy
+            An instance of the instruction FSDP strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric FSDP trainer for instruction fine-tuning")
+        logger.info("Creating Fabric FSDP strategy for instruction fine-tuning")
         return InstructionFabricFSDPStrategy(
             config=self.config,
             devices=self.devices,
@@ -61,16 +57,15 @@ class InstructionFabricOrchestrator(FabricOrchestrator):
             cli_logger=logger,
         )
     
-    def _create_deepspeed_trainer(self) -> InstructionFabricDeepSpeedStrategy:
+    def _create_deepspeed_strategy(self) -> InstructionFabricDeepSpeedStrategy:
         """
-        Create a DeepSpeed trainer for instruction fine-tuning.
+        Create a DeepSpeed strategy for instruction fine-tuning.
         
         Returns:
-            Configured InstructionFabricDeepSpeedStrategy
+            An instance of the instruction DeepSpeed strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric DeepSpeed trainer for instruction fine-tuning")
+        logger.info("Creating Fabric DeepSpeed strategy for instruction fine-tuning")
         return InstructionFabricDeepSpeedStrategy(
             config=self.config,
             devices=self.devices,
@@ -79,16 +74,15 @@ class InstructionFabricOrchestrator(FabricOrchestrator):
             cli_logger=logger,
         )
     
-    def _create_ddp_trainer(self) -> InstructionFabricDDPStrategy:
+    def _create_ddp_strategy(self) -> InstructionFabricDDPStrategy:
         """
-        Create a DDP trainer for instruction fine-tuning.
+        Create a DDP strategy for instruction fine-tuning.
         
         Returns:
-            Configured InstructionFabricDDPStrategy
+            An instance of the instruction DDP strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric DDP trainer for instruction fine-tuning")
+        logger.info("Creating Fabric DDP strategy for instruction fine-tuning")
         return InstructionFabricDDPStrategy(
             config=self.config,
             devices=self.devices,
@@ -97,16 +91,15 @@ class InstructionFabricOrchestrator(FabricOrchestrator):
             cli_logger=logger,
         )
     
-    def _create_dataparallel_trainer(self) -> InstructionFabricDataParallelStrategy:
+    def _create_dataparallel_strategy(self) -> InstructionFabricDataParallelStrategy:
         """
-        Create a DataParallel trainer for instruction fine-tuning.
+        Create a DataParallel strategy for instruction fine-tuning.
         
         Returns:
-            Configured InstructionFabricDataParallelStrategy
+            An instance of the instruction DataParallel strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric DataParallel trainer for instruction fine-tuning")
+        logger.info("Creating Fabric DataParallel strategy for instruction fine-tuning")
         return InstructionFabricDataParallelStrategy(
             config=self.config,
             devices=self.devices,
@@ -117,7 +110,7 @@ class InstructionFabricOrchestrator(FabricOrchestrator):
     
     def _ensure_dataset_loaded(self) -> None:
         """
-        Ensure that the dataset is loaded before creating a trainer.
+        Ensure that the dataset is loaded before creating a strategy.
         
         If the dataset is not already loaded, this method raises an error
         as the dataset should be loaded by the parent orchestrator.
@@ -131,17 +124,13 @@ class InstructionFabricOrchestrator(FabricOrchestrator):
                 "the dataset before delegating to the framework-specific orchestrator."
             )
     
-    def _process_dataset(self) -> None:
+    def _process_dataset(self) -> Union[HFDataset, DatasetDict]:
         """
         Process the dataset for instruction fine-tuning.
         
-        This method should not be called directly on the framework-specific orchestrator.
-        Dataset processing should be handled by the parent InstructionOrchestrator.
-        
-        Raises:
-            NotImplementedError: Always, as this method should not be called
+        Returns:
+            The processed dataset
         """
-        raise NotImplementedError(
-            "Dataset processing should be handled by the InstructionOrchestrator, "
-            "not the framework-specific orchestrator."
-        )
+        # Implement instruction-specific dataset processing
+        # This would typically include tokenization, formatting, etc.
+        pass

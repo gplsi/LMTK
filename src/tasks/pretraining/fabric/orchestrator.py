@@ -1,25 +1,22 @@
 """
-Fabric-based pretraining orchestrator.
+Pretraining-specific implementation of the Fabric orchestrator.
 
-This module provides a Fabric-based implementation of the pretraining orchestrator,
-handling the setup and execution of distributed training using Lightning Fabric strategies.
+This module provides a concrete implementation of the abstract Fabric orchestrator
+for pretraining tasks.
 """
 
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 from box import Box
 from datasets import Dataset as HFDataset, DatasetDict
 
-# Import the abstract fabric orchestrator
 from src.abstract_tasks.training.fabric.orchestrator import FabricOrchestrator
-
-# Import pretraining-specific trainers
 from src.tasks.pretraining.fabric.strategies import (
-    FabricFSDPTrainer,
-    FabricDeepSpeedTrainer,
-    FabricDDPTrainer,
-    FabricDataParallelTrainer,
+    PretrainingFabricFSDPStrategy,
+    PretrainingFabricDeepSpeedStrategy,
+    PretrainingFabricDDPStrategy,
+    PretrainingFabricDataParallelStrategy,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,15 +24,15 @@ logger = logging.getLogger(__name__)
 
 class PretrainingFabricOrchestrator(FabricOrchestrator):
     """
-    Fabric-based orchestrator for pretraining tasks.
+    Pretraining-specific implementation of the Fabric orchestrator.
     
-    This class implements the abstract fabric orchestrator for pretraining,
-    providing concrete implementations of the trainer factory methods.
+    This class extends the base Fabric orchestrator to implement pretraining-specific
+    functionality, such as dataset processing and trainer creation.
     """
     
     def __init__(self, config: Box) -> None:
         """
-        Initialize the pretraining fabric orchestrator.
+        Initialize the pretraining Fabric orchestrator.
         
         Args:
             config: Configuration object
@@ -43,17 +40,15 @@ class PretrainingFabricOrchestrator(FabricOrchestrator):
         super().__init__(config)
         self.processed_dataset = None
     
-    def _create_fsdp_trainer(self) -> FabricFSDPTrainer:
+    def _create_fsdp_strategy(self) -> PretrainingFabricFSDPStrategy:
         """
-        Create an FSDP trainer for pretraining.
+        Create an FSDP strategy for pretraining.
         
         Returns:
-            Configured FabricFSDPTrainer
+            An instance of the pretraining FSDP strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric FSDP trainer for pretraining")
-        return FabricFSDPTrainer(
+        return PretrainingFabricFSDPStrategy(
             config=self.config,
             devices=self.devices,
             output_dir=self.output_dir,
@@ -61,17 +56,15 @@ class PretrainingFabricOrchestrator(FabricOrchestrator):
             cli_logger=logger,
         )
     
-    def _create_deepspeed_trainer(self) -> FabricDeepSpeedTrainer:
+    def _create_deepspeed_strategy(self) -> PretrainingFabricDeepSpeedStrategy:
         """
-        Create a DeepSpeed trainer for pretraining.
+        Create a DeepSpeed strategy for pretraining.
         
         Returns:
-            Configured FabricDeepSpeedTrainer
+            An instance of the pretraining DeepSpeed strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric DeepSpeed trainer for pretraining")
-        return FabricDeepSpeedTrainer(
+        return PretrainingFabricDeepSpeedStrategy(
             config=self.config,
             devices=self.devices,
             output_dir=self.output_dir,
@@ -79,17 +72,15 @@ class PretrainingFabricOrchestrator(FabricOrchestrator):
             cli_logger=logger,
         )
     
-    def _create_ddp_trainer(self) -> FabricDDPTrainer:
+    def _create_ddp_strategy(self) -> PretrainingFabricDDPStrategy:
         """
-        Create a DDP trainer for pretraining.
+        Create a DDP strategy for pretraining.
         
         Returns:
-            Configured FabricDDPTrainer
+            An instance of the pretraining DDP strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric DDP trainer for pretraining")
-        return FabricDDPTrainer(
+        return PretrainingFabricDDPStrategy(
             config=self.config,
             devices=self.devices,
             output_dir=self.output_dir,
@@ -97,17 +88,15 @@ class PretrainingFabricOrchestrator(FabricOrchestrator):
             cli_logger=logger,
         )
     
-    def _create_dataparallel_trainer(self) -> FabricDataParallelTrainer:
+    def _create_dataparallel_strategy(self) -> PretrainingFabricDataParallelStrategy:
         """
-        Create a DataParallel trainer for pretraining.
+        Create a DataParallel strategy for pretraining.
         
         Returns:
-            Configured FabricDataParallelTrainer
+            An instance of the pretraining DataParallel strategy
         """
         self._ensure_dataset_loaded()
-        
-        logger.info("Creating Fabric DataParallel trainer for pretraining")
-        return FabricDataParallelTrainer(
+        return PretrainingFabricDataParallelStrategy(
             config=self.config,
             devices=self.devices,
             output_dir=self.output_dir,
@@ -117,7 +106,7 @@ class PretrainingFabricOrchestrator(FabricOrchestrator):
     
     def _ensure_dataset_loaded(self) -> None:
         """
-        Ensure that the dataset is loaded before creating a trainer.
+        Ensure that the dataset is loaded before creating a strategy.
         
         If the dataset is not already loaded, this method raises an error
         as the dataset should be loaded by the parent orchestrator.
@@ -131,17 +120,13 @@ class PretrainingFabricOrchestrator(FabricOrchestrator):
                 "the dataset before delegating to the framework-specific orchestrator."
             )
     
-    def _process_dataset(self) -> None:
+    def _process_dataset(self) -> Union[HFDataset, DatasetDict]:
         """
         Process the dataset for pretraining.
         
-        This method should not be called directly on the framework-specific orchestrator.
-        Dataset processing should be handled by the parent PretrainingOrchestrator.
-        
-        Raises:
-            NotImplementedError: Always, as this method should not be called
+        Returns:
+            The processed dataset
         """
-        raise NotImplementedError(
-            "Dataset processing should be handled by the PretrainingOrchestrator, "
-            "not the framework-specific orchestrator."
-        )
+        # Implement pretraining-specific dataset processing
+        # This would typically include tokenization, data augmentation, etc.
+        pass

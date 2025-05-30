@@ -53,53 +53,53 @@ class FabricOrchestrator(TrainingOrchestrator, ABC):
         self._ensure_dataset_loaded()
         
         if strategy == "fsdp":
-            return self._create_fsdp_trainer()
+            return self._create_fsdp_strategy()
         elif strategy == "deepspeed":
-            return self._create_deepspeed_trainer()
+            return self._create_deepspeed_strategy()
         elif strategy == "ddp":
-            return self._create_ddp_trainer()
+            return self._create_ddp_strategy()
         elif strategy == "dataparallel":
-            return self._create_dataparallel_trainer()
+            return self._create_dataparallel_strategy()
         else:
             raise ValueError(f"Unsupported strategy: {strategy}")
     
     @abstractmethod
-    def _create_fsdp_trainer(self) -> Any:
+    def _create_fsdp_strategy(self) -> Any:
         """
-        Create an FSDP trainer.
+        Create an FSDP strategy.
         
         Returns:
-            A configured FSDP trainer
+            A configured FSDP strategy
         """
         pass
     
     @abstractmethod
-    def _create_deepspeed_trainer(self) -> Any:
+    def _create_deepspeed_strategy(self) -> Any:
         """
-        Create a DeepSpeed trainer.
+        Create a DeepSpeed strategy.
         
         Returns:
-            A configured DeepSpeed trainer
+            A configured DeepSpeed strategy
         """
         pass
     
     @abstractmethod
-    def _create_ddp_trainer(self) -> Any:
+    def _create_ddp_strategy(self) -> Any:
         """
-        Create a DDP trainer.
+        Create a DDP strategy.
         
         Returns:
-            A configured DDP trainer
+            A configured DDP strategy
         """
         pass
     
     @abstractmethod
-    def _create_dataparallel_trainer(self) -> Any:
+    def _create_dataparallel_strategy(self) -> Any:
         """
-        Create a DataParallel trainer.
+        Create a DataParallel strategy.
         
         Returns:
-            A configured DataParallel trainer
+            A configured DataParallel strategy
         """
         pass
     
