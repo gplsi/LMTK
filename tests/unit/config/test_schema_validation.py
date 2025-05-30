@@ -129,24 +129,6 @@ class TestSchemaValidation(unittest.TestCase):
         """Clean up the test environment."""
         self.temp_dir.cleanup()
     
-    def create_test_config_with_strategy(self, task, framework=None, strategy=None):
-        """Create a test configuration with the correct strategy name for the given task, framework, and strategy."""
-        # Map strategy shorthand to actual schema file naming
-        strategy_mapping = {
-            "dp": "dataparallel"
-        }
-        
-        # Create the basic config
-        config = create_test_config(task, framework, strategy)
-        
-        # If we're using a strategy that has a different name in the schema files,
-        # make sure we use the correct strategy name in the config
-        if strategy in strategy_mapping and framework == "fabric":
-            # Keep the strategy key as "dp" but ensure the schema file can be found
-            pass
-        
-        return config
-    
     def _validate_config(self, task, framework=None, strategy=None):
         """Helper method to validate a configuration for the given task, framework, and strategy."""
         # Create test config
