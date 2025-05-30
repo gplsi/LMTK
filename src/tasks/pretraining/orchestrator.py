@@ -1,36 +1,34 @@
 """
-Module for continual pretraining orchestration, including various parallelization strategies.
+Module for continual pretraining orchestration, supporting multiple distributed training frameworks.
 
-This module provides the ContinualOrchestrator class which is responsible for managing
-the pretraining workflow using different distributed strategies such as FSDP, DDP, DP, and DeepSpeed.
+This module provides the PretrainingOrchestrator class which is responsible for managing
+the pretraining workflow using different distributed strategies and frameworks.
 It handles device detection, configuration validation, dataset loading, and training execution.
 """
 
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Type
 from box import Box
 from datasets import Dataset as HFDataset, DatasetDict
-import torch
+import importlib
+import logging
 
 from src.utils.logging import get_logger, VerboseLevel
 from src.utils.dataset import DatasetStorage
 from src.abstract_tasks.training.orchestrator import TrainingOrchestrator
-from src.tasks.pretraining.fabric.trainer import PretrainingTrainer
-from utils import inherit_init_params
 
 
-@inherit_init_params
-class ContinualOrchestrator(TrainingOrchestrator):
+class PretrainingOrchestrator(TrainingOrchestrator):
     """
-    Orchestrates the continual pretraining workflow.
+    Orchestrates the pretraining workflow with support for multiple frameworks.
     
-    This class manages the entire lifecycle of continual pretraining,
-    including device detection, configuration validation, dataset loading,
-    and execution of various distributed training strategies.
+    This class manages the entire lifecycle of pretraining, including device detection,
+    configuration validation, dataset loading, and execution of various distributed 
+    training strategies across different frameworks (Fabric, PyTorch native, etc.).
     """
 
     def __init__(self, config: Box) -> None:
         """
-        Initialize the ContinualOrchestrator with the given configuration.
+        Initialize the PretrainingOrchestrator with the given configuration.
         
         It performs the following steps:
           - Calls the superclass initializer with the provided configuration
@@ -42,10 +40,11 @@ class ContinualOrchestrator(TrainingOrchestrator):
         super().__init__(config)
         self.logger = get_logger(__name__, VerboseLevel.INFO)
         self.processed_dataset = None
+        self._framework_orchestrator = None
 
     def validate_config(self) -> None:
         """
-        Validate continual configuration.
+        Validate pretraining configuration.
         
         This method verifies that the configuration settings
         are properly defined and sufficient for running the pretraining tasks.
@@ -63,6 +62,11 @@ class ContinualOrchestrator(TrainingOrchestrator):
             raise ValueError("Dataset source must be provided")
         if not hasattr(self.config, "output_dir") or not self.config.output_dir:
             raise ValueError("Output directory must be provided")
+        
+        # Validate framework configuration
+        if not hasattr(self.config, "framework"):
+            self.logger.warning("No framework specified, defaulting to 'fabric'")
+            self.config.framework = "fabric"
 
     def _validate_dataset_config(self) -> None:
         """
@@ -76,7 +80,7 @@ class ContinualOrchestrator(TrainingOrchestrator):
         if not hasattr(self.config, "dataset") or not self.config.dataset:
             raise ValueError("Dataset configuration must be provided")
 
-    def load_dataset(self) -> HFDataset:
+    def load_dataset(self) -> Union[HFDataset, DatasetDict]:
         """
         Load the dataset based on the provided configuration.
         
@@ -87,10 +91,9 @@ class ContinualOrchestrator(TrainingOrchestrator):
           - Wraps the dataset in a DatasetDict for maintainability if necessary.
         
         Returns:
-            HFDataset: The loaded dataset in HuggingFace datasets format, potentially wrapped in a DatasetDict.
+            Union[HFDataset, DatasetDict]: The loaded dataset in HuggingFace datasets format.
             
         Raises:
-            NotImplementedError: If the dataset source is 'huggingface', as it is not implemented.
             ValueError: If the dataset source is invalid.
         """
         dataset_handler = DatasetStorage(
@@ -109,7 +112,6 @@ class ContinualOrchestrator(TrainingOrchestrator):
             if isinstance(dataset, HFDataset):
                 dataset = DatasetDict({"train": dataset})
             
-            self.processed_dataset = dataset
             return dataset
         
         elif self.config.dataset.source == "huggingface":
@@ -131,7 +133,6 @@ class ContinualOrchestrator(TrainingOrchestrator):
             if isinstance(dataset, HFDataset):
                 dataset = DatasetDict({"train": dataset})
             
-            self.processed_dataset = dataset
             return dataset
         
         raise ValueError(f"Invalid dataset source: {self.config.dataset.source}")
@@ -160,98 +161,97 @@ class ContinualOrchestrator(TrainingOrchestrator):
         
         self.logger.info("Dataset processing completed successfully")
 
-    def _setup_fsdp(self) -> PretrainingTrainer:
+    def _get_framework_orchestrator(self) -> TrainingOrchestrator:
         """
-        Set up the FSDP trainer for pretraining.
+        Get the appropriate framework-specific orchestrator based on configuration.
         
-        This method overrides the parent method to use the PretrainingTrainer
-        instead of the generic FSDP trainer.
+        This method dynamically imports and instantiates the appropriate framework-specific
+        orchestrator based on the configuration.
         
         Returns:
-            Configured PretrainingTrainer with FSDP strategy
+            TrainingOrchestrator: A framework-specific orchestrator instance.
+            
+        Raises:
+            ImportError: If the specified framework module cannot be imported.
+            AttributeError: If the specified orchestrator class cannot be found.
         """
-        self.logger.info("Setting up FSDP trainer for pretraining")
+        if self._framework_orchestrator is not None:
+            return self._framework_orchestrator
         
-        return PretrainingTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
-    
-    def _setup_deepspeed(self) -> PretrainingTrainer:
+        framework = getattr(self.config, "framework", "fabric").lower()
+        
+        try:
+            # Dynamically import the framework-specific orchestrator
+            module_path = f"src.tasks.pretraining.{framework}.orchestrator"
+            self.logger.info(f"Attempting to import orchestrator from {module_path}")
+            
+            module = importlib.import_module(module_path)
+            
+            # Get the orchestrator class - handle both naming conventions
+            class_names = [
+                f"Pretraining{framework.capitalize()}Orchestrator",  # PretrainingFabricOrchestrator
+                f"{framework.capitalize()}Orchestrator",             # FabricOrchestrator
+            ]
+            
+            orchestrator_class = None
+            for class_name in class_names:
+                self.logger.debug(f"Looking for orchestrator class: {class_name}")
+                if hasattr(module, class_name):
+                    orchestrator_class = getattr(module, class_name)
+                    self.logger.info(f"Found orchestrator class: {class_name}")
+                    break
+            
+            if orchestrator_class is None:
+                available_classes = [name for name in dir(module) if not name.startswith('_') and name.endswith('Orchestrator')]
+                raise AttributeError(f"Could not find orchestrator class for framework '{framework}'. Available classes: {available_classes}")
+            
+            # Create an instance of the orchestrator
+            self._framework_orchestrator = orchestrator_class(self.config)
+            
+            # Pass the processed dataset to the framework orchestrator
+            if hasattr(self._framework_orchestrator, "processed_dataset"):
+                self.logger.info(f"Passing processed dataset to {framework} orchestrator")
+                self._framework_orchestrator.processed_dataset = self.processed_dataset
+            
+            return self._framework_orchestrator
+            
+        except ImportError as e:
+            self.logger.error(f"Failed to import framework module '{framework}': {str(e)}")
+            if framework == "fabric":
+                self.logger.error("The fabric framework is required but could not be imported.")
+            raise ImportError(f"Framework '{framework}' is not supported. Please check your configuration.") from e
+        except AttributeError as e:
+            self.logger.error(f"Failed to find orchestrator class for framework '{framework}': {str(e)}")
+            raise AttributeError(f"Orchestrator for framework '{framework}' is not implemented.") from e
+
+    def _create_trainer(self, strategy: str) -> Any:
         """
-        Set up the DeepSpeed trainer for pretraining.
+        Create a trainer for the specified strategy.
         
-        This method overrides the parent method to use the PretrainingTrainer
-        instead of the generic DeepSpeed trainer.
+        This method delegates to the framework-specific orchestrator to create
+        the appropriate trainer for the specified strategy.
         
+        Args:
+            strategy: Name of the training strategy
+            
         Returns:
-            Configured PretrainingTrainer with DeepSpeed strategy
+            A configured trainer for the specified strategy
         """
-        self.logger.info("Setting up DeepSpeed trainer for pretraining")
-        
-        return PretrainingTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
-    
-    def _setup_ddp(self) -> PretrainingTrainer:
-        """
-        Set up the DDP trainer for pretraining.
-        
-        This method overrides the parent method to use the PretrainingTrainer
-        instead of the generic DDP trainer.
-        
-        Returns:
-            Configured PretrainingTrainer with DDP strategy
-        """
-        self.logger.info("Setting up DDP trainer for pretraining")
-        
-        return PretrainingTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
-    
-    def _setup_dp(self) -> PretrainingTrainer:
-        """
-        Set up the DataParallel trainer for pretraining.
-        
-        This method overrides the parent method to use the PretrainingTrainer
-        instead of the generic DataParallel trainer.
-        
-        Returns:
-            Configured PretrainingTrainer with DataParallel strategy
-        """
-        self.logger.info("Setting up DataParallel trainer for pretraining")
-        
-        return PretrainingTrainer(
-            config=self.config,
-            devices=self.devices,
-            output_dir=self.output_dir,
-            cli_logger=self.logger,
-            dataset=self.processed_dataset,
-        )
+        framework_orchestrator = self._get_framework_orchestrator()
+        return framework_orchestrator._create_trainer(strategy)
 
     def execute(self) -> None:
         """
-        Execute the complete continual pretraining pipeline.
+        Execute the complete pretraining pipeline.
         
-        This method overrides the execute method from TrainingOrchestrator
-        to add pretraining-specific preprocessing before training.
+        This method orchestrates the entire pretraining workflow, including
+        dataset processing, framework selection, and training execution.
         
         The execution flow includes:
           1. Validating configuration settings.
           2. Loading the dataset as per the specified source.
-          3. Determining the parallelization strategy (FSDP, DDP, DP, DeepSpeed).
-          4. Running the appropriate training task based on the strategy.
+          3. Selecting the appropriate framework orchestrator.
+          4. Delegating to the framework orchestrator for training.
         
         Logs are generated at every major step. In case of errors, the exception is logged and re-raised.
         """
@@ -278,6 +278,10 @@ class ContinualOrchestrator(TrainingOrchestrator):
                         output_path = self.config.output.path
                         self.logger.info(f"Saving processed dataset to {output_path}")
                         self.processed_dataset.save_to_disk(output_path)
+                
+                # Get the framework-specific orchestrator
+                framework = getattr(self.config, "framework", "fabric").lower()
+                self.logger.info(f"Using '{framework}' framework for training")
                 
                 # Call parent method to handle training
                 super().execute()

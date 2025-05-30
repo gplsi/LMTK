@@ -51,22 +51,18 @@ class MetricsLogger:
         self.output_dir = output_dir
         self.experiment_name = experiment_name or f"experiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        # Create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
         
-        # Set up logging backends
         self.log_to_console = log_to_console
         self.log_to_csv = log_to_csv
         self.log_to_wandb = log_to_wandb
         self.log_to_tensorboard = log_to_tensorboard
         
-        # Set up CSV logger
         self.csv_file = None
         self.csv_writer = None
         if self.log_to_csv:
             self._setup_csv_logger()
         
-        # Set up WandB logger
         self.wandb = None
         if self.log_to_wandb:
             self._setup_wandb_logger(
@@ -76,7 +72,6 @@ class MetricsLogger:
                 wandb_tags=wandb_tags,
             )
         
-        # Set up TensorBoard logger
         self.tensorboard_writer = None
         if self.log_to_tensorboard:
             self._setup_tensorboard_logger(tensorboard_log_dir)
@@ -110,7 +105,6 @@ class MetricsLogger:
             import wandb
             self.wandb = wandb
             
-            # Initialize WandB
             wandb.init(
                 project=wandb_project,
                 entity=wandb_entity,
@@ -136,11 +130,9 @@ class MetricsLogger:
         try:
             from torch.utils.tensorboard import SummaryWriter
             
-            # Set up TensorBoard log directory
             tensorboard_log_dir = tensorboard_log_dir or os.path.join(self.output_dir, "tensorboard")
             os.makedirs(tensorboard_log_dir, exist_ok=True)
             
-            # Initialize TensorBoard writer
             self.tensorboard_writer = SummaryWriter(
                 log_dir=os.path.join(tensorboard_log_dir, self.experiment_name)
             )
@@ -159,27 +151,21 @@ class MetricsLogger:
             metrics: Dictionary of metrics to log
             step: Current step
         """
-        # Log to console
         if self.log_to_console:
             metrics_str = ", ".join([f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}" for k, v in metrics.items()])
             logger.info(f"Step {step}: {metrics_str}")
         
-        # Log to CSV
         if self.log_to_csv and self.csv_writer is not None:
-            # Write header if not written yet
             if not self.csv_header_written:
                 self.csv_writer.writerow(["step"] + list(metrics.keys()))
                 self.csv_header_written = True
             
-            # Write metrics
             self.csv_writer.writerow([step] + list(metrics.values()))
             self.csv_file.flush()
         
-        # Log to WandB
         if self.log_to_wandb and self.wandb is not None:
             self.wandb.log(metrics, step=step)
         
-        # Log to TensorBoard
         if self.log_to_tensorboard and self.tensorboard_writer is not None:
             for key, value in metrics.items():
                 self.tensorboard_writer.add_scalar(key, value, step)
@@ -202,18 +188,16 @@ class MetricsLogger:
         """
         Close all loggers.
         """
-        # Close CSV file
+        
         if self.csv_file is not None:
             self.csv_file.close()
         
-        # Close WandB
         if self.log_to_wandb and self.wandb is not None:
             try:
                 self.wandb.finish()
             except Exception as e:
                 logger.warning(f"Failed to close WandB: {e}")
         
-        # Close TensorBoard writer
         if self.tensorboard_writer is not None:
             self.tensorboard_writer.close()
 
@@ -234,10 +218,8 @@ def create_metrics_logger(
     Returns:
         A configured metrics logger
     """
-    # Extract logging configuration
     logging_config = getattr(config, "logging", {})
     
-    # Create metrics logger
     return MetricsLogger(
         output_dir=output_dir,
         experiment_name=experiment_name or getattr(config, "experiment_name", None),
