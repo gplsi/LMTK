@@ -1,4 +1,6 @@
-# Pretraining configuration with Fabric and FSDP
+# FSDP Pretraining Configuration for GPT2 on a 16GB GPU
+
+# Required base properties
 task: pretraining
 experiment_name: gpt2_pretraining_fsdp
 output_dir: /tmp/pretraining_output
@@ -9,45 +11,36 @@ framework: fabric
 # Strategy configuration
 strategy: fsdp
 
-# Device configuration
-devices: 1
+# Required dataset properties for pretraining
+dataset:
+  source: huggingface
+  nameOrPath: wikitext
+  format: dataset
+  split: train
 
-# Precision configuration
-precision: bf16-mixed
+# Required model properties for pretraining
+model:
+  name_or_path: gpt2
 
-# Training configuration
-max_epochs: 3
-
-# FSDP configuration
+# FSDP-specific configuration
 fsdp:
   sharding_strategy: full_shard
   auto_wrap_policy: transformer
   activation_checkpointing: true
   cpu_offload: false
 
-# Dataset configuration
-dataset:
-  source: huggingface
-  nameOrPath: wikitext
-  format: dataset
-  split: train
-  streaming: false
-
-# Model configuration
-model:
-  name_or_path: gpt2
-  dtype: bfloat16
+# Training configuration
+devices: 1
+precision: bf16-mixed
+max_epochs: 3
 
 # Optimizer configuration
 optimizer:
   name: adamw
   learning_rate: 5.0e-5
   weight_decay: 0.01
-  betas: [0.9, 0.999]
-  eps: 1.0e-8
 
 # Scheduler configuration
 scheduler:
   name: cosine
   warmup_steps: 100
-

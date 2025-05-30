@@ -1,4 +1,6 @@
-# Instruction fine-tuning configuration with Fabric and FSDP
+# FSDP Instruction Fine-tuning Configuration for GPT2 on a 16GB GPU
+
+# Required base properties
 task: instruction
 experiment_name: gpt2_instruction_fsdp
 output_dir: /tmp/instruction_output
@@ -9,23 +11,7 @@ framework: fabric
 # Strategy configuration
 strategy: fsdp
 
-# Device configuration
-devices: 1
-
-# Precision configuration
-precision: bf16-mixed
-
-# Training configuration
-max_epochs: 3
-
-# FSDP configuration
-fsdp:
-  sharding_strategy: full_shard
-  auto_wrap_policy: transformer
-  activation_checkpointing: true
-  cpu_offload: false
-
-# Dataset configuration
+# Required dataset properties for instruction fine-tuning
 dataset:
   source: huggingface
   nameOrPath: tatsu-lab/alpaca
@@ -33,10 +19,21 @@ dataset:
   split: train
   streaming: false
 
-# Model configuration
+# Required model properties for instruction fine-tuning
 model:
   name_or_path: gpt2
-  dtype: bfloat16
+
+# FSDP-specific configuration
+fsdp:
+  sharding_strategy: full_shard
+  auto_wrap_policy: transformer
+  activation_checkpointing: true
+  cpu_offload: false
+
+# Training configuration
+devices: 1
+precision: bf16-mixed
+max_epochs: 3
 
 # Optimizer configuration
 optimizer:

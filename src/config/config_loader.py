@@ -100,6 +100,73 @@ class ConfigValidator:
         # For non-training tasks, use the original schema name
         return f"{schema_name}.schema.yaml"
 
+    def _resolve_schema_refs(self, schema, resolver):
+        """
+        Recursively resolve all $ref references in a schema.
+        
+        :param schema: The schema to resolve references in
+        :param resolver: The RefResolver to use for resolving references
+        :return: A new schema with all references resolved
+        """
+        if not isinstance(schema, dict):
+            return schema
+        
+        # Create a new schema to avoid modifying the original
+        resolved_schema = {}
+        
+        # Handle $ref if present
+        if "$ref" in schema:
+            ref = schema["$ref"]
+            # Resolve the reference
+            with resolver.resolving(ref) as resolved:
+                # Merge the resolved schema with the current schema
+                resolved_schema.update(self._resolve_schema_refs(resolved, resolver))
+                # Copy all other properties from the current schema
+                for k, v in schema.items():
+                    if k != "$ref":
+                        resolved_schema[k] = self._resolve_schema_refs(v, resolver)
+                return resolved_schema
+        
+        # Handle allOf if present - merge all schemas in the allOf list
+        if "allOf" in schema:
+            # Start with an empty schema
+            merged_schema = {}
+            # Process each schema in allOf
+            for subschema in schema["allOf"]:
+                # Resolve the subschema
+                resolved_subschema = self._resolve_schema_refs(subschema, resolver)
+                # Merge with the current merged schema
+                self._merge_schemas(merged_schema, resolved_subschema)
+            
+            # Copy all other properties from the current schema
+            for k, v in schema.items():
+                if k != "allOf":
+                    if k in merged_schema and isinstance(merged_schema[k], dict) and isinstance(v, dict):
+                        self._merge_schemas(merged_schema[k], self._resolve_schema_refs(v, resolver))
+                    else:
+                        merged_schema[k] = self._resolve_schema_refs(v, resolver)
+            
+            return merged_schema
+        
+        # Process all other properties
+        for k, v in schema.items():
+            resolved_schema[k] = self._resolve_schema_refs(v, resolver)
+        
+        return resolved_schema
+    
+    def _merge_schemas(self, target, source):
+        """
+        Merge two schemas, with source taking precedence for conflicts.
+        
+        :param target: The target schema to merge into
+        :param source: The source schema to merge from
+        """
+        for k, v in source.items():
+            if k in target and isinstance(target[k], dict) and isinstance(v, dict):
+                self._merge_schemas(target[k], v)
+            else:
+                target[k] = v
+
     def validate(self, config_path: Path, schema_name: str) -> Box:
         """
         Validate a configuration file against a specified JSON schema.
@@ -117,6 +184,7 @@ class ConfigValidator:
         - Loads configuration data from the specified YAML file.
         - Loads the task-specific schema identified by schema_name.
         - Constructs a RefResolver with the preloaded schemas to handle JSON Schema references.
+        - Resolves all schema references to create a complete schema.
         - Validates the configuration data using the Draft7Validator.
         - If validation errors are found, aggregates them into a detailed error message.
         """
@@ -138,9 +206,12 @@ class ConfigValidator:
             referrer=task_schema,
             store=self.schema_store
         )
-
+        
+        # Resolve all schema references to create a complete schema
+        resolved_schema = self._resolve_schema_refs(task_schema, resolver)
+        
         # Validate with error formatting
-        validator = Draft7Validator(task_schema, resolver=resolver)
+        validator = Draft7Validator(resolved_schema)
         errors = list(validator.iter_errors(config_data))
         
         if errors:
