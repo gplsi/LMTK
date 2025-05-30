@@ -1,0 +1,132 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.pretraining.fabric.deepspeed.schema.yaml
+title: Pretraining DeepSpeed Strategy Configuration
+description: Schema for DeepSpeed strategy configuration for pretraining
+
+type: object
+allOf:
+  - $ref: training.pretraining.fabric.schema.yaml
+
+properties:
+  # Strategy must be deepspeed
+  strategy:
+    type: string
+    enum: [deepspeed]
+    default: deepspeed
+    description: Strategy type, must be 'deepspeed'
+  
+  # DeepSpeed-specific configurations
+  deepspeed:
+    type: object
+    properties:
+      zero_stage:
+        type: integer
+        enum: [0, 1, 2, 3]
+        default: 2
+        description: ZeRO optimization stage
+      
+      offload_optimizer:
+        type: boolean
+        default: false
+        description: Whether to offload optimizer states to CPU
+      
+      offload_parameters:
+        type: boolean
+        default: false
+        description: Whether to offload parameters to CPU
+      
+      offload_params_device:
+        type: string
+        enum: [cpu, nvme]
+        default: cpu
+        description: Device to offload parameters to
+      
+      offload_optimizer_device:
+        type: string
+        enum: [cpu, nvme]
+        default: cpu
+        description: Device to offload optimizer states to
+      
+      nvme_path:
+        type: string
+        description: Path to NVMe storage for offloading
+      
+      stage3_prefetch_bucket_size:
+        type: integer
+        default: 5e8
+        description: Prefetch bucket size for ZeRO-3
+      
+      stage3_param_persistence_threshold:
+        type: integer
+        default: 1e6
+        description: Parameter persistence threshold for ZeRO-3
+      
+      stage3_max_live_parameters:
+        type: integer
+        default: 1e9
+        description: Maximum live parameters for ZeRO-3
+      
+      stage3_max_reuse_distance:
+        type: integer
+        default: 1e9
+        description: Maximum reuse distance for ZeRO-3
+      
+      activation_checkpointing:
+        type: boolean
+        default: false
+        description: Whether to use activation checkpointing
+      
+      contiguous_memory_optimization:
+        type: boolean
+        default: false
+        description: Whether to use contiguous memory optimization
+      
+      reduce_bucket_size:
+        type: integer
+        default: 5e8
+        description: Reduce bucket size
+      
+      overlap_comm:
+        type: boolean
+        default: true
+        description: Whether to overlap communication and computation
+      
+      allgather_bucket_size:
+        type: integer
+        default: 5e8
+        description: All-gather bucket size
+      
+      reduce_scatter:
+        type: boolean
+        default: true
+        description: Whether to use reduce scatter
+      
+      aio:
+        type: object
+        properties:
+          block_size:
+            type: integer
+            default: 1048576
+            description: AIO block size
+          queue_depth:
+            type: integer
+            default: 8
+            description: AIO queue depth
+          thread_count:
+            type: integer
+            default: 1
+            description: AIO thread count
+          single_submit:
+            type: boolean
+            default: false
+            description: AIO single submit
+          overlap_events:
+            type: boolean
+            default: true
+            description: AIO overlap events
+        additionalProperties: false
+    required:
+      - zero_stage
+    additionalProperties: false
+
+additionalProperties: false

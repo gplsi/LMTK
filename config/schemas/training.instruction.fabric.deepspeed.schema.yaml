@@ -1,11 +1,11 @@
 $schema: http://json-schema.org/draft-07/schema#
-$id: training.fabric.deepspeed.schema.yaml
-title: DeepSpeed Strategy Configuration
-description: Schema for DeepSpeed strategy configuration
+$id: training.instruction.fabric.deepspeed.schema.yaml
+title: Instruction DeepSpeed Strategy Configuration
+description: Schema for DeepSpeed strategy configuration for instruction fine-tuning
 
 type: object
 allOf:
-  - $ref: training.fabric.schema.yaml
+  - $ref: training.instruction.fabric.schema.yaml
 
 properties:
   # Strategy must be deepspeed

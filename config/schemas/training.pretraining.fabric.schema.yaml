@@ -1,0 +1,147 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: training.pretraining.fabric.schema.yaml
+title: Pretraining Fabric Framework Configuration
+description: Schema for Lightning Fabric framework configuration for pretraining
+
+type: object
+allOf:
+  - $ref: training.pretraining.schema.yaml
+
+properties:
+  # Framework must be fabric
+  framework:
+    type: string
+    enum: [fabric]
+    default: fabric
+    description: Framework type, must be 'fabric'
+  
+  # Strategy Configuration
+  strategy:
+    type: string
+    enum: [fsdp, deepspeed, ddp, dp]
+    default: fsdp
+    description: Distributed training strategy to use
+  
+  # Device Configuration
+  devices:
+    oneOf:
+      - type: integer
+        minimum: 1
+        description: Number of devices to use
+      - type: array
+        items:
+          type: integer
+          minimum: 0
+        description: List of device IDs to use
+    description: Devices to use for training
+  
+  # Precision Configuration
+  precision:
+    type: string
+    enum: [32, 16, bf16, 32-true, 16-mixed, bf16-mixed]
+    default: bf16-mixed
+    description: Precision to use for training
+  
+  # Training Parameters
+  max_epochs:
+    type: integer
+    minimum: 1
+    default: 1
+    description: Maximum number of epochs to train for
+  
+  max_steps:
+    type: integer
+    minimum: 1
+    description: Maximum number of steps to train for (overrides max_epochs if specified)
+  
+  val_interval:
+    type: integer
+    minimum: 1
+    default: 1000
+    description: Validation interval in steps
+  
+  save_interval:
+    type: integer
+    minimum: 1
+    default: 1000
+    description: Checkpoint saving interval in steps
+  
+  log_interval:
+    type: integer
+    minimum: 1
+    default: 10
+    description: Logging interval in steps
+  
+  # Checkpoint Configuration
+  resume_from_checkpoint:
+    type: string
+    description: Path to checkpoint to resume from
+  
+  # Fabric-specific logging
+  fabric_logging:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        default: true
+        description: Whether to enable Fabric-specific logging
+      
+      log_gradients:
+        type: boolean
+        default: false
+        description: Whether to log gradients
+      
+      log_parameters:
+        type: boolean
+        default: false
+        description: Whether to log parameters
+      
+      log_every_n_steps:
+        type: integer
+        minimum: 1
+        default: 50
+        description: Log every N steps
+    additionalProperties: false
+  
+  # Checkpoint configuration
+  checkpoint:
+    type: object
+    properties:
+      save_top_k:
+        type: integer
+        minimum: -1
+        default: 1
+        description: Number of best checkpoints to keep (-1 for all)
+      
+      monitor:
+        type: string
+        default: val_loss
+        description: Metric to monitor for checkpoint saving
+      
+      mode:
+        type: string
+        enum: [min, max]
+        default: min
+        description: Mode for checkpoint saving (min or max)
+      
+      save_last:
+        type: boolean
+        default: true
+        description: Whether to save the last checkpoint
+      
+      every_n_train_steps:
+        type: integer
+        minimum: 1
+        description: Save checkpoint every N training steps
+      
+      every_n_epochs:
+        type: integer
+        minimum: 1
+        description: Save checkpoint every N epochs
+      
+      filename:
+        type: string
+        description: Filename pattern for checkpoints
+    additionalProperties: false
+
+additionalProperties: false

@@ -1,11 +1,11 @@
 $schema: http://json-schema.org/draft-07/schema#
-$id: training.fabric.dataparallel.schema.yaml
-title: DataParallel Strategy Configuration
-description: Schema for DataParallel strategy configuration
+$id: training.pretraining.fabric.dataparallel.schema.yaml
+title: Pretraining DataParallel Strategy Configuration
+description: Schema for DataParallel strategy configuration for pretraining
 
 type: object
 allOf:
-  - $ref: training.fabric.schema.yaml
+  - $ref: training.pretraining.fabric.schema.yaml
 
 properties:
   # Strategy must be dp
