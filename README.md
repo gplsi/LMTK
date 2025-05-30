@@ -1,4 +1,5 @@
-# LM Continual Pretraining Framework
+# LMTK
+The Language Model ToolKit
 
 **A Modular Toolkit for Efficient Language Model Pretraining and Adaptation**  
 *Streamlining continual pretraining of foundation language models through scalable pipelines and reproducible configurations*
