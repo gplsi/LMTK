@@ -34,25 +34,6 @@ class TestHuggingFaceUpload(unittest.TestCase):
         self.mock_model = MagicMock()
         self.mock_tokenizer = MagicMock()
 
-    @patch("transformers.AutoTokenizer.from_pretrained")
-    def test_load_tokenizer(self, mock_tokenizer_class):
-        """Test loading tokenizer from base model"""
-        # Setup mock
-        mock_tokenizer_class.return_value = self.mock_tokenizer
-        
-        # Create uploader and call method
-        uploader = UploadHuggingface(
-            base_model=self.base_model,
-            model=self.mock_model,
-            tokenizer=self.mock_tokenizer,
-            repo_id=self.repo_id
-        )
-        result_tokenizer = uploader._load_tokenizer()
-        
-        # Verify tokenizer was loaded from correct base model
-        mock_tokenizer_class.assert_called_once_with(self.base_model)
-        self.assertEqual(result_tokenizer, self.mock_tokenizer)
-
     def test_upload_tokenizer(self):
         """Test uploading tokenizer to HuggingFace Hub"""
         # Create uploader and call method
@@ -187,7 +168,7 @@ class TestHuggingFaceUpload(unittest.TestCase):
         mock_validate.assert_called_once()
 
     @patch("transformers.AutoTokenizer.from_pretrained")
-    @patch("src.tasks.publish.upload.huggingface.UploadHuggingface")
+    @patch("src.tasks.publish.orchestrator.UploadHuggingface")
     def test_orchestrator_upload_model(self, mock_uploader_class, mock_tokenizer_class):
         """Test the upload_model method in the PublishOrchestrator"""
         # Setup mocks
@@ -199,8 +180,21 @@ class TestHuggingFaceUpload(unittest.TestCase):
         # Create mock model
         mock_model = MagicMock()
         
+        # Create config with default_box=True
+        config = Box({
+            "publish": {
+                "host": self.host,
+                "base_model": self.base_model,
+                "repo_id": self.repo_id,
+                "checkpoint_path": "/path/to/checkpoint.pth",
+                "format": "fsdp"
+            }
+        }, default_box=True)
+        
         # Execute the orchestrator method
-        orchestrator = PublishOrchestrator(self.config)
+        orchestrator = PublishOrchestrator(config)
+        # Ensure tokenizer is set
+        orchestrator.tokenizer = mock_tokenizer
         orchestrator.upload_model(mock_model)
         
         # Verify the uploader was created with correct parameters

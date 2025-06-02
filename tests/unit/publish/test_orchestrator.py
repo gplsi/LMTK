@@ -27,7 +27,7 @@ class TestPublishOrchestrator(unittest.TestCase):
                 "checkpoint_path": self.checkpoint_path,
                 "format": "fsdp"
             }
-        })
+        }, default_box=True)
 
     def test_validate_config_valid(self):
         """Test config validation with valid config"""
@@ -37,7 +37,7 @@ class TestPublishOrchestrator(unittest.TestCase):
 
     def test_validate_config_missing_publish(self):
         """Test config validation with missing publish section"""
-        config = Box({})
+        config = Box({}, default_box=True)
         orchestrator = PublishOrchestrator(config)
         
         with self.assertRaises(ValueError) as context:
@@ -54,7 +54,7 @@ class TestPublishOrchestrator(unittest.TestCase):
                 "checkpoint_path": self.checkpoint_path,
                 "format": "fsdp"
             }
-        })
+        }, default_box=True)
         orchestrator = PublishOrchestrator(config)
         
         with self.assertRaises(ValueError) as context:
@@ -71,7 +71,7 @@ class TestPublishOrchestrator(unittest.TestCase):
                 "checkpoint_path": self.checkpoint_path,
                 "format": "fsdp"
             }
-        })
+        }, default_box=True)
         orchestrator = PublishOrchestrator(config)
         
         with self.assertRaises(ValueError) as context:
@@ -88,7 +88,7 @@ class TestPublishOrchestrator(unittest.TestCase):
                 "checkpoint_path": self.checkpoint_path,
                 "format": "fsdp"
             }
-        })
+        }, default_box=True)
         orchestrator = PublishOrchestrator(config)
         
         with self.assertRaises(ValueError) as context:
@@ -105,7 +105,7 @@ class TestPublishOrchestrator(unittest.TestCase):
                 "repo_id": self.repo_id,
                 "format": "fsdp"
             }
-        })
+        }, default_box=True)
         orchestrator = PublishOrchestrator(config)
         
         with self.assertRaises(ValueError) as context:
@@ -122,7 +122,7 @@ class TestPublishOrchestrator(unittest.TestCase):
                 "repo_id": self.repo_id,
                 "checkpoint_path": self.checkpoint_path
             }
-        })
+        }, default_box=True)
         orchestrator = PublishOrchestrator(config)
         
         with self.assertRaises(ValueError) as context:
@@ -159,23 +159,32 @@ class TestPublishOrchestrator(unittest.TestCase):
         self.assertEqual(result, mock_model)
 
     @patch("transformers.AutoTokenizer.from_pretrained")
-    @patch("src.tasks.publish.upload.huggingface.UploadHuggingface")
-    def test_upload_model(self, mock_uploader_class, mock_tokenizer_class):
+    @patch("src.tasks.publish.orchestrator.UploadHuggingface")
+    def test_upload_model(self, mock_upload_class, mock_tokenizer_class):
         """Test the upload_model method"""
         # Setup mocks
-        mock_uploader = MagicMock()
-        mock_uploader_class.return_value = mock_uploader
+        mock_upload_instance = MagicMock()
+        mock_upload_class.return_value = mock_upload_instance
         mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer_class.return_value = mock_tokenizer
         
-        # Execute the method
+        # Call method
         orchestrator = PublishOrchestrator(self.config)
+        # Explicitly set the tokenizer attribute
+        orchestrator.tokenizer = mock_tokenizer
         orchestrator.upload_model(mock_model)
         
-        # Verify the uploader was created with correct parameters
-        mock_uploader_class.assert_called_once()
+        # Verify upload handler was created with correct parameters
+        mock_upload_class.assert_called_once_with(
+            base_model=self.config.publish.get('base_model'),
+            model=mock_model,
+            tokenizer=orchestrator.tokenizer,
+            repo_id=self.config.publish.get('repo_id')
+        )
         
-        # Verify execute was called
-        mock_uploader.execute.assert_called_once()
+        # Verify execute was called with correct parameters
+        mock_upload_instance.execute.assert_called_once()
 
     @patch("transformers.AutoTokenizer.from_pretrained")
     @patch("src.tasks.publish.orchestrator.PublishOrchestrator.validate_config")
