@@ -19,8 +19,8 @@ allOf:
             minimum: 0
           task:
             type: string
-            enum: ["causal_pretraining"]
-            default: "causal_pretraining"
+            enum: ["clm-training"]
+            default: "clm-training"
           batch_size:
             type: integer
             minimum: 1

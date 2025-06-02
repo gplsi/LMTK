@@ -8,7 +8,7 @@ class, providing a template for custom training strategies.
 import math
 from pathlib import Path
 import time
-from tasks.pretraining.utils import deterministic
+from src.tasks.clm_training.utils import select_optimizer, select_scheduler, deterministic
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_from_disk, DatasetDict
@@ -27,15 +27,14 @@ import wandb
 import os
 
 # Import custom utilities
-from src.tasks.pretraining.fabric.speed_monitor import SpeedMonitorFabric as Monitor
-from src.tasks.pretraining.fabric.logger import step_csv_logger
-from src.tasks.pretraining.utils import *
-from src.tasks.pretraining.fabric.generation import FabricGeneration
+from src.tasks.clm_training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
+from src.tasks.clm_training.fabric.logger import step_csv_logger
+from src.tasks.clm_training.utils import *
+from src.tasks.clm_training.fabric.generation import FabricGeneration
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
 
-
-# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class FabricTrainerBase(ABC):
     """
@@ -73,7 +72,6 @@ class FabricTrainerBase(ABC):
         result = self._load_fabric_datasets_dataloaders(self.config, self.dataset)
         self.datasets = result["datasets"]
         self.dataloaders = result["dataloaders"]
-    
     
     @abstractmethod
     def _setup_strategy(self) -> Union[FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy]:
@@ -131,26 +129,40 @@ class FabricTrainerBase(ABC):
         if self.config.logging_config == "wandb":
             wandb_logger = WandbLogger(
                 entity=self.config.wandb_entity, 
-                project=self.config.wandb_project, 
+                project=self.config.wandb_project,                
                 log_model=self.config.log_model
             )
             return [logger, wandb_logger]
         return [logger]
     
-    def _save(self, fabric: L.Fabric) -> None:
+    def _save(self, fabric: L.Fabric, epochFinished: bool = False, trainingFinished: bool = False) -> None:
         """
         Save the training checkpoint.
 
         This method saves the current training state to the output directory if provided.
+        The checkpoint name will reflect the epoch number when saving after epoch completion
+        or training completion, otherwise it will use the iteration number.
         
         Parameters:
         - fabric (L.Fabric): The Fabric instance handling the distributed training.
+        - epochFinished (bool): Flag indicating if the current epoch has finished.
+        - trainingFinished (bool): Flag indicating if training has completed.
         """
         if self.config.output_dir is None:
             self.cli_logger.warning("Output directory not provided. Skipping checkpoint saving.")
             return
         
-        output_checkpoint_path = Path(self.config.output_dir,  f"iter-{self.state['iter_num']:06d}-ckpt.pth")
+        # Generate checkpoint name based on context
+        if epochFinished or trainingFinished:
+            current_epoch = self.state.get('current_epoch', 0)
+            if trainingFinished:
+                checkpoint_name = f"epoch-{current_epoch:03d}-final-ckpt.pth"
+            else:
+                checkpoint_name = f"epoch-{current_epoch:03d}-ckpt.pth"
+        else:
+            checkpoint_name = f"iter-{self.state['iter_num']:06d}-ckpt.pth"
+        
+        output_checkpoint_path = Path(self.config.output_dir, checkpoint_name)
         self.cli_logger.debug(f"Saving checkpoint to {str(output_checkpoint_path)!r}")
         fabric.save(output_checkpoint_path, self.state)
     
@@ -167,7 +179,7 @@ class FabricTrainerBase(ABC):
         """
         epoch_batch_count = len(iterator)
         if resume_iter >= epoch_batch_count:
-            return None, resume_iter - epoch_batch_count
+            return None, resume_iter - epoch_batch_count        
         elif resume_iter > 0:
             return itertools.islice(iterator, resume_iter, None), 0
         else:
@@ -182,7 +194,25 @@ class FabricTrainerBase(ABC):
         """
         if self.checkpoint_path is not None:
             self.cli_logger.info(f"Resuming training from '{self.checkpoint_path}'")
-            fabric.load(self.checkpoint_path, self.state)
+            # Use strict=False to allow loading checkpoints that may not have all current state keys
+            fabric.load(self.checkpoint_path, self.state, strict=False)
+            
+            # Ensure that essential keys have default values if they weren't in the checkpoint
+            if 'current_epoch' not in self.state:
+                self.state['current_epoch'] = 0
+                self.cli_logger.info("'current_epoch' not found in checkpoint, defaulting to 0")
+            
+            if 'iter_num' not in self.state:
+                self.state['iter_num'] = 0
+                self.cli_logger.info("'iter_num' not found in checkpoint, defaulting to 0")
+                
+            if 'step_count' not in self.state:
+                self.state['step_count'] = 0
+                self.cli_logger.info("'step_count' not found in checkpoint, defaulting to 0")
+            
+            # Log the loaded state for debugging
+            self.cli_logger.info(f"Loaded state keys: {list(self.state.keys())}")
+            self.cli_logger.info(f"Resuming from iteration {self.state.get('iter_num', 0)}, step {self.state.get('step_count', 0)}, epoch {self.state.get('current_epoch', 0)}")
     
     def _train_logs(self, fabric: L.Fabric, loss: torch.Tensor) -> None:
         """
@@ -278,8 +308,8 @@ class FabricTrainerBase(ABC):
             self.cli_logger.debug(f"validate_after_k_steps value: {validate_after_k_steps}, type: {type(validate_after_k_steps)}")
             self.cli_logger.debug(f"step_count value: {self.state['step_count']}, type: {type(self.state['step_count'])}")
             validate_after_k_steps = int(validate_after_k_steps)
-        validate_on_end = self.config.get("validate_on_end", False)
-        validate_after_epoch = self.config.get("validate_after_epoch", False)
+        validate_on_end = self.config.get("validate_on_end", True)
+        validate_after_epoch = self.config.get("validate_after_epoch", True)
         
         # Debug logging before the condition check
         self.cli_logger.debug(f"Validation condition check - epochFinished: {epochFinished}, trainingFinished: {trainingFinished}")
@@ -303,7 +333,7 @@ class FabricTrainerBase(ABC):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 
-            self._save(fabric)
+            self._save(fabric, epochFinished, trainingFinished)
     
     def _normal_training(self, fabric: L.Fabric, model: L.LightningModule, batch: Tuple[torch.Tensor, ...], step: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -355,7 +385,15 @@ class FabricTrainerBase(ABC):
         epochs = self.config.number_epochs
         self.model.train()
         resume_iter = self.state["iter_num"]
+        
+        # Ensure current_epoch is initialized (for backwards compatibility with old checkpoints)
+        if "current_epoch" not in self.state:
+            self.state["current_epoch"] = 0
+        
         for epoch in range(epochs):
+            # Update current epoch in state for checkpoint naming
+            self.state["current_epoch"] = epoch + 1
+            
             if fabric.global_rank == 0:
                 self.cli_logger.debug(f"Running Epoch {epoch + 1} of {epochs}")
             batch_iterator = tqdm(self.dataloaders['train'], mininterval=0, colour="blue") \
@@ -535,14 +573,14 @@ class FabricTrainerBase(ABC):
             self.dataset['train'], 
             self.config.warmup_proportion, 
             self.config.gradient_accumulation_steps
-        )
-        # STATE
+        )        # STATE
         self.state = {
             "model": self.model, 
             "optimizer": optimizer, 
             "hparams": self.hparams, 
             "iter_num": 0, 
             "step_count": 0, 
+            "current_epoch": 0,
             "scheduler": scheduler
         }
         # RESUME

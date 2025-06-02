@@ -3,3 +3,6 @@
 **/*.ipynb
 **/data/
 **/outputs/
+test_checkpoint_naming.py
+*.out
+*.err

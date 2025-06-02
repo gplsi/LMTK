@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: "pretraining.ddp.schema.yaml"
+$id: "clm_training.ddp.schema.yaml"
 description: "Schema for DeepSpeed experiments"
 allOf:
   - $ref: "base.schema.yaml"

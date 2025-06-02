@@ -162,9 +162,6 @@ allOf:
       - parallelization_strategy
       - output_dir
 
-
-
-
     dependentSchemas:
       fsdp:
         properties:
@@ -197,54 +194,3 @@ allOf:
             allOf:
               - $ref: "pretraining.logging.schema.yaml"
         required: ["logging_config"]
-
-
-    # # Conditionally apply the FSDP schema if parallelization_strategy == "fsdp"
-    # if:
-    #   properties:
-    #     parallelization_strategy:
-    #       const: "fsdp"
-    # then:
-    #   properties:
-    #     parallelization_config:
-    #       # Merge the FSDP schema here
-    #       allOf:
-    #         - $ref: "pretraining.fsdp.schema.yaml"
-    #   required:
-    #     - parallelization_config
-    # else:
-    #   # If not fsdp, no additional constraints on parallelization_config
-    #   properties: {}
-
-    # # Conditionally apply DDP schema if parallelization_strategy == "ddp"ç
-    # if:
-    #   properties:
-    #     parallelization_strategy:
-    #       const: "ddp"
-    # then:
-    #   properties:
-    #     parallelization_config:
-    #       # Merge the DDP schema here
-    #       allOf:
-    #         - $ref: "pretraining.ddp.schema.yaml"
-    #   required:
-    #     - parallelization_config
-    # else:
-    #   # If not ddp, no additional constraints on parallelization_config
-    #   properties: {}
-
-    # if:
-    #   properties:
-    #     logging_config:
-    #       const: "wandb"
-    # then:
-    #   properties:
-    #     logging_config:
-    #       # Merge the logging schema here
-    #       allOf:
-    #         - $ref: "pretraining.logging.schema.yaml"
-    #   required:
-    #     - logging_config
-    # else:
-    #   # If not wandb, no additional constraints on logging_config
-    #   properties: {}

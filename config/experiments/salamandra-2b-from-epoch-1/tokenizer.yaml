@@ -6,7 +6,7 @@ tokenizer:
   name: "BSC-LT/salamandra-2b"
   context_length: 2048
   overlap: 512
-  task: "causal_pretraining"
+  task: "clm-training"
 
 dataset:
   source: "local"
