@@ -204,7 +204,7 @@ The tokenizer integrates seamlessly with the pretraining pipeline:
    :caption: Integration with Pretraining
    :linenos:
 
-   from src.tasks.pretraining.orchestrator import PretrainingOrchestrator
+   from src.tasks.clm_training.orchestrator import PretrainingOrchestrator
    from src.tasks.tokenization.tokenizer.causal import CausalTokenizer
    from src.config.config_loader import load_config
    

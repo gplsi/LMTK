@@ -4,7 +4,7 @@ import functools
 from typing import Optional, Dict, Any, Set, Type, Union, Callable
 import torch.nn as nn
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy, size_based_auto_wrap_policy
-from tasks.pretraining.fabric.wrappers.policies import create_auto_wrap_policy
+from tasks.clm_training.fabric.wrappers.policies import create_auto_wrap_policy
 
 def get_default_fsdp_config() -> Dict[str, Any]:
     """

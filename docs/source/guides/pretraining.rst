@@ -30,7 +30,7 @@ The pretraining pipeline in the ML Training Framework is built around a modular 
          :caption: FSDP Configuration
          :linenos:
 
-         from src.tasks.pretraining.fabric.wrappers.fsdp_config import get_fsdp_config
+         from src.tasks.clm_training.fabric.wrappers.fsdp_config import get_fsdp_config
          
          fsdp_config = get_fsdp_config(
              mixed_precision=True,
@@ -53,7 +53,7 @@ The pretraining pipeline in the ML Training Framework is built around a modular 
          :linenos:
          
          import torch.distributed as dist
-         from src.tasks.pretraining.fabric.distributed import setup_ddp
+         from src.tasks.clm_training.fabric.distributed import setup_ddp
          
          setup_ddp(
              backend="nccl",
@@ -167,7 +167,7 @@ The framework includes tools for monitoring training performance:
 .. code-block:: python
    :linenos:
 
-   from src.tasks.pretraining.fabric.speed_monitor import SpeedMonitor
+   from src.tasks.clm_training.fabric.speed_monitor import SpeedMonitor
    
    # Initialize the speed monitor
    speed_monitor = SpeedMonitor(
@@ -195,7 +195,7 @@ Example Usage
    :caption: Complete Pretraining Example
    :linenos:
 
-   from src.tasks.pretraining.orchestrator import PretrainingOrchestrator
+   from src.tasks.clm_training.orchestrator import PretrainingOrchestrator
    from src.config.config_loader import load_config
    
    # Load configuration

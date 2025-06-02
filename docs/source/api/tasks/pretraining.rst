@@ -8,7 +8,7 @@ This API reference provides detailed documentation for the pretraining module co
 Orchestrator
 ------------
 
-.. automodule:: src.tasks.pretraining.orchestrator
+.. automodule:: src.tasks.clm_training.orchestrator
    :members:
    :undoc-members:
    :show-inheritance:
@@ -16,7 +16,7 @@ Orchestrator
 Fabric Base
 -----------
 
-.. automodule:: src.tasks.pretraining.fabric.base
+.. automodule:: src.tasks.clm_training.fabric.base
    :members:
    :undoc-members:
    :show-inheritance:
@@ -24,7 +24,7 @@ Fabric Base
 Distributed Training
 --------------------
 
-.. automodule:: src.tasks.pretraining.fabric.distributed
+.. automodule:: src.tasks.clm_training.fabric.distributed
    :members:
    :undoc-members:
    :show-inheritance:
@@ -32,12 +32,12 @@ Distributed Training
 FSDP Wrappers
 -------------
 
-.. automodule:: src.tasks.pretraining.fabric.wrappers.fsdp_config
+.. automodule:: src.tasks.clm_training.fabric.wrappers.fsdp_config
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: src.tasks.pretraining.fabric.wrappers.policies
+.. automodule:: src.tasks.clm_training.fabric.wrappers.policies
    :members:
    :undoc-members:
    :show-inheritance:
@@ -45,7 +45,7 @@ FSDP Wrappers
 Model Generation
 -----------------
 
-.. automodule:: src.tasks.pretraining.fabric.generation
+.. automodule:: src.tasks.clm_training.fabric.generation
    :members:
    :undoc-members:
    :show-inheritance:
@@ -53,7 +53,7 @@ Model Generation
 Performance Monitoring
 ----------------------
 
-.. automodule:: src.tasks.pretraining.fabric.speed_monitor
+.. automodule:: src.tasks.clm_training.fabric.speed_monitor
    :members:
    :undoc-members:
    :show-inheritance:
@@ -61,7 +61,7 @@ Performance Monitoring
 Logging
 -------
 
-.. automodule:: src.tasks.pretraining.fabric.logger
+.. automodule:: src.tasks.clm_training.fabric.logger
    :members:
    :undoc-members:
    :show-inheritance:
@@ -69,7 +69,7 @@ Logging
 Utilities
 ---------
 
-.. automodule:: src.tasks.pretraining.utils
+.. automodule:: src.tasks.clm_training.utils
    :members:
    :undoc-members:
    :show-inheritance:
