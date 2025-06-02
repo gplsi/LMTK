@@ -5,6 +5,9 @@ import multiprocessing
 import psutil
 
 def inherit_init_params(cls):
+    """
+    Inherit init parameters from base class.
+    """
     base_init = cls.__bases__[0].__init__
     sig = inspect.signature(base_init)
     

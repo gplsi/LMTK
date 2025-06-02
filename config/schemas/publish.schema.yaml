@@ -1,0 +1,58 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "publish.schema.yaml"
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:  
+      publish:
+        type: object
+        properties:
+
+          format:
+            type: string
+            enum: ["fsdp"]
+            default: "fsdp"
+
+          base_model:
+            type: string
+            description: "HuggingFace base model name"
+
+          repo_id:
+            type: string
+            description: "HuggingFace repository user and ID"
+
+          checkpoint_path:
+            type: string
+            description: "Path to checkpoint file"
+
+          host:
+            type: string
+            description: "HuggingFace host"
+            enum: ["huggingface", "local"]
+            
+          commit_message:
+            type: string
+            description: "Commit message for the model and tokenizer upload"
+          
+          max_shard_size:
+            type: string
+            description: "Maximum shard size for model upload (e.g., '5GB')"
+            default: "5GB"
+          
+          safe_serialization:
+            type: boolean
+            description: "Whether to use safe serialization for model upload"
+            default: true
+          
+          create_pr:
+            type: boolean
+            description: "Whether to create a pull request instead of pushing directly"
+            default: false
+
+        required:
+          - format
+          - base_model
+          - repo_id
+          - checkpoint_path
+          - host
+      
