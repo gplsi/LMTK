@@ -19,8 +19,8 @@ allOf:
             minimum: 0
           task:
             type: string
-            enum: ["clm-training"]
-            default: "clm-training"
+            enum: ["clm_training", "instruction_finetuning", "mlm_training"]
+            default: "clm_training"
           batch_size:
             type: integer
             minimum: 1

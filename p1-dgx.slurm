@@ -21,8 +21,14 @@
 echo "Iniciando trabajo en `hostname` a las `date` $SLURM_IDX"
 nvidia-smi
 
+
+# Get current user and group IDs
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
+USERNAME=$(whoami)
+
 # --- Configuration ---
-HOST_PROJECT_ROOT="/home/gplsi/estevanell/LMTK" # Actual path on the Slurm node
+HOST_PROJECT_ROOT="/home/gplsi/$USERNAME/LMTK" # Actual path on the Slurm node
 CONTAINER_PROJECT_ROOT="/workspace"   # Desired path inside the container
 DOCKER_IMAGE_NAME="lmtk:latest"
 # Dockerfile path relative to the HOST_PROJECT_ROOT
@@ -78,10 +84,6 @@ echo "==============================="
 # --- Docker Image Management ---
 echo "Checking for Docker image: $DOCKER_IMAGE_NAME..."
 
-# Get current user and group IDs
-USER_ID=$(id -u)
-GROUP_ID=$(id -g)
-USERNAME=$(whoami)
 
 echo "Building Docker image with user mapping: USER_ID=$USER_ID, GROUP_ID=$GROUP_ID, USERNAME=$USERNAME"
 
