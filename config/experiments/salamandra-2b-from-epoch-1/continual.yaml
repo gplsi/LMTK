@@ -1,6 +1,6 @@
-task: "pretraining"   # pretraining, tokenization
+task: "clm_training"   # pretraining, tokenization
 experiment_name: "anonymized_corpus_va_continual_epochs_2,3"
-verbose_level: 4
+verbose_level: 3
 
 # Training data
 dataset:
@@ -13,17 +13,17 @@ output_dir: "output/salamandra_epochs_3-4/"
 # Model
 model_name: "BSC-LT/salamandra-2b"
 
-# Model precision
+# Model precisionW
 precision: "bf16-true"
 static_graph: false
 
 # Training parameters
 number_epochs: 4 # 2 + 2
-batch_size: 2
+batch_size: 1
 
 # Validation parameters
-validate_on_end: false
-validate_after_epoch: false
+validate_on_end: true
+validate_after_epoch: true
 validate_after_k_steps: 750
 
 # Gradient parameters

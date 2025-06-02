@@ -1,12 +1,12 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: "pretraining.fsdp.schema.yaml"
+$id: "clm_training.fsdp.schema.yaml"
 description: "Schema for FSDP experiments"
 
 allOf:
   - $ref: "base.schema.yaml"
   - type: object
     
-    properties:
+    1operties:
       
       auto_wrap_policy:
         type: string

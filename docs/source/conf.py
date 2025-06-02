@@ -64,8 +64,8 @@ autodoc_mock_imports = [
     'torch',
     'lightning',
     'transformers',
-    'src.tasks.pretraining.orchestrator',
-    'src.tasks.pretraining.fabric.distributed',
+    'src.tasks.clm_training.orchestrator',
+    'src.tasks.clm_training.fabric.distributed',
 ]
 
 # The theme to use for HTML and HTML Help pages

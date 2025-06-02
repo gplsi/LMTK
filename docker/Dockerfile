@@ -4,14 +4,14 @@ FROM nvcr.io/nvidia/pytorch:25.02-py3
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=1 \
-    POETRY_VERSION=2.1.2 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_VIRTUALENVS_IN_PROJECT=true \
-    POETRY_NO_INTERACTION=1
+    DEBIAN_FRONTEND=noninteractive \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
 
-# Add Poetry to PATH
-ENV PATH="$POETRY_HOME/bin:$PATH"
+# Arguments for user creation (will be passed from docker build)
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+ARG USERNAME=lmtk_user
 
 # Create workspace directory with proper permissions
 RUN mkdir -p /workspace && chmod 1777 /workspace
@@ -25,24 +25,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    sudo \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 - && \
-    chmod 755 $POETRY_HOME/bin/poetry
+# Create user with matching UID/GID from host
+RUN groupadd -g $GROUP_ID $USERNAME && \
+    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME && \
+    echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# Copy Poetry configuration files
-COPY pyproject.toml ./
+# Setup poetry configuration
+RUN pip install -U pip setuptools
+RUN pip install poetry==1.8.4
+RUN poetry config virtualenvs.create false
 
-# Generate a new lock file and then install dependencies
-RUN poetry lock && poetry install --no-root
+# Copy Poetry configuration files first for better caching
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies only (no dev dependencies for production)
+RUN poetry install --only=main --no-root && \
+    rm -rf $POETRY_CACHE_DIR
 
 # Copy project files
 COPY . /workspace/
 
-# Install project with all dependencies
-RUN poetry install
+# Install the project itself
+RUN poetry install --only-root
+
+# Set proper ownership of workspace
+RUN chown -R $USER_ID:$GROUP_ID /workspace
+
+# Switch to the created user
+USER $USERNAME
 
 # Configure entrypoint
 ENTRYPOINT ["/bin/bash", "-c"]
