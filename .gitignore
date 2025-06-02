@@ -177,3 +177,4 @@ wandb_cache/*
 
 *.err
 *.out
+.windsurf/*
