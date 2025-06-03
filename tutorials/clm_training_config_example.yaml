@@ -1,0 +1,40 @@
+task: pretraining
+experiment_name: tutorial_clm_training
+verbose_level: 4
+
+# Model configuration
+model:
+  name: gpt2
+  pretrained: true
+
+# Dataset configuration
+dataset:
+  source: local
+  nameOrPath: /path/to/your/tokenized_dataset
+  streaming: false
+  shuffle: true
+  
+# Training configuration
+training:
+  epochs: 3
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_steps: 100
+  max_steps: 1000
+  save_steps: 200
+  eval_steps: 200
+  logging_steps: 50
+  
+# Distributed training configuration
+distributed:
+  strategy: fsdp
+  fsdp:
+    sharding_strategy: FULL_SHARD
+    cpu_offload: false
+    mixed_precision: true
+    
+# Output configuration
+output:
+  dir: /path/to/output_directory
