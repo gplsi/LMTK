@@ -1,0 +1,23 @@
+task: "tokenization"
+experiment_name: "anonymized_corpus_va_gpt2_test"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "openai-community/gpt2"
+  context_length: 1024
+  overlap: 128
+  task: "clm_training"
+
+dataset:
+  source: "local"
+  nameOrPath: "/workspace/data/anonymized"
+  format: "files"
+  file_config:
+    text_key: "text"
+    format: "jsonl"
+    encoding: "utf-8"
+
+output:
+  path: "data/tokenized/anonymized-va-gpt2"
+
+test_size: 0

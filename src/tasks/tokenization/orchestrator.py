@@ -85,7 +85,7 @@ class TokenizationOrchestrator(BaseOrchestrator):
         )
 
 
-        task = self.config.get("task", "clm_training")
+        task = self.config.tokenizer.get("task", "clm_training")
         if task == "clm_training":
             tokenizer = CausalLMTokenizer(tokenizer_config)
         else:

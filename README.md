@@ -172,6 +172,31 @@ make tokenize CONFIG=config/tokenization.yaml
 make train CONFIG=config/pretraining.yaml
 ```
 
+## 🖥️ SLURM Cluster Execution
+
+For running on SLURM clusters, we provide a comprehensive set of configurable job scripts in the `slurm/` directory:
+
+```bash
+# Quick submission with defaults
+cd slurm
+sbatch p1-dgx.slurm
+
+# Use the helper script for easy configuration
+./submit_job.sh -c config/experiments/test_continual.yaml -k your_wandb_key -g 4
+
+# Custom resource allocation
+./submit_job.sh -g 8 -m 400G -t 72:00:00 -o large_experiment
+```
+
+**Key Features:**
+- 🔧 **Fully Configurable** - All paths, resources, and settings via environment variables
+- 🐳 **Docker Integration** - Containerized execution with automatic user mapping
+- 📊 **WandB Integration** - Automatic experiment tracking and logging
+- 🔍 **Debug Support** - Comprehensive error reporting and troubleshooting
+- 📁 **Organized Structure** - Clean separation of job scripts and configurations
+
+See [`slurm/README.md`](slurm/README.md) for detailed documentation and examples.
+
 ## ⚙️ Configuration System
 
 **Structured YAML Schemas**:
