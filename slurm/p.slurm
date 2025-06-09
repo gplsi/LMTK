@@ -40,6 +40,7 @@ CONTAINER_PROJECT_ROOT="${CONTAINER_PROJECT_ROOT:-/workspace}"
 # --- Docker Configuration ---
 DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-lmtk:latest}"
 DOCKERFILE_RELATIVE_PATH="${DOCKERFILE_RELATIVE_PATH:-docker/Dockerfile}"
+FORCE_REBUILD="${FORCE_REBUILD:-false}"
 
 # --- Output Configuration (derived from config or defaults) ---
 OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-experiment_$(date +%Y%m%d_%H%M%S)}"
@@ -188,11 +189,38 @@ echo "==============================="
 echo "===== Docker Image Management ====="
 echo "Checking for Docker image: $DOCKER_IMAGE_NAME"
 
-if docker image inspect "$DOCKER_IMAGE_NAME" &> /dev/null; then
+# Check if force rebuild is requested
+if [[ "$FORCE_REBUILD" == "true" ]]; then
+    echo "🔨 Force rebuild requested. Rebuilding Docker image: $DOCKER_IMAGE_NAME"
+    echo "Build arguments: USER_ID=$USER_ID, GROUP_ID=$GROUP_ID, USERNAME=$USERNAME"
+    
+    # Remove existing image first
+    docker rmi "$DOCKER_IMAGE_NAME" 2>/dev/null || true
+    
+    docker build \
+        --build-arg USER_ID="$USER_ID" \
+        --build-arg GROUP_ID="$GROUP_ID" \
+        --build-arg USERNAME="$USERNAME" \
+        --network=host \
+        -t "$DOCKER_IMAGE_NAME" \
+        -f "$DOCKERFILE_PATH" \
+        "$HOST_PROJECT_ROOT"
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Docker image built successfully: $DOCKER_IMAGE_NAME"
+    else
+        echo "❌ Docker build failed"
+        exit 1
+    fi
+# More robust image existence check - actually try to run a simple command
+elif docker run --rm --entrypoint /bin/echo "$DOCKER_IMAGE_NAME" "Image test successful" &> /dev/null; then
     echo "✅ Using existing Docker image: $DOCKER_IMAGE_NAME"
 else
-    echo "🔨 Docker image not found. Building: $DOCKER_IMAGE_NAME"
+    echo "🔨 Docker image not found or corrupted. Building: $DOCKER_IMAGE_NAME"
     echo "Build arguments: USER_ID=$USER_ID, GROUP_ID=$GROUP_ID, USERNAME=$USERNAME"
+    
+    # Remove any potentially corrupted image first
+    docker rmi "$DOCKER_IMAGE_NAME" 2>/dev/null || true
     
     docker build \
         --build-arg USER_ID="$USER_ID" \
@@ -236,6 +264,9 @@ echo "Container name: $CONTAINER_NAME"
 echo "Docker image: $DOCKER_IMAGE_NAME"
 echo "Host project root: $HOST_PROJECT_ROOT"
 echo "Container project root: $CONTAINER_PROJECT_ROOT"
+echo "Docker version: $(docker --version)"
+echo "Available Docker images:"
+docker images | grep -E "(REPOSITORY|lmtk)" || echo "No lmtk images found"
 echo "======================================="
 
 docker run \
@@ -273,11 +304,17 @@ echo "Job finished at: $(date)"
 if [ $EXIT_CODE -ne 0 ]; then
     echo "❌ Job failed with exit code: $EXIT_CODE"
     echo "===== Debugging Information ====="
+    echo "Docker images available:"
+    docker images | head -10
+    
     echo "Recent Docker events:"
     docker events --since="1h" --until="$(date --iso-8601=seconds)" | tail -10 || echo "No Docker events available"
     
     echo "Docker system info:"
     docker system df || echo "Docker system info not available"
+    
+    echo "Testing Docker image again:"
+    docker run --rm --entrypoint /bin/echo "$DOCKER_IMAGE_NAME" "Test after failure" || echo "Image test failed"
     
     echo "SLURM job details:"
     scontrol show job "$SLURM_JOB_ID" 2>/dev/null || echo "SLURM job details not available"
