@@ -41,7 +41,7 @@ class BaseOrchestrator(ABC):
         self.logger = get_logger(__name__, self.verbose_level)
         self.storage = DatasetStorage(self.verbose_level)
 
-    def _validate__dataset_config(self) -> None:
+    def _validate_dataset_config(self) -> None:
         """
         Validate the presence of dataset configuration.
 
