@@ -1,0 +1,215 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "tokenization_instruction.schema.yaml"
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:      
+      # Model configuration
+      model_name:
+        type: string
+        description: "Model name for instruction tuning"
+      llm_type:
+        type: string
+        enum: ["causal", "masked"]
+        description: "Type of language model"
+      model_type:
+        type: string
+        description: "Model architecture type"
+      
+      # Tokenizer configuration
+      tokenizer:
+        type: object
+        properties:
+          tokenizer_name:
+            type: string
+            description: "HuggingFace tokenizer name for instruction tokenization"
+          context_length:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            description: "Maximum context length for tokenization"
+          batch_size:
+            type: integer
+            minimum: 1
+            default: 2000
+            description: "Batch size for processing datasets. Higher values improve performance but use more memory."
+          num_proc:
+            type: integer
+            minimum: 1
+            maximum: 32
+            default: 1
+            description: "Number of processes for parallel tokenization. Set > 1 for faster processing of large datasets."
+          show_progress:
+            type: boolean
+            default: true
+            description: "Whether to show progress bars during tokenization"
+        required:
+          - tokenizer_name
+          - context_length
+
+      # Multi-language configuration
+      languages:
+        type: array
+        items:
+          type: string
+        minItems: 1
+        description: "List of languages to process (e.g., ['ca', 'en', 'es', 'eu', 'gl', 'pt'])"
+
+      # Data paths configuration
+      dataPath:
+        type: string
+        description: "Base path to the dataset directory containing language-specific subdirectories"
+
+      # Output configuration with train/validation splits
+      output:
+        type: object
+        properties:
+          train_path:
+            type: string
+            description: "Path to save training dataset"
+          validation_path:
+            type: string
+            description: "Path to save validation dataset"
+        required:
+          - train_path
+          - validation_path
+
+      # Train/validation split configuration
+      train_size:
+        type: number
+        minimum: 0
+        maximum: 1
+        default: 0.7
+        description: "Proportion of data to use for training (default: 0.7 for 70/30 split)"
+
+      # Instruction tuning specific configuration
+      prompt_style:
+        type: string
+        description: "Prompt style for instruction formatting"
+      mask_prompt:
+        type: boolean
+        default: true
+        description: "Whether to mask prompt tokens in labels"
+      ignore_index:
+        type: integer
+        default: -100
+        description: "Index to ignore in loss calculation"
+      
+      # Sampling configuration
+      temperature:
+        type: number
+        minimum: 0
+        description: "Temperature for sampling"
+      top_p:
+        type: number
+        minimum: 0
+        maximum: 1
+        description: "Top-p for sampling"
+      max_new_tokens:
+        type: integer
+        minimum: 1
+        description: "Maximum new tokens"
+      do_sample:
+        type: boolean
+        description: "Whether to use sampling"
+      precision:
+        type: string
+        description: "Precision for computation"
+
+      # Training configuration
+      is_training:
+        type: boolean
+        description: "Flag indicating this is for training"
+      is_evaluate:
+        type: boolean
+        description: "Flag indicating evaluation is enabled"
+      decay_lr:
+        type: boolean
+        description: "Whether to decay learning rate"
+      max_step:
+        type: integer
+        minimum: 1
+        description: "Maximum training steps"
+      grad_clip:
+        type: number
+        minimum: 0
+        description: "Gradient clipping value"
+      log_step_interval:
+        type: integer
+        minimum: 1
+        description: "Logging step interval"
+
+      # Path configuration
+      checkpoint_path:
+        type: string
+        description: "Path for model checkpoints"
+      wandb_project:
+        type: string
+        description: "Weights & Biases project name"
+
+      # Training arguments
+      train_args:
+        type: object
+        properties:
+          epochs:
+            type: integer
+            minimum: 1
+          learning_rate:
+            type: number
+            minimum: 0
+          beta1:
+            type: number
+            minimum: 0
+            maximum: 1
+          beta2:
+            type: number
+            minimum: 0
+            maximum: 1
+          weight_decay:
+            type: number
+            minimum: 0
+          global_batch_size:
+            type: integer
+            minimum: 1
+          micro_batch_size:
+            type: integer
+            minimum: 1
+          log_interval:
+            type: integer
+            minimum: 1
+          save_interval:
+            type: integer
+            minimum: 1
+          lr_warmup_steps:
+            type: integer
+            minimum: 0
+          max_seq_length:
+            type: integer
+            minimum: 1
+          mask_prompt:
+            type: boolean
+          ignore_index:
+            type: integer
+
+      # Evaluation arguments
+      eval_args:
+        type: object
+        properties:
+          micro_batch_size:
+            type: integer
+            minimum: 1
+          log_interval:
+            type: integer
+            minimum: 1
+          interval:
+            type: integer
+            minimum: 1
+          max_iters:
+            type: integer
+            minimum: 1
+
+    required:
+      - tokenizer
+      - languages
+      - dataPath
+      - output
