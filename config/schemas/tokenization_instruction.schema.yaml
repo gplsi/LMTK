@@ -83,9 +83,6 @@ allOf:
         description: "Proportion of data to use for training (default: 0.7 for 70/30 split)"
 
       # Instruction tuning specific configuration
-      prompt_style:
-        type: string
-        description: "Prompt style for instruction formatting"
       mask_prompt:
         type: boolean
         default: true
@@ -95,116 +92,11 @@ allOf:
         default: -100
         description: "Index to ignore in loss calculation"
       
-      # Sampling configuration
-      temperature:
-        type: number
-        minimum: 0
-        description: "Temperature for sampling"
-      top_p:
-        type: number
-        minimum: 0
-        maximum: 1
-        description: "Top-p for sampling"
-      max_new_tokens:
-        type: integer
-        minimum: 1
-        description: "Maximum new tokens"
-      do_sample:
-        type: boolean
-        description: "Whether to use sampling"
-      precision:
-        type: string
-        description: "Precision for computation"
-
-      # Training configuration
-      is_training:
-        type: boolean
-        description: "Flag indicating this is for training"
-      is_evaluate:
-        type: boolean
-        description: "Flag indicating evaluation is enabled"
-      decay_lr:
-        type: boolean
-        description: "Whether to decay learning rate"
-      max_step:
-        type: integer
-        minimum: 1
-        description: "Maximum training steps"
-      grad_clip:
-        type: number
-        minimum: 0
-        description: "Gradient clipping value"
-      log_step_interval:
-        type: integer
-        minimum: 1
-        description: "Logging step interval"
-
-      # Path configuration
-      checkpoint_path:
-        type: string
-        description: "Path for model checkpoints"
-      wandb_project:
-        type: string
-        description: "Weights & Biases project name"
-
       # Training arguments
       train_args:
         type: object
         properties:
-          epochs:
-            type: integer
-            minimum: 1
-          learning_rate:
-            type: number
-            minimum: 0
-          beta1:
-            type: number
-            minimum: 0
-            maximum: 1
-          beta2:
-            type: number
-            minimum: 0
-            maximum: 1
-          weight_decay:
-            type: number
-            minimum: 0
-          global_batch_size:
-            type: integer
-            minimum: 1
-          micro_batch_size:
-            type: integer
-            minimum: 1
-          log_interval:
-            type: integer
-            minimum: 1
-          save_interval:
-            type: integer
-            minimum: 1
-          lr_warmup_steps:
-            type: integer
-            minimum: 0
           max_seq_length:
-            type: integer
-            minimum: 1
-          mask_prompt:
-            type: boolean
-          ignore_index:
-            type: integer
-
-      # Evaluation arguments
-      eval_args:
-        type: object
-        properties:
-          micro_batch_size:
-            type: integer
-            minimum: 1
-          log_interval:
-            type: integer
-            minimum: 1
-          interval:
-            type: integer
-            minimum: 1
-          max_iters:
             type: integer
             minimum: 1
 
