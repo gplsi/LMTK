@@ -27,7 +27,6 @@ dataPath: "/workspace/NAS/GPLSI/odesiaChallenge/data/ALIA/v2"  # Base path conta
 
 # Dataset splitting configuration (70/30 split)
 train_size: 0.7             # 70% for training, 30% for validation
-random_seed: 42             # Seed for reproducible splits
 
 # Output paths (matching ALIA tokenized data structure)
 output:
@@ -35,46 +34,9 @@ output:
   validation_path: "/workspace/NAS/GPLSI/odesiaChallenge/data/ALIA/tokenized_data/ALIA/v2/tokenizedEval"  # Path for validation dataset
 
 # Instruction tuning specific configuration
-prompt_style: "tinyllama"   # Prompt style for instruction formatting
 mask_prompt: true           # Mask prompt tokens in labels (standard for instruction tuning)
 ignore_index: -100          # Index to ignore in loss calculation
-temperature: 1e-3           # Temperature for sampling (if used during preprocessing)
-top_p: 0.9                  # Top-p for sampling (if used during preprocessing)
-max_new_tokens: 20          # Maximum new tokens (if used during preprocessing)
-do_sample: true             # Whether to use sampling (if used during preprocessing)
-precision: "bf16-true"      # Precision for computation
 
-# Training arguments (passed to tokenizer_dataset_multiTurn)
+# Training arguments
 train_args:
-  epochs: 3
-  learning_rate: 1e-5
-  beta1: 0.9
-  beta2: 0.95
-  weight_decay: 1e-1
-  global_batch_size: 4
-  micro_batch_size: 1
-  log_interval: 5
-  save_interval: 5
-  lr_warmup_steps: 100
   max_seq_length: 512         # Maximum sequence length for tokenization
-  mask_prompt: true           # Mask prompt tokens in labels
-  ignore_index: -100          # Index to ignore in loss calculation
-
-# Evaluation arguments
-eval_args:
-  micro_batch_size: 1
-  log_interval: 5
-  interval: 5
-  max_iters: 10000
-
-# Training configuration flags
-is_training: true           # Flag indicating this is for training
-is_evaluate: true           # Flag indicating evaluation is enabled
-decay_lr: true              # Whether to decay learning rate
-max_step: 100000            # Maximum training steps
-grad_clip: 1.0              # Gradient clipping value
-log_step_interval: 1        # Logging step interval
-
-# Paths for model checkpoints
-checkpoint_path: "/models/ALIA/"
-wandb_project: "ALIA_instruction_sala_2b_v2"
