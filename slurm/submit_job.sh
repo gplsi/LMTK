@@ -30,6 +30,7 @@ OUTPUT_DIR=""
 OUTPUT_FILE_PATTERN=""
 ERROR_FILE_PATTERN=""
 DRY_RUN=false
+FORCE_REBUILD=false
 
 # Load configuration file defaults if it exists
 SLURM_CONFIG_FILE="$SCRIPT_DIR/slurm_config.env"
@@ -78,6 +79,7 @@ OPTIONAL:
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
     -o, --output OUTPUT_DIR      Output directory name (optional)
+    --rebuild                    Force rebuild Docker image even if it exists
     -d, --dry-run                Show the command that would be executed without running it
     -h, --help                   Show this help message
 
@@ -97,6 +99,9 @@ EXAMPLES:
     # Different partition
     $0 -c config/experiments/my_experiment.yaml -p gpu -g 8 -m 400G
 
+    # Force rebuild Docker image (useful after code changes)
+    $0 -c config/experiments/test_continual.yaml --rebuild
+
     # Dry run to see what would be executed
     $0 -c config/experiments/my_experiment.yaml -d
 
@@ -106,6 +111,7 @@ NOTES:
     - If no WandB key is provided, a warning will be shown but job will continue
     - Use environment variable WANDB_API_KEY as alternative to -k flag
     - Job logs will be saved as {job_id}_lmtk.out and {job_id}_lmtk.err
+    - Use --rebuild if you encounter Docker image issues or after code changes
 
 SECURITY:
     - Never commit WandB API keys to version control
@@ -160,6 +166,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --rebuild)
+            FORCE_REBUILD=true
             shift
             ;;
         -h|--help)
@@ -221,6 +231,10 @@ fi
 
 if [[ -n "$OUTPUT_DIR" ]]; then
     EXPORT_VARS="${EXPORT_VARS},OUTPUT_DIR_NAME=$OUTPUT_DIR"
+fi
+
+if [[ "$FORCE_REBUILD" == "true" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},FORCE_REBUILD=true"
 fi
 
 # Always include job configuration variables for reference
