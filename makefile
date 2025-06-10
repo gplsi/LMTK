@@ -1,7 +1,6 @@
 # Cross-platform Makefile for Continual Pretraining Framework
 PROJECT_NAME = lmtk
 CONFIG_PATH = config
-DOCKER_RUN = docker run -v "/raid/gplsi/ernesto/LMTK":/workspace
 GPU_DEVICES ?= all  # Can specify "0", "0,1" or "none" for CPU-only
 
 # Get current user and group IDs for Docker user mapping
@@ -30,7 +29,8 @@ build:
 	
 container:
 	@echo "Starting container with user: $(USERNAME) (UID: $(USER_ID), GID: $(GROUP_ID))"
-	$(DOCKER_RUN) \
+	docker run \
+		-v ".":/workspace \
 		--name gplsi_lmtk \
 		-it \
 		--network=host \
