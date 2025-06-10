@@ -42,7 +42,7 @@ pip install -e .[dev]  # With development dependencies
 
 ```bash
 # Build development image (with Poetry)
-make build-dev
+make build
 
 # Run development container
 make container

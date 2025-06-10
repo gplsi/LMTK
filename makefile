@@ -30,7 +30,8 @@ build:
 	
 container:
 	@echo "Starting container with user: $(USERNAME) (UID: $(USER_ID), GID: $(GROUP_ID))"
-	$(DOCKER_RUN) \
+	docker run \
+		-v ".":/workspace \
 		--name gplsi_lmtk \
 		-it \
 		--network=host \
