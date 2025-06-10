@@ -34,7 +34,7 @@ NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
 
 # --- Project Paths (auto-detected) ---
 PROJECT_NAME="${PROJECT_NAME:-LMTK}"
-HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-/home/gplsi/$(whoami)/$PROJECT_NAME}"
+HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-/home/gplsi/egrande/$PROJECT_NAME}"
 CONTAINER_PROJECT_ROOT="${CONTAINER_PROJECT_ROOT:-/workspace}"
 
 # --- Docker Configuration ---
@@ -116,6 +116,7 @@ LOG_DIR="$HOST_PROJECT_ROOT/output/$OUTPUT_DIR_NAME/$LOG_SUBDIR"
 CACHE_DIR="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME"
 CONFIG_PATH="$HOST_PROJECT_ROOT/$CONFIG_FILE"
 
+echo $CACHE_DIR
 # --- Create Required Directories ---
 echo "===== Setting up directories ====="
 mkdir -p "$LOG_DIR"

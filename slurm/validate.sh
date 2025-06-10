@@ -51,7 +51,7 @@ validate_files() {
     if [ ! -d "$PROJECT_ROOT" ]; then
         echo "❌ Project root directory does not exist: $PROJECT_ROOT"
     else
-        echo "✅ Project root exists"
+        echo "✅ Project root exists: $PROJECT_ROOT"
     fi
     
     echo "SLURM Script: $SLURM_SCRIPT"
