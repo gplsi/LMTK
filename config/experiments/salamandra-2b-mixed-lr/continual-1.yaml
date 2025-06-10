@@ -18,7 +18,7 @@ precision: "bf16-true"
 static_graph: false
 
 # Training parameters
-number_epochs: 1
+number_epochs: 2
 batch_size: 2
 
 # Validation parameters
