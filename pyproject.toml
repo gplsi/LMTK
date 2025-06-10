@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "workspace"
 version = "0.1.0"
-description = "Machine learning training framework"
-authors = ["Your Name <you@example.com>"]
+description = "LMTK"
+authors = ["Ernesto Luis Estevanell-Valladares <ernesto.estevanell@ua.es>, Fabio Yáñez-Romero <fabio.yanez@ua.es>"]
 readme = "README.md"
 packages = [{include = "src"}]
 
