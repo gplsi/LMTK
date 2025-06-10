@@ -23,15 +23,15 @@ tokenizer:
 languages: ['ca', 'en', 'es', 'eu', 'gl', 'pt']  # Languages to process
 
 # Data path (ALIA dataset v2)
-dataPath: "/workspace/NAS/GPLSI/odesiaChallenge/data/ALIA/v2"  # Base path containing language subdirectories
+dataPath: "data/ALIA/v2"  # Base path containing language subdirectories
 
 # Dataset splitting configuration (70/30 split)
 train_size: 0.7             # 70% for training, 30% for validation
 
 # Output paths (matching ALIA tokenized data structure)
 output:
-  train_path: "/workspace/NAS/GPLSI/odesiaChallenge/data/ALIA/tokenized_data/ALIA/v2/tokenizedTrain"    # Path for training dataset
-  validation_path: "/workspace/NAS/GPLSI/odesiaChallenge/data/ALIA/tokenized_data/ALIA/v2/tokenizedEval"  # Path for validation dataset
+  train_path: "data/ALIA/tokenized_data/ALIA/v2/tokenizedTrain"    # Path for training dataset
+  validation_path: "data/ALIA/tokenized_data/ALIA/v2/tokenizedEval"  # Path for validation dataset
 
 # Instruction tuning specific configuration
 mask_prompt: true           # Mask prompt tokens in labels (standard for instruction tuning)

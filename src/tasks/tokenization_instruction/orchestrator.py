@@ -48,9 +48,9 @@ class TokenizationInstructionOrchestrator(BaseOrchestrator):
             raise ValueError("Data path must be provided")
         if not self.config.output:
             raise ValueError("Output configuration must be provided")
-        if not self.config.output.get("training_tokenized"):
+        if not self.config.output.get("train_path"):
             raise ValueError("Training output path must be provided")
-        if not self.config.output.get("eval_tokenized"):
+        if not self.config.output.get("validation_path"):
             raise ValueError("Evaluation output path must be provided")
 
     def process_multi_language_datasets(self) -> tuple[HFDataset, HFDataset]:
