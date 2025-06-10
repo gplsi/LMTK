@@ -34,7 +34,7 @@ container:
 		--name gplsi_lmtk \
 		-it \
 		--network=host \
-		--gpus '"device=0,3"' \
+		--gpus all \
 		--user "$(USER_ID):$(GROUP_ID)" \
 		$(PROJECT_NAME) bash
 
