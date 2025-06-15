@@ -420,7 +420,8 @@ class FabricTrainerBase(ABC):
             self._try_validate(fabric, epochFinished=True)
         self._try_validate(fabric, trainingFinished=True)
 
-        if save_on_end and not save_on_validate:
+        # Only save at end if not already saved by validation at end
+        if save_on_end and not (self.config.get("validate_on_end", True) and save_on_validate):
             self.cli_logger.info("Saving final checkpoint")
             self._save(fabric, trainingFinished=True)
     
