@@ -31,15 +31,30 @@ validate_on_end: false
 validate_after_k_steps: null
 
 # Output
-depth: 1
-output_dir: "data/training_outputs/quijote_gpt2"
+output_dir: "output/"
 
 # Parallelization
-parallelization_strategy: "none"
-parallelization_config: {}
+parallelization_strategy: "fsdp"
+
+# FSDP specific parameters
+auto_wrap_policy: "gpt2"
+sharding_strategy: "FULL_SHARD"
+state_dict_type: "sharded"
+limit_all_gathers: true
+cpu_offload: false
+num_workers: 4
+gradient_checkpointing: true
+
 
 # Logging
-logging_config: "none"
+logging_config: "wandb"
+
+# Wandb logging specific parameters
+wandb_project: "prueba_publish"
+wandb_entity: "gplsi_continual"
+log_model: false
+log_iter_interval: 10
+
 
 # Seed
 seed: 42
