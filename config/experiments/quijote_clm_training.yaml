@@ -1,0 +1,45 @@
+task: "clm_training"
+experiment_name: "quijote_gpt2_clm_training"
+verbose_level: 4
+
+# Model configuration
+dataset:
+  source: "local"
+  nameOrPath: "data/tokenized/quijote"
+  format: "hf"
+
+model_name: "openai-community/gpt2"
+precision: "bf16-true"
+
+# Training arguments
+number_epochs: 1
+batch_size: 1
+gradient_accumulation: true
+gradient_accumulation_steps: 8
+grad_clip: 1.0
+lr:  0.00002
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.95
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06
+
+# Validation
+validate_after_epoch: false
+validate_on_end: false
+validate_after_k_steps: null
+
+# Output
+depth: 1
+output_dir: "data/training_outputs/quijote_gpt2"
+
+# Parallelization
+parallelization_strategy: "none"
+parallelization_config: {}
+
+# Logging
+logging_config: "none"
+
+# Seed
+seed: 42

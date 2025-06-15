@@ -70,7 +70,7 @@ class BaseOrchestrator(ABC):
             This method is designed to be extensible; subclasses can override or extend it to support custom dataset sources or formats.
         """
 
-        self._validate_dataset_config()
+        self.validate_config()
         
         # Safely get use_txt_as_samples with a default value if not present
         use_txt_as_samples = False
@@ -91,6 +91,7 @@ class BaseOrchestrator(ABC):
                 
                 if self.config.test_size:
                     self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
+                # TODO: make it work for single files too
                 dataset = dataset_handler.split(dataset, split_ratio=self.config.test_size)
                 
                 return dataset
@@ -111,6 +112,7 @@ class BaseOrchestrator(ABC):
                 
                 if self.config.test_size:
                     self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
+                # TODO: make it work for single files too
                 dataset = dataset_handler.split(dataset, split_ratio=self.config.test_size)
                 
                 return dataset
