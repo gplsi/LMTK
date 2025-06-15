@@ -60,6 +60,16 @@ allOf:
         default: null
         description: "Number of steps to validate after"
 
+      save_on_validate:
+        type: boolean
+        default: false
+        description: "If True, save checkpoint after validation"
+
+      save_on_end:
+        type: boolean
+        default: false
+        description: "If True, save checkpoint at the end of training"
+
       # Optimizer arguments
       gradient_accumulation:
         type: boolean
