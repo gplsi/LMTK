@@ -1,0 +1,24 @@
+# Tokenization Instruction Task YAML Config
+# This config is designed for the `tokenization_instruction` tutorial notebook.
+tokenizer:
+  name: "openai-community/gpt2"
+  add_special_tokens: true
+  padding: "max_length"
+  truncation: true
+  max_length: 512
+  lowercase: false
+  save_directory: "tutorials/output/tokenizer_instruction"
+
+dataset:
+  nameOrPath: "tutorials/data/raw_text_data/instruction_data.txt"
+  format: "files"
+  test_size: 0.1
+  shuffle: true
+  text_column: "text"
+  output_dir: "tutorials/output/tokenized_instruction_dataset"
+
+output:
+  save_format: "hf"
+  push_to_hub: false
+  repo_id: ""
+  commit_message: ""

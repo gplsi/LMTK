@@ -33,7 +33,7 @@ task: clm_training
 validate_after_epoch: false
 validate_after_k_steps: 1000
 validate_on_end: false
-verbose_level: 4
+verbose_level: 2
 wandb_entity: your_wandb_entity
 wandb_project: your_wandb_project
 warmup_proportion: 0.06
