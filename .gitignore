@@ -175,6 +175,8 @@ output/*
 experiments/*
 wandb/*
 wandb_cache/*
+tutorials/data/sample_tokenized_dataset
+tutorials/output
 
 *.err
 *.out

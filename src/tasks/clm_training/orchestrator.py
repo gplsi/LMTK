@@ -187,7 +187,7 @@ class ContinualOrchestrator(BaseOrchestrator):
             )
         )
         
-        self._validate__dataset_config()
+        self._validate_dataset_config()
         
         if self.config.dataset.source == "local":
             self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")

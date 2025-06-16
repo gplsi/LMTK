@@ -25,15 +25,13 @@ beta2: 0.95
 lr_scheduler: "warmup_linear"
 warmup_proportion: 0.06
 
-# Validation
+# Validation configuration
 validate_after_epoch: false
 validate_on_end: false
 validate_after_k_steps: null
 
-# Checkpoint saving logic
-# Set to true to save checkpoint after validation (steps, epoch, or end)
+# Saving configuration
 save_on_validate: false
-# Set to true to save checkpoint at the end of training (if not already saved by validation)
 save_on_end: true
 
 # Output

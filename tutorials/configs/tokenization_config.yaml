@@ -1,0 +1,28 @@
+task: tokenization
+experiment_name: tutorial_tokenization
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "openai-community/gpt2"
+  use_fast: true
+  task_type: "clm_training"    # If required by your framework
+  context_length: 1024
+  overlap: 256
+  batch_size: 1024
+  num_proc: 2
+  show_progress: true
+
+dataset:
+  source: "local"
+  nameOrPath: "tutorials/data/raw_text_data"   # <-- update to your real data path
+  format: "files"
+
+output:
+  path: "tutorials/data/sample_tokenized_dataset"
+  format: "hf"
+  split: true
+  
+  shuffle: true
+  seed: 42
+
+test_size: 0
