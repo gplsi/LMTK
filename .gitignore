@@ -172,6 +172,7 @@ cython_debug/
 
 data/*
 output/*
+experiments/*
 wandb/*
 wandb_cache/*
 

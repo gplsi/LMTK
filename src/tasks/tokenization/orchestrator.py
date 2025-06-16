@@ -84,9 +84,7 @@ class TokenizationOrchestrator(BaseOrchestrator):
             ),
         )
 
-
-        # Use the tokenizer's task field to determine the tokenization strategy
-        task = getattr(self.config.tokenizer, "task", None)
+        task = self.config.tokenizer.get("task", "clm_training")
         if task == "clm_training":
             tokenizer = CausalLMTokenizer(tokenizer_config)
 

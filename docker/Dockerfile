@@ -64,7 +64,7 @@ COPY . /workspace/
 RUN poetry install --only-root
 
 # Set proper ownership of workspace
-RUN chown -R $USER_ID:$GROUP_ID /workspace
+RUN chmod -R 770 /workspace
 
 # Switch to the created user
 USER $USERNAME
