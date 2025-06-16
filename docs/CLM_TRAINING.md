@@ -19,14 +19,68 @@ Continual pretraining refers to further training of a pretrained language model 
 
 ```yaml
 task: "clm_training"
-experiment_name: "tutorial_clm_training"
-model_name: "openai-community/gpt2"
+experiment_name: "quijote_gpt2_clm_training"
+verbose_level: 4
+
+# Model configuration
 dataset:
-  nameOrPath: "tutorials/data/raw_text_data/quijote.txt"
-  format: "files"
-output_dir: "tutorials/output/clm_training"
+  source: "local"
+  nameOrPath: "data/tokenized/quijote"
+  format: "hf"
+
+model_name: "openai-community/gpt2"
+precision: "bf16-true"
+
+# Training arguments
+number_epochs: 1
+batch_size: 8
+gradient_accumulation: true
+gradient_accumulation_steps: 1
+grad_clip: 1.0
+lr:  0.00002
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.95
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06
+
+# Validation configuration
+validate_after_epoch: false
+validate_on_end: false
+validate_after_k_steps: null
+
+# Saving configuration
+save_on_validate: false
+save_on_end: true
+
+# Output
+output_dir: "output/"
+
+# Parallelization
 parallelization_strategy: "fsdp"
-# ... more options ...
+
+# FSDP specific parameters
+auto_wrap_policy: "gpt2"
+sharding_strategy: "FULL_SHARD"
+state_dict_type: "sharded"
+limit_all_gathers: true
+cpu_offload: false
+num_workers: 4
+gradient_checkpointing: true
+
+# Logging
+logging_config: "wandb"
+
+# Wandb logging specific parameters
+wandb_project: "prueba_publish"
+wandb_entity: "gplsi_continual"
+log_model: false
+log_iter_interval: 10
+
+
+# Seed
+seed: 42
 ```
 
 2. **Launch training**:

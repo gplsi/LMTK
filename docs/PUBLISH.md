@@ -16,15 +16,19 @@ This guide describes how to use LMTK's publish task to upload trained models, to
 
 ```yaml
 task: "publish"
+experiment_name: "quijote_gpt2_publish"
+verbose_level: 4
+
 publish:
-  format: "fsdp"
-  host: "huggingface"
-  base_model: "openai-community/gpt2"
-  checkpoint_path: "tutorials/output/epoch-001-final-ckpt.pth"
-  repo_id: "your-username/your-model-repo"
-  commit_message: "Add tutorial-trained checkpoint"
+  format: "fsdp"                                 
+  host: "huggingface"                           
+  base_model: "openai-community/gpt2"           
+  checkpoint_path: "output/epoch-001-final-ckpt.pth"  
+  repo_id: "gplsi/quijote-gpt2-clm"      
+  commit_message: "Add Quijote GPT-2 CLM checkpoint"
   max_shard_size: "5GB"
   safe_serialization: true
+  create_pr: false
 ```
 
 2. **Authenticate with Hugging Face**:

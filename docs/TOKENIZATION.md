@@ -18,25 +18,32 @@ The tokenization task converts raw text data into tokenized datasets compatible 
 1. **Prepare your config** (see `tutorials/configs/tokenization_config.yaml`):
 
 ```yaml
+task: "tokenization"
+experiment_name: "quijote_gpt2_tokenization"
+verbose_level: 2
+
 tokenizer:
-  name: "openai-community/gpt2"
-  add_special_tokens: true
-  padding: "max_length"
-  truncation: true
-  max_length: 512
-  save_directory: "tutorials/output/tokenizer"
+  tokenizer_name: "openai-community/gpt2"
+  context_length: 1024
+  overlap: 256
+  task: "clm_training"
+  batch_size: 1024
+  num_proc: 2
+  show_progress: true
 
 dataset:
-  nameOrPath: "tutorials/data/raw_text_data/quijote.txt"
+  source: "local"
+  nameOrPath: "/workspace/data/testing"
   format: "files"
-  test_size: 0.1
-  shuffle: true
-  text_column: "text"
-  output_dir: "tutorials/output/tokenized_dataset"
+  use_txt_as_samples: true
+  file_config:
+    format: "txt"
+    encoding: "utf-8"
 
 output:
-  save_format: "hf"
-  push_to_hub: false
+  path: "data/tokenized/quijote"
+
+test_size: 0
 ```
 
 2. **Run the tokenization task**:
