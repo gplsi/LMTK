@@ -34,7 +34,7 @@ NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
 
 # --- Project Paths (auto-detected) ---
 PROJECT_NAME="${PROJECT_NAME:-LMTK}"
-HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-/home/gplsi/egrande/$PROJECT_NAME}"
+HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-/home/gplsi/$(whoami)/$PROJECT_NAME}"
 CONTAINER_PROJECT_ROOT="${CONTAINER_PROJECT_ROOT:-/workspace}"
 
 # --- Docker Configuration ---
