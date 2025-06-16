@@ -137,10 +137,10 @@ During development phase (before 1.0.0), minor version bumps may include breakin
 - Supports fast and slow tokenizers, parallelism, and memory-optimized workflows.
 - See [`TOKENIZATION_INDEX.md`](docs/TOKENIZATION_INDEX.md) and [`TOKENIZATION_PERFORMANCE.md`](docs/TOKENIZATION_PERFORMANCE.md).
 
-### 🔁 Continual Pretraining
-- Further pretrain language models on new data using scalable, resumable pipelines.
+### 🔁 Training
+- Further train language models on new data using scalable, resumable pipelines.
 - Distributed training, curriculum support, and robust checkpointing.
-- See [`CONTINUAL_PRETRAINING.md`](docs/CONTINUAL_PRETRAINING.md).
+- See [`CLM_TRAINING.md`](docs/CLM_TRAINING.md).
 
 ### 🚀 Publish
 - Upload trained models, tokenizers, or datasets to the Hugging Face Hub.
@@ -148,9 +148,8 @@ During development phase (before 1.0.0), minor version bumps may include breakin
 - See [`PUBLISH.md`](docs/PUBLISH.md).
 
 ## 📚 Documentation by Task
-- [Tokenization Guide](docs/TOKENIZATION_INDEX.md)
-- [Tokenization Performance](docs/TOKENIZATION_PERFORMANCE.md)
-- [Continual Pretraining Guide](docs/CONTINUAL_PRETRAINING.md)
+- [Tokenization Guide](docs/TOKENIZATION.md)
+- [Training Guide](docs/CLM_TRAINING.md)
 - [Publish Guide](docs/PUBLISH.md)
 
 ---
@@ -188,13 +187,13 @@ make build
 ```
 make validate CONFIG=config/pretraining.yaml
 ```
-# Run tokenization pipeline
+# Run tokenization task (YAML-driven)
 ```
-make tokenize CONFIG=config/tokenization.yaml
+python src/main.py --config tutorials/configs/tokenization_tutorial.yaml
 ```
-# Launch distributed pretraining
+# Launch CLM training (continual pretraining)
 ```
-make train CONFIG=config/pretraining.yaml
+python src/main.py --config tutorials/configs/clm_training_tutorial.yaml
 ```
 # Publish a trained model to Hugging Face Hub
 ```
