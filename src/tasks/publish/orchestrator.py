@@ -13,10 +13,8 @@ from src.utils.logging import get_logger, set_logger_level
 from src.tasks.publish.upload.huggingface import UploadHuggingface
 from src.tasks.publish.format.utils import FORMAT_HANDLERS
 from src.utils.orchestrator import BaseOrchestrator
-from utils import inherit_init_params
 
 
-@inherit_init_params
 class PublishOrchestrator(BaseOrchestrator):
     """
     Orchestrates the publish workflow.
@@ -26,8 +24,14 @@ class PublishOrchestrator(BaseOrchestrator):
         self.logger = get_logger(__name__, self.verbose_level)
         # Only load tokenizer if publish config and base_model exist
         if hasattr(self.config, 'publish') and self.config.publish.get('base_model'):
-            self.tokenizer = AutoTokenizer.from_pretrained(self.config.publish.get('base_model'))
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(self.config.publish.get('base_model'))
+                self.logger.debug(f"Loaded tokenizer for base model: {self.config.publish.get('base_model')}")
+            except Exception as e:
+                self.logger.warning(f"Could not load tokenizer: {e}")
+                self.tokenizer = None
         else:
+            self.logger.warning("No base_model provided; tokenizer will be None.")
             self.tokenizer = None
     
     def validate_config(self):

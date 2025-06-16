@@ -30,9 +30,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user with matching UID/GID from host
-RUN groupadd -g $GROUP_ID $USERNAME && \
-    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME && \
+RUN if getent group $GROUP_ID >/dev/null; then \
+      echo "Group with GID $GROUP_ID already exists."; \
+    else \
+      groupadd -g $GROUP_ID $USERNAME; \
+    fi && \
+    if id -u $USER_ID >/dev/null 2>&1; then \
+      echo "User with UID $USER_ID already exists."; \
+    else \
+      useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME; \
+    fi && \
     echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Ensure all files in /workspace are owned by the mapped user (handles .git and all contents)
+RUN chown -R $USER_ID:$GROUP_ID /workspace
 
 # Setup poetry configuration
 RUN pip install -U pip setuptools

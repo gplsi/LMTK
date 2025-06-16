@@ -1,7 +1,6 @@
 # Cross-platform Makefile for Continual Pretraining Framework
 PROJECT_NAME = lmtk
 CONFIG_PATH = config
-DOCKER_RUN = docker run -v ".":/workspace
 GPU_DEVICES ?= all  # Can specify "0", "0,1" or "none" for CPU-only
 
 # Get current user and group IDs for Docker user mapping
@@ -37,6 +36,8 @@ container:
 		--network=host \
 		--gpus all \
 		--user "$(USER_ID):$(GROUP_ID)" \
+		--workdir /workspace \
+		-v $(shell pwd):/workspace \
 		$(PROJECT_NAME) bash
 
 clean:

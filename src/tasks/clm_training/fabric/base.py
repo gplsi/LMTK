@@ -303,13 +303,16 @@ class FabricTrainerBase(ABC):
         - trainingFinished (bool): Flag indicating if training has completed.
         """
         validate_after_k_steps = self.config.get("validate_after_k_steps", None)
+        validate_on_end = self.config.get("validate_on_end", True)
+        validate_after_epoch = self.config.get("validate_after_epoch", True)
+        save_on_validate = self.config.get("save_on_validate", True)
+        
+
         if validate_after_k_steps is not None:
             # Debug logging for type issues
             self.cli_logger.debug(f"validate_after_k_steps value: {validate_after_k_steps}, type: {type(validate_after_k_steps)}")
             self.cli_logger.debug(f"step_count value: {self.state['step_count']}, type: {type(self.state['step_count'])}")
             validate_after_k_steps = int(validate_after_k_steps)
-        validate_on_end = self.config.get("validate_on_end", True)
-        validate_after_epoch = self.config.get("validate_after_epoch", True)
         
         # Debug logging before the condition check
         self.cli_logger.debug(f"Validation condition check - epochFinished: {epochFinished}, trainingFinished: {trainingFinished}")
@@ -333,7 +336,8 @@ class FabricTrainerBase(ABC):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 
-            self._save(fabric, epochFinished, trainingFinished)
+            if save_on_validate:
+                self._save(fabric, epochFinished, trainingFinished)
     
     def _normal_training(self, fabric: L.Fabric, model: L.LightningModule, batch: Tuple[torch.Tensor, ...], step: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -385,6 +389,8 @@ class FabricTrainerBase(ABC):
         epochs = self.config.number_epochs
         self.model.train()
         resume_iter = self.state["iter_num"]
+        save_on_end = self.config.get("save_on_end", False)
+        save_on_validate = self.config.get("save_on_validate", False)
         
         # Ensure current_epoch is initialized (for backwards compatibility with old checkpoints)
         if "current_epoch" not in self.state:
@@ -413,6 +419,11 @@ class FabricTrainerBase(ABC):
                 
             self._try_validate(fabric, epochFinished=True)
         self._try_validate(fabric, trainingFinished=True)
+
+        # Only save at end if not already saved by validation at end
+        if save_on_end and not (self.config.get("validate_on_end", True) and save_on_validate):
+            self.cli_logger.info("Saving final checkpoint")
+            self._save(fabric, trainingFinished=True)
     
     @torch.no_grad()
     def _validate(self, fabric: L.Fabric) -> None:
