@@ -47,7 +47,6 @@ allOf:
                 - mtype
                 - mid
             description: "List of models to use for anonymization"
-            minItems: 1
 
           format:
             type: string
