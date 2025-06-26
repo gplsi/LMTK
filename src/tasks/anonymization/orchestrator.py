@@ -14,7 +14,7 @@ from box import Box
 from src.utils.orchestrator import BaseOrchestrator
 from src.utils.logging import get_logger
 
-class AnonymizationOrchestrastor(BaseOrchestrator):
+class AnonymizationOrchestrator(BaseOrchestrator):
     """
     Orchestrates the anonymization workflow.
     """
