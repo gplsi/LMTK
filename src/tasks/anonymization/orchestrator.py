@@ -31,29 +31,29 @@ class AnonymizationOrchestrator(BaseOrchestrator):
         """
         if not hasattr(self.config, 'anonymization') or not self.config.anonymization:
             raise ValueError("Anonymization configuration must be provided")
-        if not self.config.anonymization.get('source') or not self.config.anonymization.source.get('path'):
+        if not hasattr(self.config.anonymization, 'source') or not hasattr(self.config.anonymization.source, 'path'):
             raise ValueError("Anonymization source must be provided")
-        if not self.config.anonymization.get('output') or not self.config.anonymization.output.get('path'):
+        if not hasattr(self.config.anonymization, 'output') or not hasattr(self.config.anonymization.output, 'path'):
             raise ValueError("Anonymization output must be provided")
-        if not self.config.anonymization.get('models_source') or not self.config.anonymization.models_source.get('path'):
+        if not hasattr(self.config.anonymization, 'models_source') or not hasattr(self.config.anonymization.models_source, 'path'):
             raise ValueError("Anonymization models_source must be provided")
-        if not self.config.anonymization.get('models') or not self.config.anonymization.models.get('mid') or self.config.anonymization.models.get('mtype'):
+        if not hasattr(self.config.anonymization, 'models'):
             raise ValueError("Anonymization models must be provided")
-        if not self.config.anonymization.get('regexes') or not self.config.anonymization.regexes.get('path'):
+        if not hasattr(self.config.anonymization, 'regexes') or not hasattr(self.config.anonymization.regexes, 'path'):
             raise ValueError("Anonymization regexes must be provided")
-        if not self.config.anonymization.get('truecaser') or not self.config.anonymization.truecaser.get('path'):
+        if not hasattr(self.config.anonymization, 'truecaser') or not hasattr(self.config.anonymization.truecaser, 'path'):
             raise ValueError("Anonymization truecaser must be provided")
-        if not self.config.anonymization.get('format'):
+        if not hasattr(self.config.anonymization, 'format'):
             raise ValueError("Anonymization format must be provided")
-        if not self.config.anonymization.get('method'):
+        if not hasattr(self.config.anonymization, 'method'):
             raise ValueError("Anonymization method must be provided")
-        if not self.config.anonymization.get('labels'):
+        if not hasattr(self.config.anonymization, 'labels'):
             raise ValueError("Anonymization labels must be provided")
-        if self.config.anonymization.get('store_original') is None:
+        if hasattr(self.config.anonymization, 'store_original') is None:
             raise ValueError("Anonymization store_original must be provided")
-        if self.config.anonymization.get('aggregate_output') is None:
+        if hasattr(self.config.anonymization, 'aggregate_output') is None:
             raise ValueError("Anonymization aggregate_output must be provided")
-        if self.config.anonymization.get('skip_existing') is None:
+        if hasattr(self.config.anonymization, 'skip_existing') is None:
             raise ValueError("Anonymization skip_existing must be provided")
 
 
