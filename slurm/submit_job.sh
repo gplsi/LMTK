@@ -198,9 +198,24 @@ if [[ "$CONFIG_FILE" = /* ]]; then
     # Absolute path
     FULL_CONFIG_PATH="$CONFIG_FILE"
 else
-    # Relative path - make it relative to project root
+    # Relative path - always resolve from project root
     FULL_CONFIG_PATH="$PROJECT_ROOT/$CONFIG_FILE"
 fi
+
+# Ensure OUTPUT_DIR is always under the project root unless absolute
+if [[ -n "$OUTPUT_DIR" ]]; then
+    if [[ "$OUTPUT_DIR" = /* ]]; then
+        FINAL_OUTPUT_DIR="$OUTPUT_DIR"
+    else
+        FINAL_OUTPUT_DIR="$PROJECT_ROOT/output/$OUTPUT_DIR"
+    fi
+else
+    # Default: auto-generate output directory under project root
+    FINAL_OUTPUT_DIR="$PROJECT_ROOT/output/experiment_$(date +%Y%m%d_%H%M%S)"
+fi
+
+# Make sure output directory exists
+mkdir -p "$FINAL_OUTPUT_DIR"
 
 # Validate config file exists
 if [[ ! -f "$FULL_CONFIG_PATH" ]]; then
@@ -222,8 +237,14 @@ if [[ -z "$WANDB_API_KEY" ]]; then
     echo ""
 fi
 
-# Build export string for environment variables
-EXPORT_VARS="CONFIG_FILE=$CONFIG_FILE"
+# Always pass CONFIG_FILE relative to PROJECT_ROOT for the container
+if [[ "$CONFIG_FILE" = /* ]]; then
+    # Remove leading PROJECT_ROOT from absolute path to make it relative
+    REL_CONFIG_FILE="${CONFIG_FILE#$PROJECT_ROOT/}"
+else
+    REL_CONFIG_FILE="$CONFIG_FILE"
+fi
+EXPORT_VARS="CONFIG_FILE=$REL_CONFIG_FILE,HOST_PROJECT_ROOT=$PROJECT_ROOT"
 
 if [[ -n "$WANDB_API_KEY" ]]; then
     EXPORT_VARS="${EXPORT_VARS},WANDB_API_KEY=$WANDB_API_KEY"

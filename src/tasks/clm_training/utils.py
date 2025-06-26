@@ -1,5 +1,5 @@
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-from transformers.optimization import get_constant_schedule, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
+from transformers.optimization import get_constant_schedule, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
 from transformers.models.gpt2.modeling_gpt2 import GPT2Block
 import torch
 import numpy as np
@@ -33,6 +33,9 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
       - 'fixed': a constant learning rate scheduler.
       - 'warmup_constant': a scheduler with initial warmup followed by a constant learning rate.
       - 'warmup_linear': a scheduler with an initial warmup and subsequent linear decay.
+      - 'warmup_cosine': a scheduler with an initial warmup and subsequent cosine decay.
+      - 'warmup_cosine_restart': a scheduler with an initial warmup and subsequent cosine decay with hard restarts.
+      - 'cosine': a pure cosine decay scheduler without warmup.
       
     It computes warmup steps and total training steps based on training dataset size, number of epochs, batch size, 
     world size, and optionally the number of gradient accumulation steps.
@@ -80,30 +83,59 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
         total_steps = number_epochs * steps_per_epoch
         if gradient_accumulation_steps:
             total_steps = total_steps // gradient_accumulation_steps
+            
+        if (warmup_proportion == 0): 
+            return 0, total_steps
+        
         warmup_steps = int(total_steps * warmup_proportion)
         return warmup_steps, total_steps
 
     if lr_scheduler == 'fixed':
         scheduler = get_constant_schedule(optimizer)
-
-    elif lr_scheduler == 'warmup_constant':
-        warmup_steps, _ = calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset)
+        
+    warmup_steps, total_steps = calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps)
+        
+    if lr_scheduler == 'cosine':
+        # Pure cosine decay without any warmup phase
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=total_steps,
+            eta_min=0.0,
+            last_epoch=-1
+        )
+    
+    if lr_scheduler == 'warmup_constant':
         scheduler = get_constant_schedule_with_warmup(
             optimizer, 
             num_warmup_steps=warmup_steps
         )
 
-    elif lr_scheduler == 'warmup_linear':
-        warmup_steps, total_steps = calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset)  
+    if lr_scheduler == 'warmup_linear':
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps
         )
+        
+    if lr_scheduler == 'warmup_cosine':
+        # Single-cycle cosine decay from initial LR to 0
+        return get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=warmup_steps,
+            num_training_steps=total_steps,
+        )
+
+    if lr_scheduler == 'warmup_cosine_restart':
+        # Multi-cycle cosine with hard restarts (default 1 restart cycle)
+        return get_cosine_with_hard_restarts_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=warmup_steps,
+            num_training_steps=total_steps,
+            num_cycles=1
+        )
+        
     else:
         raise ValueError("Scheduler type not recognized.")
-
-    return scheduler
 
 
 def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:float, beta2:float) -> torch.optim.Optimizer:

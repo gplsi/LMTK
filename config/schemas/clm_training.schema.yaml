@@ -114,7 +114,7 @@ allOf:
       lr_scheduler:
         type: string
         default: "linear"
-        enum: ["fixed", "warmup_linear", "warmup_constant"]
+        enum: ["fixed", "warmup_linear", "warmup_constant", "cosine", "warmup_cosine", "warmup_cosine_restart"]
         description: "Learning rate scheduler to use"
 
       warmup_proportion:
