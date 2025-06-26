@@ -89,7 +89,8 @@ allOf:
             type: array
             items:
               type: string
-            description: "List of labels to anonymize"
+              enum: ["", "CARD", "EMAIL", "FINANCIAL", "ID", "LOC", "MISC", "ORG", "PER", "TELEPHONE", "VEHICLE", "ZIP", "CODE", "DATE"]
+            description: "List of labels to anonymize. Leave empty to anonymize all labels"
 
           store_original:
             type: boolean
