@@ -30,8 +30,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user with matching UID/GID from host
-RUN groupadd -g $GROUP_ID $USERNAME && \
-    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME && \
+RUN if ! getent group $GROUP_ID > /dev/null; then \
+        groupadd -g $GROUP_ID $USERNAME; \
+    fi && \
+    if ! id -u $USER_ID > /dev/null 2>&1; then \
+        useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME; \
+    fi && \
     echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 # Setup poetry configuration
