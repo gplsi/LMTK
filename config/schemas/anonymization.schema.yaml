@@ -1,0 +1,123 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "anonymization.schema.yaml"
+definitions:
+  model:
+    type: object
+    properties:
+      mtype:
+        type: string
+        enum: ["huggingface", "spacy"]
+        description: "Format of the base model"
+      mid:
+        type: string
+        description: "Base model name or path"
+    required:
+      - mformat
+      - mid
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:  
+      anonymization:
+        type: object
+        properties:
+
+          docker-image:
+            type: string
+            description: "Docker image to use for anonymization"
+            default: "anonymization:latest"
+
+          source:
+            type: object
+            properties:
+              path:
+                type: string
+                description: "Path to load source dataset"
+            required:
+              - path
+
+          models_source:
+            type: object
+            properties:
+              path:
+                type: string
+                description: "Path to load models configuration"
+            required:
+              - path
+
+          models:
+            type: array
+            items:
+              $ref: "#/definitions/model"
+            description: "List of models to use for anonymization"
+            minItems: 1
+
+          format:
+            type: string
+            enum: ["plain", "jsonl", "doccano"]
+            description: "Format of the source dataset"
+
+          method:
+            type: string
+            enum: ["label", "random", "intelligent", "none"]
+            description: "Anonymization method to apply"
+
+          output:
+            type: object
+            properties:
+              path:
+                type: string
+                description: "Path to save anonymized dataset"
+            required:
+              - path
+
+          labels:
+            type: array
+            items:
+              type: string
+            description: "List of labels to anonymize"
+
+          regexes:
+            type: object
+            properties:
+              path:
+                type: string
+                description: "Path to load regexes for anonymization"
+            required:
+              - path
+
+          store_original:
+            type: boolean
+            description: "Whether to store original text in the output"
+
+          aggregate_output:
+            type: boolean
+            description: "Whether to aggregate output into a single file"
+
+          truecaser:
+            type: object
+            properties:
+              path:
+                type: string
+                description: "Path to load truecaser model"
+            required:
+              - path
+
+          skip_existing:
+            type: boolean
+            description: "Whether to skip existing anonymized files"
+
+        required:
+          - source
+          - models_source
+          - models
+          - format
+          - method
+          - output
+          - labels
+          - regexes
+          - store_original
+          - aggregate_output
+          - truecaser
+          - skip_existing
+      
