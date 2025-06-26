@@ -1,19 +1,6 @@
 $schema: "http://json-schema.org/draft-07/schema#"
 $id: "anonymization.schema.yaml"
-definitions:
-  model:
-    type: object
-    properties:
-      mtype:
-        type: string
-        enum: ["huggingface", "spacy"]
-        description: "Format of the base model"
-      mid:
-        type: string
-        description: "Base model name or path"
-    required:
-      - mformat
-      - mid
+
 allOf:
   - $ref: "base.schema.yaml"
   - type: object
@@ -48,7 +35,17 @@ allOf:
           models:
             type: array
             items:
-              $ref: "#/definitions/model"
+              properties:
+                mtype:
+                  type: string
+                  enum: ["huggingface", "spacy"]
+                  description: "Format of the base model"
+                mid:
+                  type: string
+                  description: "Base model name or path"
+              required:
+                - mtype
+                - mid
             description: "List of models to use for anonymization"
             minItems: 1
 
@@ -120,4 +117,3 @@ allOf:
           - aggregate_output
           - truecaser
           - skip_existing
-      
