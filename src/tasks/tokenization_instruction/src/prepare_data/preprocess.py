@@ -57,6 +57,10 @@ def tokenizer_dataset_multiTurn(dir, tokenizer, config, max_seq_length=2048):
         fn_kwargs={'tokenizer': tokenizer, 'config': config, 'max_seq_length': max_seq_length}
     )
     dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
+
+    #Convert the dataset to a Dataset object
+    dataset = Dataset.from_dict(dataset)
+    
     return dataset
 
 def tokenizer_dataset_given_prompt(element, tokenizer, config, max_seq_length):
