@@ -32,6 +32,7 @@ train_size: 0.7             # 70% for training, 30% for validation
 output:
   train_path: "data/ALIA/tokenized_data/ALIA/v2/tokenizedTrain"    # Path for training dataset
   validation_path: "data/ALIA/tokenized_data/ALIA/v2/tokenizedEval"  # Path for validation dataset
+  dataset_path: "data/ALIA/tokenized_data/ALIA/v2/wholeDataset"
 
 # Instruction tuning specific configuration
 mask_prompt: true           # Mask prompt tokens in labels (standard for instruction tuning)
