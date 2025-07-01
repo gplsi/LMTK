@@ -105,13 +105,13 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
         )
     
     if lr_scheduler == 'warmup_constant':
-        scheduler = get_constant_schedule_with_warmup(
+        return get_constant_schedule_with_warmup(
             optimizer, 
             num_warmup_steps=warmup_steps
         )
 
     if lr_scheduler == 'warmup_linear':
-        scheduler = get_linear_schedule_with_warmup(
+        return get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps
