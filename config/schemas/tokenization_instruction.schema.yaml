@@ -70,6 +70,9 @@ allOf:
           validation_path:
             type: string
             description: "Path to save validation dataset"
+          dataset_path:
+            type: string
+            description: "Path to save both splits of the dataset"
         required:
           - train_path
           - validation_path

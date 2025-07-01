@@ -11,6 +11,7 @@ import os
 from utils import inherit_init_params
 from transformers import AutoTokenizer
 from datasets import Dataset as HFDataset
+from datasets import DatasetDict
 from datasets import concatenate_datasets
 from src.utils.orchestrator import BaseOrchestrator
 from src.tasks.tokenization_instruction.src.prepare_data.preprocess import tokenizer_dataset_multiTurn
@@ -154,11 +155,24 @@ class TokenizationInstructionOrchestrator(BaseOrchestrator):
 
             # 2. Process multi-language datasets 
             train_dataset, val_dataset = self.process_multi_language_datasets()            # 3. Save results
+
+            # 3. Merge both splits into a single dataset that contains both train and validation sets
+            #    The training split must be called 'train' and the validation split must be called 'valid'
+            dataset_splits = DatasetDict({
+                'train': train_dataset,
+                'valid': val_dataset
+            })
+
+            self.logger.info("The datasets are in the correct format, proceeding to save them")
+
             self.logger.info(f"Saving training dataset to: {self.config.output.train_path}")
-            train_dataset.save_to_disk(self.config.output.train_path)
+            dataset_splits['train'].save_to_disk(self.config.output.train_path)
             
             self.logger.info(f"Saving validation dataset to: {self.config.output.validation_path}")
             val_dataset.save_to_disk(self.config.output.validation_path)
+
+            self.logger.info(f"Saving whole dataset to: {self.config.output.dataset_path}")
+            dataset_splits.save_to_disk(self.config.output.dataset_path)
 
             self.logger.info("Instruction tokenization workflow completed successfully")
 
