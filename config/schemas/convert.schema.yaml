@@ -1,0 +1,39 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "convert.schema.yaml"
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:  
+      convert:
+        type: object
+        properties:
+          base_model:
+            type: string
+            description: "HuggingFace base model name"
+
+          checkpoint_path:
+            type: string
+            description: "Path to checkpoint file"
+          
+          initial_format:
+            type: string
+            description: "Initial format of the checkpoint"
+            enum: ["fsdp"]
+            default: "fsdp"
+          
+          final_format:
+            type: string
+            description: "Final format of the checkpoint"
+            enum: ["huggingface"]
+            default: "huggingface"
+
+          output_dir:
+            type: string
+            description: "Output dir where the folder/s of the converted model/s will be saved"
+
+        required:
+          - base_model
+          - checkpoint_path
+          - output_dir
+          - initial_format
+          - final_format
