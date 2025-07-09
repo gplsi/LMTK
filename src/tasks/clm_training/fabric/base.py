@@ -50,17 +50,25 @@ class FabricTrainerBase(ABC):
 
         Parameters:
         - devices (int): The number of devices to use for training.
-        - config (Box): Configuration object containing training parameters.
+        - config (Box): Configuration object containing training parameters. Can include:
+            - checkpoint: Path to resume complete training state
+            - initial_weights_checkpoint: Path to load only model weights for transfer learning
         - dataset (HFDataset): The dataset (or DatasetDict) used for training.
         - checkpoint_path (str, optional): Path to a checkpoint to resume training, if applicable.
 
         Raises:
-        - ValueError: If dataset is None.
+        - ValueError: If dataset is None or if both checkpoint types are specified.
         """
         self.cli_logger = get_logger(__name__, config.verbose_level)
         
         if dataset is None:
             raise ValueError("Dataset must be provided for training.")
+        
+        # Validate checkpoint parameters
+        checkpoint = getattr(config, 'checkpoint', None)
+        initial_weights_checkpoint = getattr(config, 'initial_weights_checkpoint', None)
+        if checkpoint is not None and initial_weights_checkpoint is not None:
+            raise ValueError("Cannot specify both 'checkpoint' and 'initial_weights_checkpoint'. Use 'checkpoint' to resume training or 'initial_weights_checkpoint' for transfer learning.")
         
         self.devices = devices
         self.config = config
@@ -214,6 +222,57 @@ class FabricTrainerBase(ABC):
             self.cli_logger.info(f"Loaded state keys: {list(self.state.keys())}")
             self.cli_logger.info(f"Resuming from iteration {self.state.get('iter_num', 0)}, step {self.state.get('step_count', 0)}, epoch {self.state.get('current_epoch', 0)}")
     
+    def _load_initial_weights(self, fabric: L.Fabric) -> None:
+        """
+        Load only model weights from a checkpoint for transfer learning (no training state).
+        
+        Parameters:
+        - fabric (L.Fabric): The Fabric instance handling the training.
+        """
+        initial_weights_checkpoint = getattr(self.config, 'initial_weights_checkpoint', None)
+        if initial_weights_checkpoint is not None:
+            self.cli_logger.info(f"Loading initial model weights from '{initial_weights_checkpoint}' for transfer learning")
+            
+            # Load the checkpoint using torch.load since we only need model weights
+            import torch
+            checkpoint = torch.load(initial_weights_checkpoint, map_location="cpu")
+            
+            # Extract only the model state dict
+            model_state_dict = None
+            if isinstance(checkpoint, dict):
+                # Try different keys where model weights might be stored
+                if 'model' in checkpoint:
+                    model_state_dict = checkpoint['model']
+                elif 'model_state_dict' in checkpoint:
+                    model_state_dict = checkpoint['model_state_dict']
+                elif 'state_dict' in checkpoint:
+                    model_state_dict = checkpoint['state_dict']
+                else:
+                    # Assume the checkpoint is a direct state dict
+                    model_state_dict = checkpoint
+            else:
+                model_state_dict = checkpoint
+            
+            if model_state_dict is None:
+                self.cli_logger.error("Could not find model weights in checkpoint")
+                return
+            
+            # Load only the model weights, not the training state
+            if hasattr(self.state, 'model') and self.state['model'] is not None:
+                try:
+                    missing_keys, unexpected_keys = self.state['model'].load_state_dict(model_state_dict, strict=False)
+                    if missing_keys:
+                        self.cli_logger.warning(f"Missing keys when loading initial weights: {len(missing_keys)} keys")
+                        self.cli_logger.debug(f"Sample missing keys: {missing_keys[:5]}")
+                    if unexpected_keys:
+                        self.cli_logger.warning(f"Unexpected keys when loading initial weights: {len(unexpected_keys)} keys")
+                        self.cli_logger.debug(f"Sample unexpected keys: {unexpected_keys[:5]}")
+                    self.cli_logger.info("✅ Successfully loaded initial model weights for transfer learning")
+                except Exception as e:
+                    self.cli_logger.error(f"Failed to load initial weights: {str(e)}")
+                    raise
+            else:
+                self.cli_logger.warning("Model not yet initialized, cannot load initial weights")
     def _train_logs(self, fabric: L.Fabric, loss: torch.Tensor) -> None:
         """
         Log training metrics for monitoring.
@@ -468,9 +527,10 @@ class FabricTrainerBase(ABC):
         Load datasets and create dataloaders from the given dataset and configuration.
 
         This method validates the dataset, sets the required format, and creates DataLoader objects for each split.
+        If train_data_ratio is specified in config and less than 1.0, only that proportion of the training data will be used.
 
         Parameters:
-        - config (Box): Configuration parameters including batch_size and num_workers.
+        - config (Box): Configuration parameters including batch_size, num_workers, and optionally train_data_ratio.
         - dataset (Union[HFDataset, DatasetDict]): The dataset or dictionary of datasets to use.
 
         Returns:
@@ -478,7 +538,7 @@ class FabricTrainerBase(ABC):
 
         Raises:
         - TypeError: If the dataset is not a DatasetDict or HFDataset.
-        - ValueError: If required config parameters or dataset splits/columns are missing.
+        - ValueError: If required config parameters or dataset splits/columns are missing, or if train_data_ratio results in empty training set.
         - RuntimeError: If setting the format or creating a DataLoader fails.
         """        
         
@@ -494,6 +554,19 @@ class FabricTrainerBase(ABC):
             dataset = DatasetDict({"train": dataset})
         if not dataset.keys():
             raise ValueError("Dataset is empty, no splits found")
+            
+        # Apply train_data_ratio if specified and less than 1.0
+        train_data_ratio = getattr(config, 'train_data_ratio', 1.0)
+        if train_data_ratio < 1.0 and 'train' in dataset:
+            original_size = len(dataset['train'])
+            subset_size = int(original_size * train_data_ratio)
+            if subset_size > 0:
+                # Use select method to get a subset of the training data
+                dataset['train'] = dataset['train'].select(range(subset_size))
+                self.cli_logger.info(f"Using {subset_size}/{original_size} ({train_data_ratio:.2%}) of training data")
+            else:
+                raise ValueError(f"train_data_ratio {train_data_ratio} results in empty training set")
+                
         required_columns = ["input_ids", "attention_mask", "labels"]
         for split in dataset.keys():
             missing_columns = [col for col in required_columns if col not in dataset[split].column_names]
@@ -594,7 +667,9 @@ class FabricTrainerBase(ABC):
             "current_epoch": 0,
             "scheduler": scheduler
         }
-        # RESUME
+        # LOAD INITIAL WEIGHTS (for continual training learning)
+        self._load_initial_weights(fabric)
+        # RESUME (for continuing training)
         self._load_from_checkpoint(fabric)
         # TRAINING
         train_time = time.perf_counter()

@@ -17,6 +17,14 @@ allOf:
           nameOrPath:
             type: string
             description: "Dataset name for HuggingFace or local path"
+            
+      # Training data arguments  
+      train_data_ratio:
+        type: number
+        default: 1.0
+        minimum: 0.0
+        maximum: 1.0
+        description: "Ratio of training dataset to actually use (e.g., 0.25 for 25%)"
 
       # Model arguments
       model_name:
@@ -32,7 +40,12 @@ allOf:
       checkpoint:
         type: string
         default: null
-        description: "Path to the checkpoint file for resume"
+        description: "Path to the checkpoint file for resume training (includes training state)"
+        
+      initial_weights_checkpoint:
+        type: string
+        default: null
+        description: "Path to checkpoint to load only model weights from (for transfer learning on new dataset)"
 
       # Training arguments
       number_epochs:
