@@ -37,7 +37,6 @@ container:
 		--gpus all \
 		--user "$(USER_ID):$(GROUP_ID)" \
 		--workdir /workspace \
-		-v $(shell pwd):/workspace \
 		$(PROJECT_NAME) bash
 
 clean:

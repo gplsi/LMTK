@@ -1,6 +1,6 @@
-# ML Training Framework Documentation
+# LMTK Documentation
 
-This directory contains the Sphinx-based documentation for the ML Training Framework. The documentation is designed with a beautiful, responsive layout using the PyData Sphinx Theme with custom styling.
+This directory contains the Sphinx-based documentation for the LMTK (LLM Training Kit). The documentation is designed with a beautiful, responsive layout using the PyData Sphinx Theme with custom styling.
 
 ## Structure
 
