@@ -14,12 +14,25 @@ allOf:
             type: integer
             minimum: 1
             maximum: 100000
+            description: |
+              Maximum sequence length (in tokens) for each example. For instruction tasks, this should match the model's maximum context length. Longer examples will be truncated; shorter ones will be padded. This is required for all tasks, including instruction tuning, due to model architecture constraints.
+          mask_prompt:
+            type: boolean
+            default: true
+            description: "Whether to mask the prompt portion in the labels for instruction tuning (ignored for other tasks)."
+          ignore_index:
+            type: integer
+            default: -100
+            description: "Label value to ignore during loss computation (e.g., for masked prompt tokens). Applies to instruction tasks."
+          max_seq_length:
+            type: integer
+            description: "Maximum sequence length for tokenization (optional, defaults to context_length). Applies to instruction tasks."
           overlap:
             type: integer
             minimum: 0
           task:
             type: string
-            enum: ["clm_training", "instruction_finetuning", "mlm_training"]
+            enum: ["clm_training", "instruction", "mlm_training"]
             default: "clm_training"
           batch_size:
             type: integer

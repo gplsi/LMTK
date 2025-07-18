@@ -68,14 +68,14 @@ class BaseTokenizer(ABC):
         self.logger.info(f"Initializing tokenizer: {self.config.tokenizer_name}")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.config.tokenizer_name,
-            use_fast=True,           # ← the big speed boost
+            use_fast=True,           
             padding_side="right",
             truncation_side="right",
         )
         self._tokenizer.pad_token = self._tokenizer.eos_token
         
     @abstractmethod
-    def tokenize(self, texts: Union[str, List[str]]) -> Dict[str, List[int]]:
+    def tokenize(self, dataset: Union[str, List[str]]) -> Dict[str, List[int]]:
         """
         Abstract method to tokenize input texts into token IDs.
 
