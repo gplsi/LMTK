@@ -190,39 +190,122 @@ class InstructionTokenizer(BaseTokenizer):
                 self.logger.warning(f"Unknown masking_strategy '{masking_strategy}', defaulting to 'context_aware'")
                 labels[:len(encoded_prompt)] = self.ignore_index
             
-        # Pad sequences to context length
-        seq_len = len(encoded_prompt_and_response)
-        if seq_len < self.config.context_length:
-            pad_length = self.config.context_length - seq_len
-            
-            # Pad with pad_token_id (or 0 if not available)
-            pad_token_id = getattr(self._tokenizer, 'pad_token_id', 0) or 0
-            
-            encoded_prompt_and_response = torch.cat([
-                encoded_prompt_and_response,
-                torch.full((pad_length,), pad_token_id, dtype=torch.long)
-            ])
-            
-            labels = torch.cat([
-                labels,
-                torch.full((pad_length,), self.ignore_index, dtype=torch.long)
-            ])
-            
-            attention_mask = torch.cat([
-                attention_mask,
-                torch.zeros(pad_length, dtype=torch.long)
-            ])
-        elif seq_len > self.config.context_length:
-            # Truncate if too long
-            encoded_prompt_and_response = encoded_prompt_and_response[:self.config.context_length]
-            labels = labels[:self.config.context_length]
-            attention_mask = attention_mask[:self.config.context_length]
+        # Apply padding strategy based on configuration
+        padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
+        
+        if padding_strategy == 'dynamic':
+            # Dynamic padding: return sequences as-is, padding will be handled at batch level
+            # Store original length for batch-level padding
+            return {
+                "input_ids": encoded_prompt_and_response,
+                "attention_mask": attention_mask,
+                "labels": labels,
+                "length": len(encoded_prompt_and_response)  # Store length for dynamic padding
+            }
+        else:
+            # Fixed padding: pad to context length (current behavior)
+            seq_len = len(encoded_prompt_and_response)
+            if seq_len < self.config.context_length:
+                pad_length = self.config.context_length - seq_len
+                
+                # Pad with pad_token_id (or 0 if not available)
+                pad_token_id = getattr(self._tokenizer, 'pad_token_id', 0) or 0
+                
+                encoded_prompt_and_response = torch.cat([
+                    encoded_prompt_and_response,
+                    torch.full((pad_length,), pad_token_id, dtype=torch.long)
+                ])
+                
+                labels = torch.cat([
+                    labels,
+                    torch.full((pad_length,), self.ignore_index, dtype=torch.long)
+                ])
+                
+                attention_mask = torch.cat([
+                    attention_mask,
+                    torch.zeros(pad_length, dtype=torch.long)
+                ])
+            elif seq_len > self.config.context_length:
+                # Truncate if too long
+                encoded_prompt_and_response = encoded_prompt_and_response[:self.config.context_length]
+                labels = labels[:self.config.context_length]
+                attention_mask = attention_mask[:self.config.context_length]
         
         return {
             "input_ids": encoded_prompt_and_response,
             "attention_mask": attention_mask,
             "labels": labels
         }
+    
+    def _apply_dynamic_padding(self, dataset: HFDataset) -> HFDataset:
+        """
+        Apply dynamic padding to a dataset by padding all sequences to the maximum length found.
+        
+        Args:
+            dataset (HFDataset): Dataset with variable-length sequences containing 'length' field.
+            
+        Returns:
+            HFDataset: Dataset with sequences padded to maximum length.
+        """
+        if 'length' not in dataset.column_names:
+            self.logger.warning("Dynamic padding requested but 'length' field not found. Skipping dynamic padding.")
+            return dataset
+            
+        # Find maximum sequence length in the dataset
+        max_length = max(dataset['length'])
+        max_length = min(max_length, self.config.context_length)  # Respect context length limit
+        
+        self.logger.info(f"Applying dynamic padding to maximum length: {max_length}")
+        
+        # Get padding token
+        pad_token_id = getattr(self._tokenizer, 'pad_token_id', 0) or 0
+        
+        def pad_sequence(example):
+            current_length = len(example['input_ids'])
+            
+            if current_length < max_length:
+                pad_length = max_length - current_length
+                
+                # Pad input_ids
+                example['input_ids'] = example['input_ids'] + [pad_token_id] * pad_length
+                
+                # Pad attention_mask
+                example['attention_mask'] = example['attention_mask'] + [0] * pad_length
+                
+                # Pad labels
+                example['labels'] = example['labels'] + [self.ignore_index] * pad_length
+                
+            elif current_length > max_length:
+                # Truncate if longer than max_length
+                example['input_ids'] = example['input_ids'][:max_length]
+                example['attention_mask'] = example['attention_mask'][:max_length]
+                example['labels'] = example['labels'][:max_length]
+            
+            # Remove the length field as it's no longer needed
+            if 'length' in example:
+                del example['length']
+                
+            return example
+        
+        # Apply padding to all examples
+        padded_dataset = dataset.map(
+            pad_sequence,
+            desc="Applying dynamic padding",
+            remove_columns=['length']
+        )
+        
+        # Log padding statistics
+        lengths = dataset['length']
+        avg_length = sum(lengths) / len(lengths)
+        padding_efficiency = (avg_length / max_length) * 100
+        
+        self.logger.info(f"Dynamic padding statistics:")
+        self.logger.info(f"  → Maximum length: {max_length}")
+        self.logger.info(f"  → Average length: {avg_length:.1f}")
+        self.logger.info(f"  → Padding efficiency: {padding_efficiency:.1f}%")
+        self.logger.info(f"  → Memory savings vs fixed: {((self.config.context_length - max_length) / self.config.context_length) * 100:.1f}%")
+        
+        return padded_dataset
     
     def _process_multi_language_datasets(self, dataset_paths: List[str]) -> HFDataset:
         """
@@ -377,6 +460,11 @@ class InstructionTokenizer(BaseTokenizer):
         try:
             tokenized_dataset = dataset.map(**map_kwargs)
             
+            # Apply dynamic padding if configured
+            padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
+            if padding_strategy == 'dynamic':
+                tokenized_dataset = self._apply_dynamic_padding(tokenized_dataset)
+            
             # Set format for PyTorch with explicit column specification
             tokenized_dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
             
@@ -433,6 +521,17 @@ class InstructionTokenizer(BaseTokenizer):
             self.logger.info("  → Attention and labels masked for prompts")
         else:
             self.logger.warning(f"  → Unknown strategy '{masking_strategy}', using 'context_aware'")
+        
+        # Log padding strategy
+        padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
+        self.logger.info(f"Padding strategy: {padding_strategy}")
+        if padding_strategy == 'fixed':
+            self.logger.info(f"  → Fixed padding to {self.config.context_length} tokens")
+        elif padding_strategy == 'dynamic':
+            self.logger.info("  → Dynamic padding to batch maximum length")
+            self.logger.info("  → Sequences will be padded during batch processing")
+        else:
+            self.logger.warning(f"  → Unknown strategy '{padding_strategy}', using 'fixed'")
         
         try:
             # Handle different input types with detailed logging

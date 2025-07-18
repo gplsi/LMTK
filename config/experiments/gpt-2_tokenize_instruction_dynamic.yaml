@@ -1,0 +1,40 @@
+# Experiment configuration for tokenizing instruction data using GPT-2 with dynamic padding
+# This configuration demonstrates the dynamic padding strategy for memory-efficient tokenization
+
+task: "tokenization"
+experiment_name: "gpt-2_tokenization_instruction_dynamic_padding"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: gpt2
+  context_length: 1024  # GPT-2's maximum context length (used as upper limit for dynamic padding)
+  task: instruction
+  
+  # Performance optimization settings
+  batch_size: 2000
+  num_proc: 1
+  show_progress: true
+  
+  # Instruction tuning specific settings
+  mask_prompt: true
+  ignore_index: -100
+  max_seq_length: 1024
+  
+  # NEW: Dynamic padding strategy configuration
+  padding_strategy: "dynamic"  # Options: "fixed" (default) or "dynamic"
+  
+  # NEW: Masking strategy configuration
+  masking_strategy: "context_aware"  # Options: "context_aware" (default) or "response_only"
+
+dataset:
+  source: local
+  nameOrPath: data/v5
+  format: files
+  file_config:
+    format: json
+    # Note: No text_key needed for instruction tokenization - uses structured conversation data
+
+output:
+  path: output/tokenized_gpt2_instructions_dynamic
+
+test_size: 0.1

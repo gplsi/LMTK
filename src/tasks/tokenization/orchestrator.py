@@ -71,6 +71,12 @@ class TokenizationOrchestrator(BaseOrchestrator):
         num_proc = self.config.tokenizer.get("num_proc", None)
         show_progress = self.config.tokenizer.get("show_progress", True)
         
+        # Extract instruction-specific parameters
+        padding_strategy = self.config.tokenizer.get("padding_strategy", "fixed")
+        masking_strategy = self.config.tokenizer.get("masking_strategy", "context_aware")
+        mask_prompt = self.config.tokenizer.get("mask_prompt", True)
+        ignore_index = self.config.tokenizer.get("ignore_index", -100)
+        max_seq_length = self.config.tokenizer.get("max_seq_length", None)
         
         # Create the tokenizer configuration using parameters from the orchestrator's configuration.
         tokenizer_config = TokenizerConfig(
@@ -83,6 +89,12 @@ class TokenizationOrchestrator(BaseOrchestrator):
             verbose_level=VerboseLevel(
                 self.config.get("verbose_level", VerboseLevel.INFO)
             ),
+            # Instruction-specific parameters
+            padding_strategy=padding_strategy,
+            masking_strategy=masking_strategy,
+            mask_prompt=mask_prompt,
+            ignore_index=ignore_index,
+            max_seq_length=max_seq_length,
         )
 
         task = self.config.tokenizer.get("task", "clm_training")
