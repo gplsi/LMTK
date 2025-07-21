@@ -1,4 +1,5 @@
 # src/tokenization/mlm.py
+from math import e
 from typing import Dict, List, Optional, Union
 from datasets import Features, Sequence, Value, DatasetDict
 from datasets import Dataset as HFDataset
@@ -82,7 +83,15 @@ class MaskedLMTokenizer(BaseTokenizer):
             Optional[int]: Number of processes to use for slow tokenizers, None for fast tokenizers
         """
         if self._tokenizer is None:
-            self._initialize_tokenizer()
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
+        
+        # Validate tokenizer is properly initialized
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
             
         # Check if we have a fast tokenizer
         is_fast_tokenizer = hasattr(self._tokenizer, 'is_fast') and self._tokenizer.is_fast
@@ -121,7 +130,15 @@ class MaskedLMTokenizer(BaseTokenizer):
             bool: True if the token can be masked, False otherwise.
         """
         if self._tokenizer is None:
-            self._initialize_tokenizer()
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
+        
+        # Validate tokenizer is properly initialized
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
             
         # Don't mask tokens in the exclude list
         if token_id in self.exclude_token_ids:
@@ -157,7 +174,15 @@ class MaskedLMTokenizer(BaseTokenizer):
             tuple: (masked_input_ids, labels) where labels contain original tokens for masked positions.
         """
         if self._tokenizer is None:
-            self._initialize_tokenizer()
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
+        
+        # Validate tokenizer is properly initialized
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
             
         batch_size, seq_len = input_ids.shape
         masked_input_ids = input_ids.copy()
@@ -209,8 +234,56 @@ class MaskedLMTokenizer(BaseTokenizer):
             masked_input_ids[replace_with_random] = random_tokens[replace_with_random]
         
         # Strategy 3: Keep unchanged (10%) - no action needed
-        
+
         return masked_input_ids, labels
+    
+    def _tokenize_function(self, batch: Dict[str, List[str]]) -> Dict[str, List[List[int]]]:
+        """
+        Batch-tokenize input texts and apply MLM masking.
+        Optimized for performance with efficient masking and label generation.
+        """
+        # Ensure tokenizer is initialized (important for multiprocessing)
+        if self._tokenizer is None:
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
+        
+        # Validate tokenizer is properly initialized
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
+        
+        # Run tokenizer on the entire batch at once
+        try:
+            outputs = self._tokenizer(
+                batch["text"],
+                truncation=True,
+                max_length=self.config.context_length,
+                padding="max_length",  # Pad to max_length for consistency
+                return_tensors="np",  # Direct NumPy conversion
+            )
+        except Exception as e:
+            self.logger.error(f"Tokenization failed: {e}")
+            self.logger.error(f"Batch content preview: {str(batch)[:200]}...")
+            raise RuntimeError(f"Tokenization failed: {e}") from e
+        
+        input_ids = outputs["input_ids"]       # Already NumPy arrays
+        attention_mask = outputs["attention_mask"]
+        
+        # Apply MLM masking
+        try:
+            masked_input_ids, labels = self._apply_mlm_masking(input_ids, attention_mask)
+        except Exception as e:
+            self.logger.error(f"MLM masking failed: {e}")
+            raise RuntimeError(f"MLM masking failed: {e}") from e
+        
+        # Return the tokenized and masked results
+        return {
+            "input_ids": masked_input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+        }
     
     def tokenize(self, dataset: Union[HFDataset, DatasetDict]) -> Union[HFDataset, DatasetDict]:
         """
@@ -231,7 +304,15 @@ class MaskedLMTokenizer(BaseTokenizer):
         """
         # Initialize tokenizer if not already done
         if self._tokenizer is None:
-            self._initialize_tokenizer()
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
+        
+        # Validate tokenizer is properly initialized
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
         
         start_time = time.time()
         self.logger.info("=== Starting MLM Tokenization ===")
@@ -259,22 +340,64 @@ class MaskedLMTokenizer(BaseTokenizer):
             self.logger.info(f"  - writer_batch_size: {writer_batch_size}")
             
             if isinstance(dataset, DatasetDict):
-            self.logger.info(f"Processing DatasetDict with {len(dataset)} splits:")
-            for split_name, split_data in dataset.items():
-                self.logger.info(f"  {split_name}: {len(split_data)} examples")
+                self.logger.info(f"Processing DatasetDict with {len(dataset)} splits:")
+                for split_name, split_data in dataset.items():
+                    self.logger.info(f"  {split_name}: {len(split_data)} examples")
             
-            result = DatasetDict()
-            total_examples = 0
-            
-            for split_name, split_dataset in dataset.items():
-                split_start_time = time.time()
-                self.logger.info(f"Processing split: {split_name} ({len(split_dataset)} examples)")
+                result = DatasetDict()
+                total_examples = 0
+                
+                for split_name, split_dataset in dataset.items():
+                    split_start_time = time.time()
+                    self.logger.info(f"Processing split: {split_name} ({len(split_dataset)} examples)")
+                    
+                    # Configure mapping parameters
+                    map_kwargs = {
+                        "function": self._tokenize_function,
+                        "batched": True,
+                        "remove_columns": split_dataset.column_names,
+                        "batch_size": batch_size,
+                        "writer_batch_size": writer_batch_size,
+                    }
+                    
+                    # Only add num_proc for slow tokenizers
+                    if num_proc is not None:
+                        map_kwargs["num_proc"] = num_proc
+                    
+                    # Add progress description if enabled
+                    if hasattr(self.config, 'show_progress') and self.config.show_progress:
+                        map_kwargs["desc"] = f"Tokenizing {split_name} split with MLM"
+                    
+                    try:
+                        result[split_name] = split_dataset.map(**map_kwargs)
+                        
+                        split_time = time.time() - split_start_time
+                        split_throughput = len(split_dataset) / split_time if split_time > 0 else 0
+                        total_examples += len(split_dataset)
+                        
+                        self.logger.info(f"Completed {split_name} in {split_time:.2f} seconds")
+                        self.logger.info(f"Split throughput: {split_throughput:.1f} examples/sec")
+                        self.logger.info(f"Final split size: {len(result[split_name])}")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error processing split {split_name}: {str(e)}")
+                        raise
+                    
+                self.logger.info(f"Processed all splits: {total_examples} total examples")
+                
+                # Return single dataset if only one split
+                if len(result) == 1:
+                    self.logger.debug("Only one dataset split found, returning single tokenized dataset")
+                    return result[list(result.keys())[0]]
+                
+            elif isinstance(dataset, HFDataset):
+                self.logger.info(f"Processing single dataset with {len(dataset)} examples")
                 
                 # Configure mapping parameters
                 map_kwargs = {
                     "function": self._tokenize_function,
                     "batched": True,
-                    "remove_columns": split_dataset.column_names,
+                    "remove_columns": dataset.column_names,
                     "batch_size": batch_size,
                     "writer_batch_size": writer_batch_size,
                 }
@@ -285,95 +408,53 @@ class MaskedLMTokenizer(BaseTokenizer):
                 
                 # Add progress description if enabled
                 if hasattr(self.config, 'show_progress') and self.config.show_progress:
-                    map_kwargs["desc"] = f"Tokenizing {split_name} split with MLM"
+                    map_kwargs["desc"] = "Tokenizing dataset with MLM"
                 
                 try:
-                    result[split_name] = split_dataset.map(**map_kwargs)
-                    
-                    split_time = time.time() - split_start_time
-                    split_throughput = len(split_dataset) / split_time if split_time > 0 else 0
-                    total_examples += len(split_dataset)
-                    
-                    self.logger.info(f"Completed {split_name} in {split_time:.2f} seconds")
-                    self.logger.info(f"Split throughput: {split_throughput:.1f} examples/sec")
-                    self.logger.info(f"Final split size: {len(result[split_name])}")
+                    result = dataset.map(**map_kwargs)
+                    self.logger.info(f"MLM tokenization completed successfully")
+                    self.logger.info(f"Final dataset size: {len(result)}")
                     
                 except Exception as e:
-                    self.logger.error(f"Error processing split {split_name}: {str(e)}")
+                    self.logger.error(f"Error during MLM tokenization: {str(e)}")
                     raise
-                
-            self.logger.info(f"Processed all splits: {total_examples} total examples")
+                    
+            else:
+                raise ValueError(f"Unsupported dataset type: {type(dataset)}. Supported types: HFDataset, DatasetDict")
+        
+            # Final performance summary
+            elapsed_time = time.time() - start_time
             
-            # Return single dataset if only one split
-            if len(result) == 1:
-                self.logger.debug("Only one dataset split found, returning single tokenized dataset")
-                return result[list(result.keys())[0]]
-                
-        elif isinstance(dataset, HFDataset):
-            self.logger.info(f"Processing single dataset with {len(dataset)} examples")
+            # Calculate total examples processed
+            if isinstance(result, HFDataset):
+                total_processed = len(result)
+            elif isinstance(result, DatasetDict):
+                total_processed = sum(len(split) for split in result.values())
+            else:
+                total_processed = 0
             
-            # Configure mapping parameters
-            map_kwargs = {
-                "function": self._tokenize_function,
-                "batched": True,
-                "remove_columns": dataset.column_names,
-                "batch_size": batch_size,
-                "writer_batch_size": writer_batch_size,
-            }
+            throughput = total_processed / elapsed_time if elapsed_time > 0 else 0
             
-            # Only add num_proc for slow tokenizers
-            if num_proc is not None:
-                map_kwargs["num_proc"] = num_proc
+            self.logger.info("=== MLM Tokenization Completed Successfully ===")
+            self.logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
+            self.logger.info(f"Total examples processed: {total_processed:,}")
+            self.logger.info(f"Overall throughput: {throughput:.1f} examples/sec")
+            self.logger.info(f"Average time per example: {(elapsed_time/total_processed)*1000:.2f} ms")
             
-            # Add progress description if enabled
-            if hasattr(self.config, 'show_progress') and self.config.show_progress:
-                map_kwargs["desc"] = "Tokenizing dataset with MLM"
+            # MLM-specific statistics
+            expected_masked_tokens = total_processed * self.config.context_length * self.mlm_probability
+            self.logger.info(f"Expected masked tokens: ~{expected_masked_tokens:,.0f} ({self.mlm_probability*100:.1f}% of all tokens)")
             
+            # Memory usage info if available
             try:
-                result = dataset.map(**map_kwargs)
-                self.logger.info(f"MLM tokenization completed successfully")
-                self.logger.info(f"Final dataset size: {len(result)}")
-                
-            except Exception as e:
-                self.logger.error(f"Error during MLM tokenization: {str(e)}")
-                raise
-                
-        else:
-            raise ValueError(f"Unsupported dataset type: {type(dataset)}. Supported types: HFDataset, DatasetDict")
-        
-        # Final performance summary
-        elapsed_time = time.time() - start_time
-        
-        # Calculate total examples processed
-        if isinstance(result, HFDataset):
-            total_processed = len(result)
-        elif isinstance(result, DatasetDict):
-            total_processed = sum(len(split) for split in result.values())
-        else:
-            total_processed = 0
-        
-        throughput = total_processed / elapsed_time if elapsed_time > 0 else 0
-        
-        self.logger.info("=== MLM Tokenization Completed Successfully ===")
-        self.logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
-        self.logger.info(f"Total examples processed: {total_processed:,}")
-        self.logger.info(f"Overall throughput: {throughput:.1f} examples/sec")
-        self.logger.info(f"Average time per example: {(elapsed_time/total_processed)*1000:.2f} ms")
-        
-        # MLM-specific statistics
-        expected_masked_tokens = total_processed * self.config.context_length * self.mlm_probability
-        self.logger.info(f"Expected masked tokens: ~{expected_masked_tokens:,.0f} ({self.mlm_probability*100:.1f}% of all tokens)")
-        
-        # Memory usage info if available
-        try:
-            import psutil
-            process = psutil.Process()
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            self.logger.info(f"Memory usage: {memory_mb:.1f} MB")
-        except ImportError:
-            pass
-        
-        return result
+                import psutil
+                process = psutil.Process()
+                memory_mb = process.memory_info().rss / 1024 / 1024
+                self.logger.info(f"Memory usage: {memory_mb:.1f} MB")
+            except ImportError:
+                pass
+            
+            return result
         
         except Exception as e:
             elapsed_time = time.time() - start_time
@@ -381,6 +462,3 @@ class MaskedLMTokenizer(BaseTokenizer):
             self.logger.error(f"Error after {elapsed_time:.2f} seconds: {str(e)}")
             self.logger.error(f"Error type: {type(e).__name__}")
             raise
-
-
-
