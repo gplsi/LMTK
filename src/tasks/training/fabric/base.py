@@ -27,10 +27,10 @@ import wandb
 import os
 
 # Import custom utilities
-from src.tasks.clm_training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
-from src.tasks.clm_training.fabric.logger import step_csv_logger
-from src.tasks.clm_training.utils import *
-from src.tasks.clm_training.fabric.generation import FabricGeneration
+from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
+from src.tasks.training.fabric.logger import step_csv_logger
+from src.tasks.training.utils import *
+from src.tasks.training.fabric.generation import FabricGeneration
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
 

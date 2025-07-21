@@ -13,6 +13,7 @@ from datasets import Dataset as HFDataset
 from src.utils.logging import get_logger, set_logger_level
 from src.tasks.tokenization.tokenizer import CausalLMTokenizer
 from src.tasks.tokenization.tokenizer.instruction import InstructionTokenizer
+from src.tasks.tokenization.tokenizer.mlm import MaskedLMTokenizer
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
 from src.utils.orchestrator import BaseOrchestrator
@@ -102,6 +103,8 @@ class TokenizationOrchestrator(BaseOrchestrator):
             tokenizer = CausalLMTokenizer(tokenizer_config)
         elif task == "instruction":
             tokenizer = InstructionTokenizer(tokenizer_config)
+        elif task == "mlm_training":
+            tokenizer = MaskedLMTokenizer(tokenizer_config)
         # TODO: add more tasks here like the mlm_training...
         else:
             raise ValueError(f"Unsupported tokenization task: {task}")
