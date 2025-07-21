@@ -1,0 +1,28 @@
+task: "tokenization"
+experiment_name: "tinystories_gpt2_tokenization"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "openai-community/gpt2"  
+  context_length: 1024
+  overlap: 256
+  task: "clm_training"
+  batch_size: 2000      
+  num_proc: 4           
+  show_progress: true   
+
+dataset:
+  source: "huggingface"
+  nameOrPath: "roneneldan/TinyStories"
+  format: "files"
+  use_txt_as_samples: true
+  file_config:
+    format: "txt"
+    encoding: "utf-8"
+
+output:
+  path: "data/tokenized/tinystories"
+
+test_size: 0.05
+
+

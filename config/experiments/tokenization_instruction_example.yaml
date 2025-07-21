@@ -1,0 +1,43 @@
+# Configuration for Tokenization Instruction Task - ALIA Dataset
+# This config uses the ALIA dataset configuration for salamandra-2b-instruct
+# to process multi-language instruction datasets with chat templates
+
+task: "tokenization_instruction"
+experiment_name: "ALIA_instruction_sala_2b_v2"
+verbose_level: 4
+
+# Model and tokenizer configuration
+model_name: "BSC-LT/salamandra-2b-instruct"
+llm_type: "causal"
+model_type: "llama"
+
+# Tokenizer configuration
+tokenizer:
+  tokenizer_name: "BSC-LT/salamandra-2b-instruct"  # Salamandra tokenizer with chat template support
+  context_length: 512          # Maximum sequence length for instruction tuning (from train_args.max_seq_length)
+  batch_size: 2000             # Batch size for tokenization processing
+  num_proc: 1                  # Number of processes for parallel tokenization
+  show_progress: true          # Show progress bars during tokenization
+
+# Multi-language configuration
+languages: ['ca', 'en', 'es', 'eu', 'gl', 'pt']  # Languages to process
+
+# Data path (ALIA dataset v2)
+dataPath: "data/ALIA/v2"  # Base path containing language subdirectories
+
+# Dataset splitting configuration (70/30 split)
+train_size: 0.7             # 70% for training, 30% for validation
+
+# Output paths (matching ALIA tokenized data structure)
+output:
+  train_path: "data/ALIA/tokenized_data/ALIA/v2/tokenizedTrain"    # Path for training dataset
+  validation_path: "data/ALIA/tokenized_data/ALIA/v2/tokenizedEval"  # Path for validation dataset
+  dataset_path: "data/ALIA/tokenized_data/ALIA/v2/wholeDataset"
+
+# Instruction tuning specific configuration
+mask_prompt: true           # Mask prompt tokens in labels (standard for instruction tuning)
+ignore_index: -100          # Index to ignore in loss calculation
+
+# Training arguments
+train_args:
+  max_seq_length: 512         # Maximum sequence length for tokenization

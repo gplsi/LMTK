@@ -84,13 +84,14 @@ class TokenizationOrchestrator(BaseOrchestrator):
             ),
         )
 
-
         task = self.config.tokenizer.get("task", "clm_training")
         if task == "clm_training":
             tokenizer = CausalLMTokenizer(tokenizer_config)
-        else:
-            raise ValueError(f"Unsupported task: {task}")
 
+        # TODO: add more tasks here like the mlm_training or instruction...
+        else:
+            raise ValueError(f"Unsupported tokenization task: {task}")
+        
         return tokenizer.tokenize(dataset)
 
     def execute(self) -> None:

@@ -23,6 +23,7 @@ lightning = "^2.5.1"
 wandb = "0.17.0"
 pydantic = "1.10.11"
 deepspeed = "^0.13.5"
+sentencepiece = "^0.1.5"
 
 # flash-attn package is commented out as it requires special setup
 # flash-attn = { version = "^2.7.4", optional = true }

@@ -36,6 +36,7 @@ container:
 		--network=host \
 		--gpus all \
 		--user "$(USER_ID):$(GROUP_ID)" \
+		--workdir /workspace \
 		$(PROJECT_NAME) bash
 
 clean:

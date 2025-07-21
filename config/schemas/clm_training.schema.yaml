@@ -60,6 +60,16 @@ allOf:
         default: null
         description: "Number of steps to validate after"
 
+      save_on_validate:
+        type: boolean
+        default: false
+        description: "If True, save checkpoint after validation"
+
+      save_on_end:
+        type: boolean
+        default: false
+        description: "If True, save checkpoint at the end of training"
+
       # Optimizer arguments
       gradient_accumulation:
         type: boolean
@@ -104,7 +114,7 @@ allOf:
       lr_scheduler:
         type: string
         default: "linear"
-        enum: ["fixed", "warmup_linear", "warmup_constant"]
+        enum: ["fixed", "warmup_linear", "warmup_constant", "cosine", "warmup_cosine", "warmup_cosine_restart"]
         description: "Learning rate scheduler to use"
 
       warmup_proportion:

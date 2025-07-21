@@ -116,6 +116,7 @@ LOG_DIR="$HOST_PROJECT_ROOT/output/$OUTPUT_DIR_NAME/$LOG_SUBDIR"
 CACHE_DIR="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME"
 CONFIG_PATH="$HOST_PROJECT_ROOT/$CONFIG_FILE"
 
+echo $CACHE_DIR
 # --- Create Required Directories ---
 echo "===== Setting up directories ====="
 mkdir -p "$LOG_DIR"

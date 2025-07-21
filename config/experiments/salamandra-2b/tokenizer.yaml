@@ -3,10 +3,10 @@ experiment_name: "anonymized_corpus_va"
 verbose_level: 4
 
 tokenizer:
-  name: "BSC-LT/salamandra-2b"
+  tokenizer_name: "BSC-LT/salamandra-2b"
   context_length: 2048
   overlap: 512
-  task: "causal_pretraining"
+  task: "clm_training"
 
 dataset:
   source: "local"
@@ -18,6 +18,6 @@ dataset:
     encoding: "utf-8"
 
 output:
-  path: "data/tokenized/anonymized-va"
+  path: "/workspace/data/tokenized/anonymized-va"
 
 test_size: 0

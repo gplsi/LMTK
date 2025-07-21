@@ -1,0 +1,10 @@
+task: convert
+experiment_name: gpt2_fsdp_to_hf
+verbose_level: 2
+
+convert:
+  base_model: "gpt2"
+  checkpoint_path: "/workspace/output"
+  initial_format: "fsdp"
+  final_format: "huggingface"
+  output_dir: "/workspace/converted"
