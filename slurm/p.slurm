@@ -288,6 +288,9 @@ docker run \
     --env "WANDB_MODE=$WANDB_MODE" \
     --env "SLURM_JOB_ID=$SLURM_JOB_ID" \
     --env "SLURM_NODELIST=$SLURM_NODELIST" \
+    --env "USER=$USERNAME" \
+    --env "HOME=/home/$USERNAME" \
+    --env "LOGNAME=$USERNAME" \
     --env "PYTHON_COMMAND=$PYTHON_COMMAND" \
     --env "MAIN_SCRIPT=$MAIN_SCRIPT" \
     --env "CONFIG_FILE=$CONFIG_FILE" \

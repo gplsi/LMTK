@@ -20,9 +20,9 @@ static_graph: false
 
 # Training arguments
 number_epochs: 2
-batch_size: 2
+batch_size: 1
 gradient_accumulation: true
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 16
 grad_clip: 1.0
 
 # Optimizer parameters
@@ -67,5 +67,3 @@ log_model: false
 log_iter_interval: 10
 
 seed: 42
-seed: 42
-checkpoint: "/workspace/output/s2b-md/iter-143999-ckpt.pth"
