@@ -15,7 +15,7 @@ validation, and testing using a pre-trained causal language model.
 
 
 # Base class for Generative models with Fabric
-class FabricGeneration(L.LightningModule):
+class FabricCLM(L.LightningModule):
     """
     PyTorch Lightning Module for Generative Models with Fabric.
 
@@ -155,21 +155,3 @@ class FabricGeneration(L.LightningModule):
             "loss": loss,
             "outputs": outputs,
         }
-
-
-class FabricInstructionTokenizer(FabricGeneration):
-    """
-    PyTorch Lightning Module for Instructional Models with Fabric.
-
-    This class extends FabricGeneration to handle instruction-based tokenization and training.
-    It is designed to work with instruction datasets, where each example contains an instruction
-    and a response. The module processes these instructions and responses to generate tokenized
-    inputs for training a causal language model.
-    """
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-
-
-
-
-
