@@ -20,10 +20,10 @@ tokenizer:
   ignore_index: -100
   max_seq_length: 1024
   
-  # NEW: Dynamic padding strategy configuration
+  # Dynamic padding strategy configuration
   padding_strategy: "dynamic"  # Options: "fixed" (default) or "dynamic"
   
-  # NEW: Masking strategy configuration
+  # Masking strategy configuration
   masking_strategy: "context_aware"  # Options: "context_aware" (default) or "response_only"
 
 dataset:
