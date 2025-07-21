@@ -60,8 +60,17 @@ def tokenizer_dataset_multiTurn(dir, tokenizer, config, max_seq_length=2048):
     return dataset
 
 def tokenizer_dataset_given_prompt(element, tokenizer, config, max_seq_length):
-    encoded_prompt = tokenizer.encode(element['prompt'], max_length=max_seq_length, add_special_tokens=False)
-    encoded_prompt_and_response = tokenizer.encode(element['prompt_and_response'], max_length=max_seq_length-1, return_tensors="pt", add_special_tokens=False)
+    encoded_prompt = tokenizer.encode(element['prompt'],
+                                      max_length=max_seq_length,
+                                      add_special_tokens=False,
+                                      padding="max_length")
+
+    encoded_prompt_and_response = tokenizer.encode(element['prompt_and_response'],
+                                                   max_length=max_seq_length-1,
+                                                   return_tensors="pt",
+                                                   add_special_tokens=False,
+                                                   padding="max_length")
+
     encoded_prompt_and_response = torch.cat((encoded_prompt_and_response.squeeze_(), torch.tensor([tokenizer.eos_token_id])))
 
     # The labels are the full prompt with response, but with the prompt masked out
