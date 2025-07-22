@@ -6,7 +6,7 @@ experiment_name: "clm-tokenization-testing-example"
 verbose_level: 4
 
 tokenizer:
-  tokenizer_name: "meta-llama/Meta-Llama-3-8B"
+  tokenizer_name: "gpt2"
   context_length: 1024
   task: clm_training
   
@@ -17,7 +17,7 @@ tokenizer:
   
   # CLM-specific tokenization settings
   max_seq_length: 1024
-  stride: 256  # For sliding window approach
+  overlap: 256  # For sliding window approach
   add_special_tokens: true
   
   # Text processing
@@ -26,12 +26,12 @@ tokenizer:
 
 dataset:
   source: local
-  nameOrPath: "/data/testing"
+  nameOrPath: "/workspace/data/testing/"
   format: files
   file_config:
-    format: text
+    format: txt
 
 output:
-  path: "/data/tokenized_outputs/clm_testing"
+  path: "/workspace/data/tokenized_outputs/clm_testing"
 
 test_size: 0.1

@@ -128,7 +128,6 @@ class BaseModel(L.LightningModule):
             self._batch_validation(batch, "validation")
             self._model_validation()
 
-
         outputs = self.model(
             input_ids=batch['input_ids'],
             attention_mask=batch['attention_mask'],

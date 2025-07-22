@@ -72,7 +72,23 @@ class BaseTokenizer(ABC):
             padding_side="right",
             truncation_side="right",
         )
-        self._tokenizer.pad_token = self._tokenizer.eos_token
+        
+        # Set padding token with proper fallback for different tokenizer types
+        if self._tokenizer.pad_token is None:
+            if self._tokenizer.eos_token is not None:
+                # For GPT-style models
+                self._tokenizer.pad_token = self._tokenizer.eos_token
+                self.logger.debug(f"Set pad_token to eos_token: {self._tokenizer.pad_token}")
+            elif self._tokenizer.sep_token is not None:
+                # For BERT-style models
+                self._tokenizer.pad_token = self._tokenizer.sep_token
+                self.logger.debug(f"Set pad_token to sep_token: {self._tokenizer.pad_token}")
+            else:
+                # Fallback: add a new pad token
+                self._tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+                self.logger.debug(f"Added new pad_token: {self._tokenizer.pad_token}")
+        else:
+            self.logger.debug(f"Tokenizer already has pad_token: {self._tokenizer.pad_token}")
         
     @abstractmethod
     def tokenize(self, dataset: Union[str, List[str]]) -> Dict[str, List[int]]:

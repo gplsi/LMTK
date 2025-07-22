@@ -152,9 +152,11 @@ class ConfigValidator:
             task_schema = yaml.safe_load(f)
 
         # Create resolver with preloaded schema store
-        # Use root schema directory as base URI to resolve cross-directory references like base.schema.yaml
+        # Use the directory containing the discovered schema as base URI for relative references
+        # while keeping the full schema store for cross-directory references
+        schema_base_dir = task_schema_path.parent
         resolver = RefResolver(
-            base_uri=f"file://{self.schema_dir}/",
+            base_uri=f"file://{schema_base_dir}/",
             referrer=task_schema,
             store=self.schema_store
         )

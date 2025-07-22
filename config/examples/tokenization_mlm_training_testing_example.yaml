@@ -19,22 +19,26 @@ tokenizer:
   max_seq_length: 512
   mlm_probability: 0.15
   mask_token: "[MASK]"
+  mask_token_id: 103  # Token ID for [MASK] token
   add_special_tokens: true
   
-  # MLM masking strategy
+  # MLM masking strategy (required by schema)
+  masking_strategy:
+    mask_token_prob: 0.8    # 80% of selected tokens are replaced with [MASK]
+    random_token_prob: 0.1  # 10% are replaced with random tokens
+    unchanged_prob: 0.1     # 10% are kept unchanged
+  
+  # Additional MLM settings
   whole_word_masking: false
-  mask_probability: 0.8  # 80% of selected tokens are replaced with [MASK]
-  random_probability: 0.1  # 10% are replaced with random tokens
-  keep_probability: 0.1   # 10% are kept unchanged
 
 dataset:
   source: local
-  nameOrPath: "/data/testing"
+  nameOrPath: "/workspace/data/testing"
   format: files
   file_config:
-    format: text
+    format: txt
 
 output:
-  path: "/data/tokenized_outputs/mlm_testing"
+  path: "/workspace/data/tokenized_outputs/mlm_testing"
 
 test_size: 0.1

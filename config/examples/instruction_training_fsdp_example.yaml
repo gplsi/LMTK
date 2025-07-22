@@ -6,15 +6,15 @@ task: "instruction"
 experiment_name: "llama3-8b-instruction-deepspeed-example"
 
 # Model configuration (from components/model.schema.yaml)
-model_name: "meta-llama/Meta-Llama-3-8B"
+model_name: "meta-llama/Llama-3.2-1B-Instruct"
 precision: "bf16-true"
 verbose_level: "INFO"
 log_every_n_steps: 5
 
 # Data configuration (from components/data.schema.yaml)
 dataset:
-  source: "huggingface"
-  nameOrPath: "alpaca-cleaned"
+  source: local
+  nameOrPath: "workspace/data/tokenized_outputs/instruction_v5"
 
 # Training arguments (from components/training_args.schema.yaml)
 number_epochs: 3
@@ -25,7 +25,7 @@ validate_after_k_steps: 500
 save_on_validate: false
 save_on_end: true
 checkpoint: null
-output_dir: "/data/instruction_training_outputs"
+output_dir: "/workspace/output/instruction_training_example"
 
 # Optimizer configuration (from components/optimizer.schema.yaml)
 gradient_accumulation: true
@@ -47,25 +47,20 @@ chat_template: null  # Use model's default chat template
 system_message: "You are a helpful assistant."
 
 # Parallelization strategy
-parallelization_strategy: "deep_speed"
+parallelization_strategy: "fsdp"
 parallelization_config:
-  # DeepSpeed-specific configuration (from strategy/deepspeed.schema.yaml)
-  stage: 2
-  offload_optimizer: true
-  offload_parameters: false
-  reduce_bucket_size: 5e8
-  allgather_bucket_size: 5e8
-  overlap_comm: true
-  contiguous_gradients: true
-  cpu_checkpointing: false
+  # FSDP-specific configuration (from strategy/fsdp.schema.yaml)
+  auto_wrap_policy: "gpt2"
+  sharding_strategy: "FULL_SHARD"
+  state_dict_type: "full"
+  limit_all_gathers: true
+  cpu_offload: false
+  num_workers: 4
+  gradient_checkpointing: true
+
 
 # Logging configuration
 logging_config: "wandb"
 
-# Instruction-specific evaluation
-evaluation:
-  metrics: ["perplexity", "bleu"]
-  eval_dataset: null
-
 # Seed for reproducibility
-seed: 456
+seed: 42

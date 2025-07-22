@@ -6,7 +6,7 @@ experiment_name: "instruction-tokenization-v5-example"
 verbose_level: 4
 
 tokenizer:
-  tokenizer_name: "meta-llama/Meta-Llama-3-8B"
+  tokenizer_name: "meta-llama/Llama-3.2-1B-Instruct"
   context_length: 1024
   task: instruction
   
@@ -28,12 +28,12 @@ tokenizer:
 
 dataset:
   source: local
-  nameOrPath: "/data/v5"
+  nameOrPath: "/workspace/data/v5"
   format: files
   file_config:
     format: json
 
 output:
-  path: "/data/tokenized_outputs/instruction_v5"
+  path: "/workspace/data/tokenized_outputs/instruction_v5"
 
 test_size: 0.1

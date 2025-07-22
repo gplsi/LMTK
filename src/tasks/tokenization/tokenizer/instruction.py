@@ -83,19 +83,35 @@ class InstructionTokenizer(BaseTokenizer):
         Create a conversation structure from a data row.
         
         Args:
-            row (Dict): Data row containing 'system', 'input', and 'assistance' fields.
+            row (Dict): Data row containing 'system', 'input', 'assistance', and 'target' fields.
             
         Returns:
             List[Dict[str, str]]: Formatted conversation with role-content pairs.
         """
-        conversation = [{'role': 'system', 'content': row['system']}]
+        conversation = []
+        
+        # Add system message if present and non-empty
+        if row.get('system') and row['system'].strip():
+            conversation.append({'role': 'system', 'content': row['system'].strip()})
 
-        for i in range(len(row['input'])):
-            conversation.append({'role': 'user', 'content': row['input'][i]})
-
-            if i < len(row['input']) - 1:
-                conversation.append({'role': 'assistant', 'content': row['assistance'][i]})
-
+        # Process multi-turn conversation if assistance is provided
+        if row.get('assistance') and len(row['assistance']) > 0:
+            # Multi-turn conversation
+            for i in range(len(row['input'])):
+                conversation.append({'role': 'user', 'content': row['input'][i]})
+                
+                if i < len(row['assistance']):
+                    conversation.append({'role': 'assistant', 'content': row['assistance'][i]})
+        else:
+            # Single-turn conversation (most common case)
+            # Add the user input
+            user_input = row['input'][0] if isinstance(row['input'], list) else row['input']
+            conversation.append({'role': 'user', 'content': user_input})
+        
+        # Add the target response as the final assistant message
+        if 'target' in row and row['target']:
+            conversation.append({'role': 'assistant', 'content': row['target']})
+        
         return conversation
     
     def _create_prompt(self, conversation: List[Dict[str, str]]) -> str:
@@ -138,30 +154,39 @@ class InstructionTokenizer(BaseTokenizer):
         # Create conversation and format with chat template
         conversation = self._create_conversation(element)
         
-        # Create prompt (without final assistant response) for masking
-        prompt_conversation = conversation[:-1] if len(conversation) > 1 else conversation
-        prompt = self._create_prompt(prompt_conversation)
+        # Create instruction-only conversation (without assistant response) for masking
+        instruction_conversation = [msg for msg in conversation if msg['role'] != 'assistant']
         
         # Create full conversation (with assistant response)
         full_conversation = self._create_prompt(conversation)
         
-        # Encode prompt and full response
-        encoded_prompt = self._tokenizer.encode(
-            prompt, 
-            max_length=self.max_seq_length, 
-            add_special_tokens=False
-        )
+        # For proper masking, we need to identify where the response starts
+        # We'll tokenize the instruction part and the full conversation separately
+        if instruction_conversation:
+            # Create instruction prompt (this will include the generation prompt)
+            instruction_prompt = self._create_prompt(instruction_conversation)
+            
+            # Encode instruction part
+            encoded_instruction = self._tokenizer.encode(
+                instruction_prompt,
+                max_length=self.max_seq_length,
+                add_special_tokens=False
+            )
+        else:
+            # Fallback: empty instruction
+            encoded_instruction = []
         
-        encoded_prompt_and_response = self._tokenizer.encode(
+        # Encode full conversation (instruction + response)
+        encoded_full = self._tokenizer.encode(
             full_conversation, 
-            max_length=self.max_seq_length - 1, 
+            max_length=self.max_seq_length - 1,  # Reserve space for EOS
             return_tensors="pt", 
             add_special_tokens=False
-        )
+        ).squeeze_()
         
         # Add EOS token
         encoded_prompt_and_response = torch.cat((
-            encoded_prompt_and_response.squeeze_(), 
+            encoded_full, 
             torch.tensor([self._tokenizer.eos_token_id])
         ))
         
@@ -173,22 +198,28 @@ class InstructionTokenizer(BaseTokenizer):
         masking_strategy = getattr(self.config, 'masking_strategy', 'context_aware')
         
         if self.mask_prompt:
+            # Calculate instruction length for proper masking
+            instruction_length = len(encoded_instruction)
+            
             if masking_strategy == 'context_aware':
-                # Context-aware masking: Full attention, mask only labels
+                # Context-aware masking: Full attention, mask only instruction labels
                 # Model sees full context but only learns from responses
-                labels[:len(encoded_prompt)] = self.ignore_index
+                if instruction_length > 0:
+                    labels[:instruction_length] = self.ignore_index
                 # attention_mask remains all 1s for real tokens
                 
             elif masking_strategy == 'response_only':
                 # Response-only masking: Mask both attention and labels
                 # Model only attends to and learns from responses
-                labels[:len(encoded_prompt)] = self.ignore_index
-                attention_mask[:len(encoded_prompt)] = 0
+                if instruction_length > 0:
+                    labels[:instruction_length] = self.ignore_index
+                    attention_mask[:instruction_length] = 0
                 
             else:
                 # Default to context_aware for unknown strategies
                 self.logger.warning(f"Unknown masking_strategy '{masking_strategy}', defaulting to 'context_aware'")
-                labels[:len(encoded_prompt)] = self.ignore_index
+                if instruction_length > 0:
+                    labels[:instruction_length] = self.ignore_index
             
         # Apply padding strategy based on configuration
         padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
