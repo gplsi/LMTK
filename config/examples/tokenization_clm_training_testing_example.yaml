@@ -1,0 +1,37 @@
+# Example configuration for CLM Tokenization
+# Uses data from /data/testing directory for causal language modeling dataset preparation
+
+task: "tokenization"
+experiment_name: "clm-tokenization-testing-example"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "meta-llama/Meta-Llama-3-8B"
+  context_length: 1024
+  task: clm_training
+  
+  # Performance optimization settings
+  batch_size: 1000
+  num_proc: 4
+  show_progress: true
+  
+  # CLM-specific tokenization settings
+  max_seq_length: 1024
+  stride: 256  # For sliding window approach
+  add_special_tokens: true
+  
+  # Text processing
+  concatenate_texts: true
+  group_texts: true
+
+dataset:
+  source: local
+  nameOrPath: "/data/testing"
+  format: files
+  file_config:
+    format: text
+
+output:
+  path: "/data/tokenized_outputs/clm_testing"
+
+test_size: 0.1

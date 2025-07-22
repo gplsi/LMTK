@@ -8,7 +8,6 @@ class, providing a template for custom training strategies.
 import math
 from pathlib import Path
 import time
-from src.tasks.clm_training.utils import select_optimizer, select_scheduler, deterministic
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_from_disk, DatasetDict
@@ -19,8 +18,6 @@ import itertools
 from typing import Tuple, Union
 from box import Box
 from transformers import AutoTokenizer
-
-# Import Lightning and other necessary libraries
 import lightning as L
 from pytorch_lightning.loggers import WandbLogger
 import wandb
@@ -32,6 +29,7 @@ from src.tasks.training.fabric.logger import step_csv_logger
 from src.tasks.training.utils import *
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
+from src.tasks.training.utils import select_optimizer, select_scheduler, deterministic
 
 
 

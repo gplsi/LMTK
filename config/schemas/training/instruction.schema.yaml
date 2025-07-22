@@ -94,16 +94,10 @@ allOf:
           parallelization_config:
             $ref: "strategy/deepspeed.schema.yaml"
         required: ["parallelization_config"]
-      dp:
-        properties:
-          parallelization_config:
-            $ref: "strategy/dp.schema.yaml"
-        required: ["parallelization_config"]
-      
       wandb:
         properties:
           logging_config:
-            $ref: "../training_logging.schema.yaml"
+            $ref: "logging/training_logging.schema.yaml"
         required: ["logging_config"]
       
       lr_scheduler:
@@ -132,14 +126,14 @@ allOf:
       # Compositional parallelization strategy
       parallelization_config:
         oneOf:
-          - $ref: "fsdp.schema.yaml"
-          - $ref: "ddp.schema.yaml"
-          - $ref: "deepspeed.schema.yaml"
+          - $ref: "strategy/fsdp.schema.yaml"
+          - $ref: "strategy/ddp.schema.yaml"
+          - $ref: "strategy/deepspeed.schema.yaml"
         description: "Parallelization strategy configuration"
 
       # Compositional logging configuration
       logging_config:
-        $ref: "training_logging.schema.yaml"
+        $ref: "logging/training_logging.schema.yaml"
         description: "Logging configuration including WandB settings"
 
     required:

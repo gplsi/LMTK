@@ -1,0 +1,40 @@
+# Example configuration for MLM Tokenization
+# Uses data from /data/testing directory for masked language modeling dataset preparation
+
+task: "tokenization"
+experiment_name: "mlm-tokenization-testing-example"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "bert-base-uncased"
+  context_length: 512
+  task: mlm_training
+  
+  # Performance optimization settings
+  batch_size: 1000
+  num_proc: 4
+  show_progress: true
+  
+  # MLM-specific tokenization settings
+  max_seq_length: 512
+  mlm_probability: 0.15
+  mask_token: "[MASK]"
+  add_special_tokens: true
+  
+  # MLM masking strategy
+  whole_word_masking: false
+  mask_probability: 0.8  # 80% of selected tokens are replaced with [MASK]
+  random_probability: 0.1  # 10% are replaced with random tokens
+  keep_probability: 0.1   # 10% are kept unchanged
+
+dataset:
+  source: local
+  nameOrPath: "/data/testing"
+  format: files
+  file_config:
+    format: text
+
+output:
+  path: "/data/tokenized_outputs/mlm_testing"
+
+test_size: 0.1

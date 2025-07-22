@@ -3,7 +3,7 @@ $id: "clm_training.fsdp.schema.yaml"
 description: "Schema for FSDP experiments"
 
 allOf:
-  - $ref: "base.schema.yaml"
+  - $ref: "../../base.schema.yaml"
   - type: object
     
     properties:
