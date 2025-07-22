@@ -30,7 +30,7 @@ import os
 from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
 from src.tasks.training.fabric.logger import step_csv_logger
 from src.tasks.training.utils import *
-from src.tasks.training.fabric.generation import FabricGeneration
+from src.tasks.training.fabric.model.utils import AVAILABLE_MODELS
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
 
@@ -551,7 +551,7 @@ class FabricTrainerBase(ABC):
         # MODEL: instantiate within the fabric.init_module() context
         t0 = time.perf_counter()
         with fabric.init_module():
-            self.model = FabricGeneration(**self.config)
+            self.model = FabricCLM(**self.config)
             # Properly set up the model with fabric for FSDP
             self.model = fabric.setup(self.model)
 
