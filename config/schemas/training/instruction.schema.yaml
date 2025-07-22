@@ -1,0 +1,148 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "instruction.schema.yaml"
+description: "Schema for Instruction Tuning training configuration"
+
+allOf:
+  - $ref: "../base.schema.yaml"
+  - $ref: "components/model.schema.yaml"
+  - $ref: "components/data.schema.yaml"
+  - $ref: "components/training_args.schema.yaml"
+  - $ref: "components/optimizer.schema.yaml"
+  - $ref: "components/scheduler.schema.yaml"
+  - type: object
+    properties:
+      # Instruction-specific model default
+      model_name:
+        type: string
+        default: "meta-llama/Meta-Llama-3-8B"
+        description: "Name or path of the causal language model to load for instruction tuning"
+
+      # Instruction tuning specific arguments
+      ignore_index:
+        type: integer
+        default: -100
+        description: "Token ID to ignore in loss calculation (for masking instruction tokens)"
+
+      # Chat template and formatting
+      chat_template:
+        type: string
+        description: "Chat template to use for formatting conversations"
+        default: null
+      
+      system_message:
+        type: string
+        description: "Default system message for instruction formatting"
+        default: "You are a helpful assistant."
+
+      # Training strategy arguments
+      parallelization_strategy:
+        type: string
+        enum: ["none", "ddp", "fsdp", "deep_speed", "dp"]
+        default: "none"
+        description: "Which distributed training strategy to use"
+
+      # Parallelization config - details differ depending on strategy
+      parallelization_config:
+        type: object
+        default: {}
+        description: "Configuration object for the selected parallelization strategy"
+
+      # Logging arguments
+      logging_config:
+        type: string
+        enum: ["none", "wandb"]
+        default: "none"
+        description: "Which logging strategy to use"
+
+      # Seed arguments
+      seed:
+        type: [integer, 'null']
+        default: null
+        description: "Seed for reproducibility"
+
+    required:
+      - dataset
+      - model_name
+      - precision
+      - number_epochs
+      - batch_size
+      - gradient_accumulation_steps
+      - grad_clip
+      - lr
+      - lr_decay
+      - lr_scheduler
+      - warmup_proportion
+      - weight_decay
+      - beta1
+      - beta2
+      - parallelization_strategy
+      - output_dir
+
+    dependentSchemas:
+      fsdp:
+        properties:
+          parallelization_config:
+            $ref: "strategy/fsdp.schema.yaml"
+        required: ["parallelization_config"]
+      ddp:
+        properties:
+          parallelization_config:
+            $ref: "strategy/ddp.schema.yaml"
+        required: ["parallelization_config"]
+      deep_speed:
+        properties:
+          parallelization_config:
+            $ref: "strategy/deepspeed.schema.yaml"
+        required: ["parallelization_config"]
+      dp:
+        properties:
+          parallelization_config:
+            $ref: "strategy/dp.schema.yaml"
+        required: ["parallelization_config"]
+      
+      wandb:
+        properties:
+          logging_config:
+            $ref: "../training_logging.schema.yaml"
+        required: ["logging_config"]
+      
+      lr_scheduler:
+        type: string
+        default: "warmup_linear"
+        enum: ["fixed", "warmup_linear", "warmup_constant", "cosine"]
+        description: "Learning rate scheduler to use"
+
+      warmup_proportion:
+        type: number
+        default: 0.03
+        description: "Proportion of steps for warmup (typically smaller for instruction tuning)"
+
+      # Logging arguments
+      verbose_level:
+        type: string
+        enum: ["DEBUG", "INFO", "WARNING", "ERROR"]
+        default: "INFO"
+        description: "Logging verbosity level"
+      
+      log_every_n_steps:
+        type: integer
+        default: 10
+        description: "Log training metrics every N steps"
+
+      # Compositional parallelization strategy
+      parallelization_config:
+        oneOf:
+          - $ref: "fsdp.schema.yaml"
+          - $ref: "ddp.schema.yaml"
+          - $ref: "deepspeed.schema.yaml"
+        description: "Parallelization strategy configuration"
+
+      # Compositional logging configuration
+      logging_config:
+        $ref: "training_logging.schema.yaml"
+        description: "Logging configuration including WandB settings"
+
+    required:
+      - model_name
+      - dataset
+      - parallelization_config

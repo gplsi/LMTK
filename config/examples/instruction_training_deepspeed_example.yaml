@@ -1,0 +1,71 @@
+# Example configuration for Instruction Tuning with DeepSpeed strategy
+# This demonstrates the new compositional schema structure
+
+# Base configuration
+task: "instruction"
+experiment_name: "llama3-8b-instruction-deepspeed-example"
+
+# Model configuration (from components/model.schema.yaml)
+model_name: "meta-llama/Meta-Llama-3-8B"
+precision: "bf16-true"
+verbose_level: "INFO"
+log_every_n_steps: 5
+
+# Data configuration (from components/data.schema.yaml)
+dataset:
+  source: "huggingface"
+  nameOrPath: "alpaca-cleaned"
+
+# Training arguments (from components/training_args.schema.yaml)
+number_epochs: 3
+batch_size: 1
+validate_after_epoch: true
+validate_on_end: true
+validate_after_k_steps: 500
+save_on_validate: false
+save_on_end: true
+checkpoint: null
+output_dir: "/data/instruction_training_outputs"
+
+# Optimizer configuration (from components/optimizer.schema.yaml)
+gradient_accumulation: true
+gradient_accumulation_steps: 64
+grad_clip: 1.0
+lr: 5e-6  # Lower learning rate for instruction tuning
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.95
+
+# Scheduler configuration (from components/scheduler.schema.yaml)
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.03  # Smaller warmup for instruction tuning
+
+# Instruction-specific configuration
+ignore_index: -100
+chat_template: null  # Use model's default chat template
+system_message: "You are a helpful assistant."
+
+# Parallelization strategy
+parallelization_strategy: "deep_speed"
+parallelization_config:
+  # DeepSpeed-specific configuration (from strategy/deepspeed.schema.yaml)
+  stage: 2
+  offload_optimizer: true
+  offload_parameters: false
+  reduce_bucket_size: 5e8
+  allgather_bucket_size: 5e8
+  overlap_comm: true
+  contiguous_gradients: true
+  cpu_checkpointing: false
+
+# Logging configuration
+logging_config: "wandb"
+
+# Instruction-specific evaluation
+evaluation:
+  metrics: ["perplexity", "bleu"]
+  eval_dataset: null
+
+# Seed for reproducibility
+seed: 456

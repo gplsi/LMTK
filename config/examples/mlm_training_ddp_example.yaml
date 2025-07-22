@@ -1,0 +1,60 @@
+# Example configuration for MLM training with DDP strategy
+# This demonstrates the new compositional schema structure
+
+# Base configuration
+task: "mlm_training"
+experiment_name: "bert-base-mlm-ddp-example"
+
+# Model configuration (from components/model.schema.yaml)
+model_name: "bert-base-uncased"
+precision: "bf16-true"
+verbose_level: "INFO"
+log_every_n_steps: 10
+
+# Data configuration (from components/data.schema.yaml)
+dataset:
+  source: "huggingface"
+  nameOrPath: "bookcorpus"
+
+# Training arguments (from components/training_args.schema.yaml)
+number_epochs: 2
+batch_size: 4
+validate_after_epoch: true
+validate_on_end: true
+validate_after_k_steps: 1000
+save_on_validate: true
+save_on_end: true
+checkpoint: null
+output_dir: "/data/mlm_training_outputs"
+
+# Optimizer configuration (from components/optimizer.schema.yaml)
+gradient_accumulation: true
+gradient_accumulation_steps: 16
+grad_clip: 1.0
+lr: 1e-4
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler configuration (from components/scheduler.schema.yaml)
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.1
+
+# MLM-specific configuration
+mlm_probability: 0.15
+ignore_index: -100
+
+# Parallelization strategy
+parallelization_strategy: "ddp"
+parallelization_config:
+  # DDP-specific configuration (from strategy/ddp.schema.yaml)
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: false
+
+# Logging configuration
+logging_config: "wandb"
+
+# Seed for reproducibility
+seed: 123

@@ -6,7 +6,7 @@ allOf:
   - $ref: "base.schema.yaml"
   - type: object
     
-    1operties:
+    properties:
       
       auto_wrap_policy:
         type: string
