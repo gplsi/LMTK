@@ -30,9 +30,21 @@ import os
 from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
 from src.tasks.training.fabric.logger import step_csv_logger
 from src.tasks.training.utils import *
-from src.tasks.training.fabric.model.utils import AVAILABLE_MODELS
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
+
+
+
+# Specific Model classes for the framework
+from src.tasks.training.fabric.model.clm import FabricCLM
+from src.tasks.training.fabric.model.mlm import FabricMLM
+from src.tasks.training.fabric.model.instruction import FabricInstruction
+
+MODEL_CLASS_MAP = {
+    "clm_training": FabricCLM,
+    "mlm_training": FabricMLM,
+    "instruction": FabricInstruction,
+}
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
@@ -81,7 +93,14 @@ class FabricTrainerBase(ABC):
         This method should be implemented in subclasses to return the desired training strategy instance.
         """
         pass
-        
+
+    def _instantiate_model(self):
+        model_type = self.config.get("task_type", "clm")
+        if model_type not in MODEL_CLASS_MAP:
+            raise ValueError(f"Unsupported model type: {model_type}")
+        model_class = MODEL_CLASS_MAP[model_type]
+        return model_class(**self.config)
+    
     def setup(self) -> None:
         """
         Set up and launch the training pipeline.
@@ -551,7 +570,9 @@ class FabricTrainerBase(ABC):
         # MODEL: instantiate within the fabric.init_module() context
         t0 = time.perf_counter()
         with fabric.init_module():
-            self.model = FabricCLM(**self.config)
+            # Instantiate the model that inheriths from LightningModule
+            self.model = self._instantiate_model()
+            
             # Properly set up the model with fabric for FSDP
             self.model = fabric.setup(self.model)
 
@@ -574,6 +595,7 @@ class FabricTrainerBase(ABC):
             self.config.beta2
         )
         optimizer = fabric.setup_optimizers(optimizer)
+        
         # SCHEDULER
         scheduler = select_scheduler(
             optimizer, 
@@ -584,7 +606,9 @@ class FabricTrainerBase(ABC):
             self.dataset['train'], 
             self.config.warmup_proportion, 
             self.config.gradient_accumulation_steps
-        )        # STATE
+        )        
+        
+        # STATE
         self.state = {
             "model": self.model, 
             "optimizer": optimizer, 
