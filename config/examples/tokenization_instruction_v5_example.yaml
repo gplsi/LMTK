@@ -6,7 +6,7 @@ experiment_name: "instruction-tokenization-v5-example"
 verbose_level: 4
 
 tokenizer:
-  tokenizer_name: "meta-llama/Llama-3.2-1B-Instruct"
+  tokenizer_name: "BSC-LT/salamandra-2b"
   context_length: 1024
   task: instruction
   

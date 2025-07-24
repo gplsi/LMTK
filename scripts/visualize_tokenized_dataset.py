@@ -32,6 +32,14 @@ except ImportError as e:
     print("Please install: pip install datasets")
     sys.exit(1)
 
+# Optional transformers import for tokenizer support
+try:
+    from transformers import AutoTokenizer
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    AutoTokenizer = None
+
 
 class TokenizedDatasetVisualizer:
     """
@@ -41,18 +49,38 @@ class TokenizedDatasetVisualizer:
     and save formatted visualizations with raw token information.
     """
     
-    def __init__(self, dataset_path: str):
+    def __init__(self, dataset_path: str, tokenizer_name: Optional[str] = None):
         """
         Initialize the visualizer.
         
         Args:
             dataset_path: Path to the tokenized dataset directory
+            tokenizer_name: Optional HuggingFace tokenizer name for decoding input_ids
         """
         self.dataset_path = Path(dataset_path)
         self.dataset = None
+        self.tokenizer = None
+        self.tokenizer_name = tokenizer_name
+        
+        # Load tokenizer if provided
+        if tokenizer_name and TRANSFORMERS_AVAILABLE:
+            self._load_tokenizer()
+        elif tokenizer_name and not TRANSFORMERS_AVAILABLE:
+            print("⚠️  Warning: transformers not available, tokenizer functionality disabled")
+            print("   Install with: pip install transformers")
         
         # Load dataset
         self._load_dataset()
+    
+    def _load_tokenizer(self) -> None:
+        """Load the tokenizer for decoding input_ids."""
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)
+            print(f"✅ Loaded tokenizer: {self.tokenizer_name}")
+        except Exception as e:
+            print(f"❌ Error loading tokenizer '{self.tokenizer_name}': {e}")
+            print("   Continuing without tokenizer functionality")
+            self.tokenizer = None
     
     def _load_dataset(self) -> None:
         """Load the tokenized dataset from disk."""
@@ -79,6 +107,110 @@ class TokenizedDatasetVisualizer:
             return data
         else:
             return list(data)
+    
+    def _decode_tokens(self, sample: Dict[str, Any]) -> Dict[str, Any]:
+        """Decode input_ids and create attention visualization if tokenizer is available."""
+        decoded_info = {}
+        
+        if not self.tokenizer or 'input_ids' not in sample:
+            return decoded_info
+        
+        try:
+            input_ids = self._convert_to_list(sample['input_ids'])
+            attention_mask = self._convert_to_list(sample.get('attention_mask', []))
+            labels = self._convert_to_list(sample.get('labels', []))
+            
+            # Decode full text
+            decoded_info['full_text'] = self.tokenizer.decode(input_ids, skip_special_tokens=False)
+            decoded_info['clean_text'] = self.tokenizer.decode(input_ids, skip_special_tokens=True)
+            
+            # Create token-by-token breakdown with attention info
+            token_breakdown = []
+            for i, token_id in enumerate(input_ids):
+                token_info = {
+                    'position': i,
+                    'token_id': token_id,
+                    'token_text': self.tokenizer.decode([token_id], skip_special_tokens=False),
+                    'has_attention': bool(attention_mask[i]) if i < len(attention_mask) else True,
+                    'is_padding': not bool(attention_mask[i]) if i < len(attention_mask) else False,
+                }
+                
+                # Add label information for training
+                if i < len(labels):
+                    token_info['label'] = labels[i]
+                    token_info['is_masked'] = labels[i] == -100
+                    token_info['contributes_to_loss'] = labels[i] != -100
+                
+                token_breakdown.append(token_info)
+            
+            decoded_info['token_breakdown'] = token_breakdown
+            
+            # Create attention visualization
+            if attention_mask:
+                attention_spans = self._create_attention_spans(token_breakdown)
+                decoded_info['attention_visualization'] = attention_spans
+            
+            # Create training visualization for instruction tuning
+            if labels:
+                training_spans = self._create_training_spans(token_breakdown)
+                decoded_info['training_visualization'] = training_spans
+                
+        except Exception as e:
+            decoded_info['decode_error'] = str(e)
+        
+        return decoded_info
+    
+    def _create_attention_spans(self, token_breakdown: List[Dict]) -> Dict[str, Any]:
+        """Create attention span visualization."""
+        attended_tokens = []
+        padded_tokens = []
+        
+        for token in token_breakdown:
+            if token['has_attention']:
+                attended_tokens.append({
+                    'position': token['position'],
+                    'text': token['token_text'],
+                    'token_id': token['token_id']
+                })
+            else:
+                padded_tokens.append({
+                    'position': token['position'],
+                    'text': token['token_text'],
+                    'token_id': token['token_id']
+                })
+        
+        return {
+            'attended_tokens': attended_tokens,
+            'padded_tokens': padded_tokens,
+            'attention_ratio': len(attended_tokens) / len(token_breakdown) if token_breakdown else 0
+        }
+    
+    def _create_training_spans(self, token_breakdown: List[Dict]) -> Dict[str, Any]:
+        """Create training span visualization for instruction tuning."""
+        training_tokens = []
+        masked_tokens = []
+        
+        for token in token_breakdown:
+            if 'contributes_to_loss' in token:
+                if token['contributes_to_loss']:
+                    training_tokens.append({
+                        'position': token['position'],
+                        'text': token['token_text'],
+                        'token_id': token['token_id'],
+                        'label': token['label']
+                    })
+                else:
+                    masked_tokens.append({
+                        'position': token['position'],
+                        'text': token['token_text'],
+                        'token_id': token['token_id']
+                    })
+        
+        return {
+            'training_tokens': training_tokens,
+            'masked_tokens': masked_tokens,
+            'training_ratio': len(training_tokens) / len(token_breakdown) if token_breakdown else 0
+        }
     
     def _analyze_tokens(self, sample: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze basic token statistics in the sample."""
@@ -107,13 +239,34 @@ class TokenizedDatasetVisualizer:
         
         return analysis
     
+    def _process_sample(self, sample: Dict[str, Any], sample_idx: int) -> Dict[str, Any]:
+        """Process a single sample and extract relevant information."""
+        processed = {
+            'sample_index': sample_idx,
+            'raw_data': sample,
+            'token_analysis': self._analyze_tokens(sample)
+        }
+        
+        # Add tokenizer decoding if available
+        if self.tokenizer:
+            processed['decoded_info'] = self._decode_tokens(sample)
+        
+        return processed
+    
     def _format_sample(self, sample: Dict[str, Any], sample_idx: int) -> Dict[str, Any]:
         """Format a single sample for JSON output."""
+        # Use the enhanced processing method
+        processed = self._process_sample(sample, sample_idx)
+        
         formatted = {
             'sample_index': sample_idx,
-            'metadata': self._analyze_tokens(sample),
+            'metadata': processed['token_analysis'],
             'tokenization': {}
         }
+        
+        # Add decoded information if available
+        if 'decoded_info' in processed:
+            formatted['decoded_info'] = processed['decoded_info']
         
         # Add raw tokenization data (convert tensors to lists)
         for key, value in sample.items():
@@ -222,14 +375,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Visualize 5 samples from each split
+  # Visualize 5 samples from each split (raw tokens only)
   python visualize_tokenized_dataset.py --dataset_path /workspace/output/tokenized_bert_mlm --num_samples 5
   
-  # Custom output directory
-  python visualize_tokenized_dataset.py --dataset_path /workspace/output/tokenized_data --num_samples 10 --output_dir ./my_visualizations
+  # Visualize with tokenizer decoding and attention visualization
+  python visualize_tokenized_dataset.py --dataset_path /workspace/output/tokenized_data --num_samples 5 --tokenizer BSC-LT/salamandra-2b
   
-  # Quick preview with 3 samples
-  python visualize_tokenized_dataset.py --dataset_path /workspace/output/tokenized_data --num_samples 3
+  # Custom output directory with tokenizer decoding
+  python visualize_tokenized_dataset.py --dataset_path /workspace/output/tokenized_data --num_samples 10 --output_dir ./my_visualizations --tokenizer microsoft/DialoGPT-medium
+  
+  # Quick preview with decoded text
+  python visualize_tokenized_dataset.py --dataset_path /workspace/output/tokenized_data --num_samples 3 --tokenizer gpt2
         """
     )
     
@@ -254,6 +410,13 @@ Examples:
         help='Output directory for visualization files (default: ./tokenized_visualizations)'
     )
     
+    parser.add_argument(
+        '--tokenizer',
+        type=str,
+        default=None,
+        help='Optional HuggingFace tokenizer name for decoding input_ids (e.g., BSC-LT/salamandra-2b)'
+    )
+    
     args = parser.parse_args()
     
     # Validate arguments
@@ -270,7 +433,10 @@ Examples:
     
     try:
         # Create visualizer and process dataset
-        visualizer = TokenizedDatasetVisualizer(dataset_path=args.dataset_path)
+        visualizer = TokenizedDatasetVisualizer(
+            dataset_path=args.dataset_path,
+            tokenizer_name=args.tokenizer
+        )
         
         visualizer.visualize_samples(
             num_samples=args.num_samples,

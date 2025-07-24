@@ -78,30 +78,38 @@ class InstructionTokenizer(BaseTokenizer):
         # For slow tokenizers, use multiprocessing with optimal thread count
         return get_optimal_thread_count()
     
-    def _create_conversation(self, row: Dict) -> List[Dict[str, str]]:
+    def _create_conversation(self, row: Dict) -> tuple[List[Dict[str, str]], str]:
         """
-        Create a conversation structure from a data row.
+        Create a conversation structure from a data row, handling system messages properly.
         
         Args:
             row (Dict): Data row containing 'system', 'input', 'assistance', and 'target' fields.
             
         Returns:
-            List[Dict[str, str]]: Formatted conversation with role-content pairs.
+            tuple[List[Dict[str, str]], str]: Conversation with role-content pairs and system message.
         """
         conversation = []
+        system_message = ""
         
-        # Add system message if present and non-empty
+        # Extract system message separately to handle tokenizer alternation requirements
         if row.get('system') and row['system'].strip():
-            conversation.append({'role': 'system', 'content': row['system'].strip()})
+            system_message = row['system'].strip()
 
-        # Process multi-turn conversation if assistance is provided
+        # Process conversation ensuring strict user/assistant alternation
         if row.get('assistance') and len(row['assistance']) > 0:
-            # Multi-turn conversation
-            for i in range(len(row['input'])):
-                conversation.append({'role': 'user', 'content': row['input'][i]})
+            # Multi-turn conversation - ensure proper alternation
+            inputs = row['input'] if isinstance(row['input'], list) else [row['input']]
+            assistances = row['assistance']
+            
+            # Build conversation with strict alternation
+            for i in range(max(len(inputs), len(assistances))):
+                # Add user message if available
+                if i < len(inputs):
+                    conversation.append({'role': 'user', 'content': inputs[i]})
                 
-                if i < len(row['assistance']):
-                    conversation.append({'role': 'assistant', 'content': row['assistance'][i]})
+                # Add assistant message if available
+                if i < len(assistances):
+                    conversation.append({'role': 'assistant', 'content': assistances[i]})
         else:
             # Single-turn conversation (most common case)
             # Add the user input
@@ -109,17 +117,57 @@ class InstructionTokenizer(BaseTokenizer):
             conversation.append({'role': 'user', 'content': user_input})
         
         # Add the target response as the final assistant message
+        # But only if the last message isn't already an assistant message
         if 'target' in row and row['target']:
-            conversation.append({'role': 'assistant', 'content': row['target']})
+            # Check if we need to add the target or if it should replace the last assistant message
+            if conversation and conversation[-1]['role'] == 'assistant':
+                # Replace the last assistant message with the target
+                conversation[-1]['content'] = row['target']
+            else:
+                # Add target as new assistant message
+                conversation.append({'role': 'assistant', 'content': row['target']})
         
-        return conversation
+        # Validate conversation alternation before returning
+        if len(conversation) > 1:
+            for i in range(len(conversation) - 1):
+                current_role = conversation[i]['role']
+                next_role = conversation[i + 1]['role']
+                
+                # Check for invalid patterns
+                if current_role == next_role:
+                    # Two consecutive messages with same role - fix this
+                    if current_role == 'user':
+                        # Two consecutive user messages - merge them
+                        conversation[i]['content'] += "\n\n" + conversation[i + 1]['content']
+                        conversation.pop(i + 1)
+                        break  # Re-validate after modification
+                    elif current_role == 'assistant':
+                        # Two consecutive assistant messages - merge them
+                        conversation[i]['content'] += "\n\n" + conversation[i + 1]['content']
+                        conversation.pop(i + 1)
+                        break  # Re-validate after modification
+        
+        # Ensure conversation starts with user and ends with assistant for instruction tuning
+        if conversation:
+            # Must start with user
+            if conversation[0]['role'] != 'user':
+                # This shouldn't happen with our logic, but just in case
+                conversation.insert(0, {'role': 'user', 'content': 'Please help me with the following:'})
+            
+            # Must end with assistant for instruction tuning
+            if conversation[-1]['role'] != 'assistant':
+                # Add a placeholder assistant response if missing
+                conversation.append({'role': 'assistant', 'content': 'I understand. How can I help you?'})
+        
+        return conversation, system_message
     
-    def _create_prompt(self, conversation: List[Dict[str, str]]) -> str:
+    def _create_prompt(self, conversation: List[Dict[str, str]], system_message: str = "") -> str:
         """
         Create a formatted prompt from conversation using chat template.
         
         Args:
             conversation (List[Dict[str, str]]): Conversation with role-content pairs.
+            system_message (str): Optional system message to include.
             
         Returns:
             str: Formatted prompt string.
@@ -130,12 +178,29 @@ class InstructionTokenizer(BaseTokenizer):
             raise RuntimeError("Tokenizer is not initialized. Cannot apply chat template.")
             
         date_string = datetime.today().strftime('%Y-%m-%d')
-        prompt = self._tokenizer.apply_chat_template(
-            conversation,
-            tokenize=False,
-            add_generation_prompt=True,
-            date_string=date_string
-        )
+        
+        # Try to use system_message parameter if supported, otherwise integrate into conversation
+        try:
+            prompt = self._tokenizer.apply_chat_template(
+                conversation,
+                tokenize=False,
+                add_generation_prompt=True,
+                date_string=date_string,
+                system_message=system_message if system_message else None
+            )
+        except TypeError:
+            # Fallback: integrate system message into first user message if system_message param not supported
+            if system_message and conversation and conversation[0]['role'] == 'user':
+                original_content = conversation[0]['content']
+                conversation[0]['content'] = f"{system_message}\n\n{original_content}"
+            
+            prompt = self._tokenizer.apply_chat_template(
+                conversation,
+                tokenize=False,
+                add_generation_prompt=True,
+                date_string=date_string
+            )
+        
         return prompt
     
     def _tokenize_instruction_example(self, element: Dict) -> Dict[str, torch.Tensor]:
@@ -152,19 +217,20 @@ class InstructionTokenizer(BaseTokenizer):
             self._initialize_tokenizer()
             
         # Create conversation and format with chat template
-        conversation = self._create_conversation(element)
-        
-        # Create instruction-only conversation (without assistant response) for masking
-        instruction_conversation = [msg for msg in conversation if msg['role'] != 'assistant']
+        conversation, system_message = self._create_conversation(element)
         
         # Create full conversation (with assistant response)
-        full_conversation = self._create_prompt(conversation)
+        full_conversation = self._create_prompt(conversation, system_message)
         
         # For proper masking, we need to identify where the response starts
-        # We'll tokenize the instruction part and the full conversation separately
-        if instruction_conversation:
-            # Create instruction prompt (this will include the generation prompt)
-            instruction_prompt = self._create_prompt(instruction_conversation)
+        # Instead of creating instruction-only conversation (which breaks alternation),
+        # we'll create a conversation that ends just before the final assistant response
+        if len(conversation) > 1 and conversation[-1]['role'] == 'assistant':
+            # Create conversation without the final assistant response
+            instruction_conversation = conversation[:-1]
+            
+            # Add generation prompt to get the instruction length
+            instruction_prompt = self._create_prompt(instruction_conversation, system_message)
             
             # Encode instruction part
             encoded_instruction = self._tokenizer.encode(
@@ -173,7 +239,7 @@ class InstructionTokenizer(BaseTokenizer):
                 add_special_tokens=False
             )
         else:
-            # Fallback: empty instruction
+            # Fallback: if no proper conversation structure, use empty instruction
             encoded_instruction = []
         
         # Encode full conversation (instruction + response)
@@ -388,8 +454,8 @@ class InstructionTokenizer(BaseTokenizer):
                     file_examples = 0
                     for element in data:
                         try:
-                            conversation = self._create_conversation(element)
-                            prompt = self._create_prompt(conversation)
+                            conversation, system_message = self._create_conversation(element)
+                            prompt = self._create_prompt(conversation, system_message)
                             prompt_and_response = prompt + element['target'] + '<|im_end|>'
                             
                             combined_data.append({

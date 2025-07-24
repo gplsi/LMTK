@@ -1,12 +1,12 @@
-# Example configuration for Instruction Tuning with DeepSpeed strategy
+# Example configuration for Instruction Tuning with FSDP strategy
 # This demonstrates the new compositional schema structure
 
 # Base configuration
 task: "instruction"
-experiment_name: "llama3-8b-instruction-deepspeed-example"
+experiment_name: "salamandra-2b-instruction-fsdp-example"
 
 # Model configuration (from components/model.schema.yaml)
-model_name: "meta-llama/Llama-3.2-1B-Instruct"
+model_name: "BSC-LT/salamandra-2b"
 precision: "bf16-true"
 verbose_level: "INFO"
 log_every_n_steps: 5
