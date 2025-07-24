@@ -110,13 +110,6 @@ allOf:
         type: number
         default: 0.03
         description: "Proportion of steps for warmup (typically smaller for instruction tuning)"
-
-      # Logging arguments
-      verbose_level:
-        type: string
-        enum: ["DEBUG", "INFO", "WARNING", "ERROR"]
-        default: "INFO"
-        description: "Logging verbosity level"
       
       log_every_n_steps:
         type: integer

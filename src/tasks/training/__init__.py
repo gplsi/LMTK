@@ -1,7 +1,7 @@
 from box import Box
 
-# src/tasks/continual.py
+# src/tasks/training.py
 def execute(config: Box):
-    from src.tasks.clm_training.orchestrator import ContinualOrchestrator
+    from src.tasks.training.orchestrator import ContinualOrchestrator
     orchestrator = ContinualOrchestrator(config)
     return orchestrator.execute()

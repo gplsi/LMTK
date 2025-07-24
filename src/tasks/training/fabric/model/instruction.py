@@ -44,7 +44,7 @@ class FabricInstruction(BaseModel):
                 - zero_stage (Optional): DeepSpeed ZeRO stage level.
                 - ignore_index (Optional): Token ID to ignore in loss calculation (default: -100).
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self.cli_logger = get_logger(__name__, kwargs.get("verbose_level", VerboseLevel.DEBUG))
         self.args = kwargs
         model_name = kwargs["model_name"]

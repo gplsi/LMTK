@@ -15,12 +15,11 @@ import torch.optim as optim
 from tqdm import tqdm
 
 # Importing custom utilities and base classes
-from src.tasks.clm_training.utils import *
-from src.tasks.clm_training.fabric.base import FabricTrainerBase
-from tasks.clm_training.fabric.wrappers.fsdp_config import resolve_fsdp_config
-from utils import inherit_init_params
-from src.tasks.clm_training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
-
+from src.tasks.training.utils import *
+from src.tasks.training.fabric.trainer.base import FabricTrainerBase
+from src.tasks.training.fabric.wrappers.fsdp_config import resolve_fsdp_config
+from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
+from src.utils import inherit_init_params
 
 @inherit_init_params
 class FSDP(FabricTrainerBase):

@@ -93,11 +93,16 @@ class FabricTrainerBase(ABC):
         pass
 
     def _instantiate_model(self):
-        model_type = self.config.get("task_type", "clm")
+        model_type = self.config.get("task", "")
         if model_type not in MODEL_CLASS_MAP:
             raise ValueError(f"Unsupported model type: {model_type}")
         model_class = MODEL_CLASS_MAP[model_type]
-        return model_class(**self.config)
+        # Convert Box config to dict to ensure proper unpacking
+        config_dict = dict(self.config)
+        # Debug: print available keys
+        self.cli_logger.debug(f"Available config keys: {list(config_dict.keys())}")
+        self.cli_logger.debug(f"Looking for model_name, found: {config_dict.get('model_name', 'NOT FOUND')}")
+        return model_class(**config_dict)
     
     def setup(self) -> None:
         """
@@ -140,14 +145,19 @@ class FabricTrainerBase(ABC):
         logger = step_csv_logger(
             self.config.output_dir, 
             self.config.model_name, 
-            flush_logs_every_n_steps=self.config.log_iter_interval
+            flush_logs_every_n_steps=self.config.log_every_n_steps
         )
         
         if self.config.logging_config == "wandb":
+            # Use default values if WandB config is not provided
+            wandb_entity = getattr(self.config, 'wandb_entity', None)
+            wandb_project = getattr(self.config, 'wandb_project', 'continual-pretraining')
+            log_model = getattr(self.config, 'log_model', False)
+            
             wandb_logger = WandbLogger(
-                entity=self.config.wandb_entity, 
-                project=self.config.wandb_project,                
-                log_model=self.config.log_model
+                entity=wandb_entity, 
+                project=wandb_project,                
+                log_model=log_model
             )
             return [logger, wandb_logger]
         return [logger]
@@ -555,7 +565,7 @@ class FabricTrainerBase(ABC):
             fabric.seed_everything(self.config.seed)
 
         # MONITORING
-        self.monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=self.config.log_iter_interval)
+        self.monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=self.config.log_every_n_steps)
 
         # OUTPUT DIR AND SYNC
         if fabric.global_rank == 0:

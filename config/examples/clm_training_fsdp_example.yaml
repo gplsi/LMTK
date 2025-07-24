@@ -3,22 +3,27 @@
 
 # Base configuration
 task: "clm_training"
-experiment_name: "llama3-8b-clm-fsdp-example"
-
-# Model configuration (from components/model.schema.yaml)
-model_name: "gpt2"
-precision: "bf16-true"
-verbose_level: "INFO"
-log_every_n_steps: 10
+experiment_name: "gpt2-clm-fsdp-example"
+verbose_level: 3
 
 # Data configuration (from components/data.schema.yaml)
 dataset:
   source: local
-  nameOrPath: "workspace/data/tokenized_outputs/clm_testing"
+  nameOrPath: "/workspace/data/tokenized_outputs/clm_testing"
+  format: "hf"
+
+
+# Model configuration (from components/model.schema.yaml)
+model_name: "openai-community/gpt2"
+precision: "bf16-true"
+log_every_n_steps: 10
+
 
 # Training arguments (from components/training_args.schema.yaml)
 number_epochs: 3
 batch_size: 2
+num_workers: 4
+gradient_checkpointing: true
 validate_after_epoch: true
 validate_on_end: true
 validate_after_k_steps: null
@@ -31,7 +36,7 @@ output_dir: "/workspace/output/clm_training_example"
 gradient_accumulation: true
 gradient_accumulation_steps: 32
 grad_clip: 1.0
-lr: 2e-5
+lr: 0.00002
 lr_decay: true
 weight_decay: 0.01
 beta1: 0.9
@@ -50,7 +55,6 @@ parallelization_config:
   state_dict_type: "full"
   limit_all_gathers: true
   cpu_offload: false
-  num_workers: 4
   gradient_checkpointing: true
 
 # Logging configuration
@@ -59,3 +63,6 @@ logging_config: "wandb"
 
 # Seed for reproducibility
 seed: 42
+
+# Output
+output_dir: "output/"

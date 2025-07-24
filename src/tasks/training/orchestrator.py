@@ -14,9 +14,9 @@ import torch
 from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
-from src.tasks.clm_training.fabric.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
-from utils import inherit_init_params
-from utils.orchestrator import BaseOrchestrator
+from src.tasks.training.fabric.trainer.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
+from src.utils import inherit_init_params
+from src.utils.orchestrator import BaseOrchestrator
 from datasets import Dataset as HFDataset
 
 

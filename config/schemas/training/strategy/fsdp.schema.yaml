@@ -51,5 +51,4 @@ allOf:
       - state_dict_type
       - limit_all_gathers
       - cpu_offload
-      - num_workers
       - gradient_checkpointing

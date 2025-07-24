@@ -40,7 +40,7 @@ class FabricCLM(BaseModel):
                 - verbose_level (Optional): Logging verbosity level.
                 - zero_stage (Optional): DeepSpeed ZeRO stage level.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,

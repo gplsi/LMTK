@@ -46,7 +46,7 @@ class FabricMLM(BaseModel):
                 - mlm_probability (Optional): Probability of masking tokens (default: 0.15).
                 - ignore_index (Optional): Token ID to ignore in loss calculation (default: -100).
         """
-        super().__init__()        
+        super().__init__(**kwargs)        
         self.mlm_probability = kwargs.get("mlm_probability", 0.15)
         self.ignore_index = kwargs.get("ignore_index", -100)       
         self.model = AutoModelForMaskedLM.from_pretrained(

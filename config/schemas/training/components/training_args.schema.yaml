@@ -10,10 +10,21 @@ properties:
     default: 2
     description: "Number of epochs to train"
 
+  num_workers:
+    type: integer
+    default: 4
+    description: "Number of CPU workers for data loading"
+
   batch_size:
     type: integer
     default: 1
     description: "Size of each data batch"
+
+  # Model optimization settings
+  gradient_checkpointing:
+    type: boolean
+    default: false
+    description: "Enable gradient checkpointing to reduce memory usage during training"
     
   # Validation settings
   validate_after_epoch:
@@ -43,7 +54,7 @@ properties:
     description: "If True, save checkpoint at the end of training"
 
   checkpoint:
-    type: string
+    type: [string, 'null']
     default: null
     description: "Path to the checkpoint file for resume"
 
@@ -61,3 +72,4 @@ required:
   - save_on_validate
   - save_on_end
   - output_dir
+  - num_workers
