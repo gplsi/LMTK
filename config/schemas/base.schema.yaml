@@ -4,7 +4,7 @@ type: object
 properties:
   task:
     type: string
-    enum: ["tokenization", "clm_training", "mlm_training", "lm_evaluation", "lm_inference", "publish", "tokenization_instruction", "convert"]
+    enum: ["tokenization", "clm_training", "mlm_training", "lm_evaluation", "lm_inference", "publish", "tokenization_instruction", "convert", "anonymization"]
   experiment_name:
     type: string
     pattern: '^.+$'
