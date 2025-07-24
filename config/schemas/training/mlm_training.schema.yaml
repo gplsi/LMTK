@@ -78,20 +78,20 @@ allOf:
       fsdp:
         properties:
           parallelization_config:
-            $ref: "strategy/fsdp.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/strategy/fsdp.schema.yaml"
         required: ["parallelization_config"]
       ddp:
         properties:
           parallelization_config:
-            $ref: "strategy/ddp.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/strategy/ddp.schema.yaml"
         required: ["parallelization_config"]
       deep_speed:
         properties:
           parallelization_config:
-            $ref: "strategy/deepspeed.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/strategy/deepspeed.schema.yaml"
         required: ["parallelization_config"]
       wandb:
         properties:
           logging_config:
-            $ref: "logging/training_logging.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/logging/training_logging.schema.yaml"
         required: ["logging_config"]
