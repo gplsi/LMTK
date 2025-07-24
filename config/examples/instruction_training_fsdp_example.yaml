@@ -8,13 +8,13 @@ experiment_name: "salamandra-2b-instruction-fsdp-example"
 # Model configuration (from components/model.schema.yaml)
 model_name: "BSC-LT/salamandra-2b"
 precision: "bf16-true"
-verbose_level: "INFO"
+verbose_level: 3
 log_every_n_steps: 5
 
 # Data configuration (from components/data.schema.yaml)
 dataset:
   source: local
-  nameOrPath: "workspace/data/tokenized_outputs/instruction_v5"
+  nameOrPath: "/workspace/data/tokenized_outputs/instruction_v5"
 
 # Training arguments (from components/training_args.schema.yaml)
 number_epochs: 3
@@ -31,7 +31,7 @@ output_dir: "/workspace/output/instruction_training_example"
 gradient_accumulation: true
 gradient_accumulation_steps: 64
 grad_clip: 1.0
-lr: 5e-6  # Lower learning rate for instruction tuning
+lr: 0.00002
 lr_decay: true
 weight_decay: 0.01
 beta1: 0.9
