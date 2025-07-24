@@ -82,52 +82,23 @@ allOf:
       fsdp:
         properties:
           parallelization_config:
-            $ref: "strategy/fsdp.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/strategy/fsdp.schema.yaml"
         required: ["parallelization_config"]
       ddp:
         properties:
           parallelization_config:
-            $ref: "strategy/ddp.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/strategy/ddp.schema.yaml"
         required: ["parallelization_config"]
       deep_speed:
         properties:
           parallelization_config:
-            $ref: "strategy/deepspeed.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/strategy/deepspeed.schema.yaml"
         required: ["parallelization_config"]
       wandb:
         properties:
           logging_config:
-            $ref: "logging/training_logging.schema.yaml"
+            $ref: "file:///workspace/config/schemas/training/logging/training_logging.schema.yaml"
         required: ["logging_config"]
-      
-      lr_scheduler:
-        type: string
-        default: "warmup_linear"
-        enum: ["fixed", "warmup_linear", "warmup_constant", "cosine"]
-        description: "Learning rate scheduler to use"
-
-      warmup_proportion:
-        type: number
-        default: 0.03
-        description: "Proportion of steps for warmup (typically smaller for instruction tuning)"
-      
-      log_every_n_steps:
-        type: integer
-        default: 10
-        description: "Log training metrics every N steps"
-
-      # Compositional parallelization strategy
-      parallelization_config:
-        oneOf:
-          - $ref: "strategy/fsdp.schema.yaml"
-          - $ref: "strategy/ddp.schema.yaml"
-          - $ref: "strategy/deepspeed.schema.yaml"
-        description: "Parallelization strategy configuration"
-
-      # Compositional logging configuration
-      logging_config:
-        $ref: "logging/training_logging.schema.yaml"
-        description: "Logging configuration including WandB settings"
 
     required:
       - model_name
