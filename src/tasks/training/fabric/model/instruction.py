@@ -51,19 +51,10 @@ class FabricInstruction(BaseModel):
         
         # Store ignore_index for loss calculation (standard for instruction tuning)
         self.ignore_index = kwargs.get("ignore_index", -100)
-        
-        if kwargs['precision'] == 'bf16-true':
-            torch_dtype = torch.bfloat16
-        else:
-            torch_dtype = torch.float32
-        
+                
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=torch_dtype,
+            torch_dtype=self.torch_dtype,
             use_cache=False
         )
         
-        # Log instruction tuning specific configuration
-        self.cli_logger.info(f"Initialized instruction tuning model: {model_name}")
-        self.cli_logger.info(f"Ignore index for loss calculation: {self.ignore_index}")
-        self.cli_logger.info(f"Model dtype: {torch_dtype}")
