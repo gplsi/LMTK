@@ -1,15 +1,17 @@
+# Original data (same as aitana-v1) but without warmup and cosine scheduling
+
 task: "clm_training"   # pretraining, tokenization
-experiment_name: "mda_pv2_salamandra_2b"
+experiment_name: "aitana-s2b-c1"
 verbose_level: 3
 
 # Training data
 dataset:
   source: "local"  # huggingface, local
-  nameOrPath: "/workspace/data/tokenized/md-anonymized-salamandra-2b"
+  nameOrPath: "/workspace/data/tokenized/anonymized-va-salamandra"
   format: "hf"
 
 # Output dir
-output_dir: "output/mda_pv2_salamandra_2b"
+output_dir: "output/aitana-s2b-c1"
 precision: "bf16-true"
 
 # Model
@@ -57,6 +59,7 @@ logging_config: "wandb"
 # Wandb logging specific parameters
 wandb_project: "salamandra-2b_fsdp__allen-md-anonymized"
 wandb_entity: "gplsi_continual"
+wandb_run_name: "aitana-s2b-c1"
 log_model: false
 log_iter_interval: 10
 
