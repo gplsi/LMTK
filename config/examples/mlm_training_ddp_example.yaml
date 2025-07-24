@@ -8,13 +8,13 @@ experiment_name: "bert-base-mlm-ddp-example"
 # Model configuration (from components/model.schema.yaml)
 model_name: "bert-base-uncased"
 precision: "bf16-true"
-verbose_level: "INFO"
+verbose_level: 3
 log_every_n_steps: 10
 
 # Data configuration (from components/data.schema.yaml)
 dataset:
   source: local
-  nameOrPath: "workspace/data/tokenized_outputs/mlm_testing"
+  nameOrPath: "/workspace/data/tokenized_outputs/mlm_testing"
 
 # Training arguments (from components/training_args.schema.yaml)
 number_epochs: 2
@@ -25,13 +25,15 @@ validate_after_k_steps: 1000
 save_on_validate: true
 save_on_end: true
 checkpoint: null
+num_workers: 4
+gradient_checkpointing: false
 output_dir: "/workspace/output/mlm_training_example"
 
 # Optimizer configuration (from components/optimizer.schema.yaml)
 gradient_accumulation: true
 gradient_accumulation_steps: 16
 grad_clip: 1.0
-lr: 1e-4
+lr: 0.00001
 lr_decay: true
 weight_decay: 0.01
 beta1: 0.9

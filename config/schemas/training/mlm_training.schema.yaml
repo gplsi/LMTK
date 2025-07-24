@@ -3,12 +3,12 @@ $id: "mlm_training.schema.yaml"
 description: "Schema for Masked Language Model training configuration"
 
 allOf:
-  - $ref: "../base.schema.yaml"
-  - $ref: "components/model.schema.yaml"
-  - $ref: "components/data.schema.yaml"
-  - $ref: "components/training_args.schema.yaml"
-  - $ref: "components/optimizer.schema.yaml"
-  - $ref: "components/scheduler.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/base.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/model.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/data.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/training_args.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/optimizer.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/scheduler.schema.yaml"
   - type: object
     properties:
       # MLM-specific model default
