@@ -26,6 +26,7 @@ JOB_NAME=""
 CPUS_PER_TASK=""
 NODES=""
 NTASKS_PER_NODE=""
+NODELIST=""
 OUTPUT_DIR=""
 OUTPUT_FILE_PATTERN=""
 ERROR_FILE_PATTERN=""
@@ -78,6 +79,7 @@ OPTIONAL:
     -j, --job-name JOB_NAME      Job name (default: lmtk)
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
+    --nodelist NODELIST          Specific nodes to use (optional, e.g., lovelace.iuii.ua.es)
     -o, --output OUTPUT_DIR      Output directory name (optional)
     --rebuild                    Force rebuild Docker image even if it exists
     -d, --dry-run                Show the command that would be executed without running it
@@ -98,6 +100,9 @@ EXAMPLES:
 
     # Different partition
     $0 -c config/experiments/my_experiment.yaml -p gpu -g 8 -m 400G
+
+    # Specific node
+    $0 -c config/experiments/my_experiment.yaml --nodelist=lovelace.iuii.ua.es
 
     # Force rebuild Docker image (useful after code changes)
     $0 -c config/experiments/test_continual.yaml --rebuild
@@ -158,6 +163,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --nodes)
             NODES="$2"
+            shift 2
+            ;;
+        --nodelist)
+            NODELIST="$2"
             shift 2
             ;;
         -o|--output)
@@ -268,6 +277,10 @@ EXPORT_VARS="${EXPORT_VARS},CPUS_PER_TASK=$CPUS_PER_TASK"
 EXPORT_VARS="${EXPORT_VARS},NODES=$NODES"
 EXPORT_VARS="${EXPORT_VARS},NTASKS_PER_NODE=$NTASKS_PER_NODE"
 
+if [[ -n "$NODELIST" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},NODELIST=$NODELIST"
+fi
+
 # Build the sbatch command with proper SLURM directives
 SBATCH_CMD="sbatch"
 SBATCH_CMD="$SBATCH_CMD --job-name=$JOB_NAME"
@@ -280,6 +293,11 @@ SBATCH_CMD="$SBATCH_CMD --nodes=$NODES"
 SBATCH_CMD="$SBATCH_CMD --ntasks-per-node=$NTASKS_PER_NODE"
 SBATCH_CMD="$SBATCH_CMD --output=$OUTPUT_FILE_PATTERN"
 SBATCH_CMD="$SBATCH_CMD --error=$ERROR_FILE_PATTERN"
+
+# Add nodelist if specified
+if [[ -n "$NODELIST" ]]; then
+    SBATCH_CMD="$SBATCH_CMD --nodelist=$NODELIST"
+fi
 
 # Add environment variables
 if [[ -n "$EXPORT_VARS" ]]; then
@@ -305,6 +323,9 @@ echo "Memory: $MEMORY"
 echo "Time Limit: $TIME_LIMIT"
 echo "CPUs per Task: $CPUS_PER_TASK"
 echo "Nodes: $NODES"
+if [[ -n "$NODELIST" ]]; then
+    echo "Nodelist: $NODELIST"
+fi
 if [[ -n "$WANDB_API_KEY" ]]; then
     echo "WandB API Key: ${WANDB_API_KEY:0:10}..."
 else

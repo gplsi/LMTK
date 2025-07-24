@@ -25,14 +25,10 @@ number_epochs: 1
 output_dir: tutorials/output
 parallelization_strategy: fsdp
 precision: bf16-true
-save_on_end: true
-save_on_validate: false
 sharding_strategy: FULL_SHARD
 state_dict_type: sharded
 task: clm_training
-validate_after_epoch: false
-validate_after_k_steps: 1000
-validate_on_end: false
+validations_per_epoch: 2
 verbose_level: 2
 wandb_entity: your_wandb_entity
 wandb_project: your_wandb_project

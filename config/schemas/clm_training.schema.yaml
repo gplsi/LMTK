@@ -58,30 +58,11 @@ allOf:
         default: 1
         description: "Size of each data batch"
         
-      validate_after_epoch:
-        type: boolean
-        default: true
-        description: "If True, validate after each epoch"
-      
-      validate_on_end:
-        type: boolean
-        default: true
-        description: "If True, validate at the end of training"
-      
-      validate_after_k_steps:
-        type: [integer, 'null']
-        default: null
-        description: "Number of steps to validate after"
-
-      save_on_validate:
-        type: boolean
-        default: false
-        description: "If True, save checkpoint after validation"
-
-      save_on_end:
-        type: boolean
-        default: false
-        description: "If True, save checkpoint at the end of training"
+      validations_per_epoch:
+        type: integer
+        default: 1
+        minimum: 1
+        description: "Number of times to validate and save checkpoints per epoch. If 1, validates/saves only at epoch end. If 2, validates/saves at 1/2 and 2/2 (end) of epoch. If 3, validates/saves at 1/3, 2/3, and 3/3 (end) of epoch, etc."
 
       # Optimizer arguments
       gradient_accumulation:
@@ -173,6 +154,7 @@ allOf:
       - precision
       - number_epochs
       - batch_size
+      - validations_per_epoch
       - gradient_accumulation_steps
       - grad_clip
       - lr

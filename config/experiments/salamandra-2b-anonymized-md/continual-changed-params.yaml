@@ -1,5 +1,5 @@
 task: "clm_training"   # pretraining, tokenization
-experiment_name: "md_anonymized_salamandra_2b_clm_training"
+experiment_name: "mda_pv2_salamandra_2b"
 verbose_level: 3
 
 # Training data
@@ -9,7 +9,7 @@ dataset:
   format: "hf"
 
 # Output dir
-output_dir: "output/s2b-md-original-params"
+output_dir: "output/mda_pv2_salamandra_2b"
 precision: "bf16-true"
 
 # Model
@@ -36,14 +36,8 @@ beta2: 0.999
 lr_scheduler: "cosine"
 warmup_proportion: 0
 
-# Validation parameters
-validate_on_end: true
-validate_after_epoch: true
-validate_after_k_steps: 20000
-
-# Checkpoint saving logic
-save_on_validate: true
-save_on_end: false
+# Validation and checkpoint saving parameters
+validations_per_epoch: 2
 
 # Distributed_strategy
 parallelization_strategy: "fsdp"

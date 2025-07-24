@@ -21,16 +21,8 @@ static_graph: false
 number_epochs: 1
 batch_size: 4
 
-# Validation parameters
-validate_on_end: false
-validate_after_epoch: false
-validate_after_k_steps: null
-
-# Checkpoint saving logic
-# Set to true to save checkpoint after validation (steps, epoch, or end)
-save_on_validate: true
-# Set to true to save checkpoint at the end of training (if not already saved by validation)
-save_on_end: true
+# Validation and checkpoint saving parameters
+validations_per_epoch: 1
 
 # Gradient parameters
 gradient_accumulation: true

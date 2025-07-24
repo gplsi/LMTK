@@ -31,6 +31,7 @@ TIME_LIMIT="${TIME_LIMIT:-48:00:00}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 NODES="${NODES:-1}"
 NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
+NODELIST="${NODELIST:-}"
 
 # --- Project Paths (auto-detected) ---
 PROJECT_NAME="${PROJECT_NAME:-LMTK}"
@@ -134,6 +135,9 @@ echo "Docker Image: $DOCKER_IMAGE_NAME"
 echo "Config File: $CONFIG_FILE"
 echo "Config Path: $CONFIG_PATH"
 echo "Output Directory: $LOG_DIR"
+if [[ -n "$NODELIST" ]]; then
+echo "Nodelist: $NODELIST"
+fi
 echo "WandB Project: $WANDB_PROJECT"
 echo "WandB Entity: $WANDB_ENTITY"
 echo "WandB API Key: ${WANDB_API_KEY:+[PROVIDED]}${WANDB_API_KEY:-[NOT PROVIDED]}"
