@@ -50,7 +50,7 @@ warmup_proportion: 0.06
 parallelization_strategy: "fsdp"
 parallelization_config:
   # FSDP-specific configuration (from strategy/fsdp.schema.yaml)
-  auto_wrap_policy: "llama"
+  auto_wrap_policy: "gpt2"
   sharding_strategy: "FULL_SHARD"
   state_dict_type: "full"
   limit_all_gathers: true

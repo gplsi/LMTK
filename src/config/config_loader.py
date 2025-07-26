@@ -78,57 +78,29 @@ class ConfigValidator:
         Raises:
             FileNotFoundError: If no matching schema file is found
         """
-        # First, try the exact task name in root directory
-        root_schema = self.schema_dir / f"{task_name}.schema.yaml"
-        if root_schema.exists():
-            return root_schema
-            
-        # Determine if this is a training or tokenization task based on config structure
-        is_training_task = self._is_training_config(config_data)
-        is_tokenization_task = self._is_tokenization_config(config_data)
-        
-        # For training tasks (clm_training, mlm_training, instruction)
-        if is_training_task:
-            # Try direct training schema match
-            training_schema = self.schema_dir / "training" / f"{task_name}.schema.yaml"
-            if training_schema.exists():
-                return training_schema
-                
-            # Fallback to general training schema in subfolder
-            general_schema = self.schema_dir / "training" / "training.schema.yaml"
-            if general_schema.exists():
-                return general_schema
-            
-        # For tokenization tasks, look for specific subtask schemas
-        elif task_name == "tokenization" or is_tokenization_task:
-            # Check if tokenizer.task exists in config
-            tokenizer_task = None
+        # Simplified schema discovery logic
+        if task_name == "tokenization":
             if "tokenizer" in config_data and "task" in config_data["tokenizer"]:
                 tokenizer_task = config_data["tokenizer"]["task"]
-            
-            # Try tokenization-specific schemas
-            if tokenizer_task:
                 specific_schema = self.schema_dir / "tokenization" / f"tokenization.{tokenizer_task}.schema.yaml"
                 if specific_schema.exists():
                     return specific_schema
-                    
-        # Search subdirectories with priority: training first, then tokenization
-        search_order = ["training", "tokenization"] if is_training_task else ["tokenization", "training"]
-        
-        for subdir in search_order:
-            subdir_path = self.schema_dir / subdir
-            if subdir_path.exists():
-                for schema_path in subdir_path.rglob("*.schema.yaml"):
-                    # Check if the schema filename contains the task name
-                    if task_name in schema_path.stem:
-                        return schema_path
-        
-        # Final fallback: search all subdirectories
-        for schema_path in self.schema_dir.rglob("*.schema.yaml"):
-            # Check if the schema filename contains the task name
-            if task_name in schema_path.stem:
-                return schema_path
-                
+            # Fallback to generic tokenization schema
+            generic_schema = self.schema_dir / "tokenization" / "tokenization.schema.yaml"
+            if generic_schema.exists():
+                return generic_schema
+        # For training tasks
+        elif task_name in ["clm_training", "mlm_training", "instruction"]:
+            training_schema = self.schema_dir / "training" / f"{task_name}.schema.yaml"
+            if training_schema.exists():
+                return training_schema
+            general_schema = self.schema_dir / "training" / "training.schema.yaml"
+            if general_schema.exists():
+                return general_schema
+        # Fallback: try root schema
+        root_schema = self.schema_dir / f"{task_name}.schema.yaml"
+        if root_schema.exists():
+            return root_schema
         # If no schema found, raise an error with helpful information
         available_schemas = [str(p.relative_to(self.schema_dir)) for p in self.schema_dir.rglob("*.schema.yaml")]
         raise FileNotFoundError(
