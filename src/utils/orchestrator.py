@@ -7,6 +7,8 @@ and optional splitting. It supports local datasets (loaded from disk or files) a
 for future integration with HuggingFace datasets.
 """
 
+import os
+import json
 from box import Box
 from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
@@ -114,9 +116,80 @@ class BaseOrchestrator(ABC):
                     self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
                 # TODO: make it work for single files too
                 dataset = dataset_handler.split(dataset, split_ratio=self.config.test_size)
-                
+
                 return dataset
-            raise ValueError(f"Invalid dataset format: {self.config.dataset.format}")
+
+            elif self.config.dataset.format == "multilanguage_files":
+                self.logger.info(f"Loading multilanguage dataset from files at dir '{self.config.dataset.nameOrPath}'")
+
+                languagesToLoad = self.config.dataset.languagesToLoad if hasattr(self.config.dataset, 'languagesToLoad') else None
+
+                if languagesToLoad is not None:
+                    self.logger.info(f"Loading only languages: {languagesToLoad}")
+                else:
+                    self.logger.info("Loading all languages from the dataset")
+                    languagesToLoad = os.listdir(self.config.dataset.nameOrPath)
+
+                # Don't create empty dataset here - collect all data first
+                all_splits = {}
+
+                for lang in languagesToLoad:
+                    lang_path = os.path.join(self.config.dataset.nameOrPath, lang)
+                    
+                    if not os.path.exists(lang_path):
+                        self.logger.warning(f"Language path '{lang_path}' does not exist, skipping.")
+                        continue
+                    else:
+                        self.logger.info(f"Processing language: {lang} at path '{lang_path}'")
+
+                    # Collect all data for this language
+                    language_data = []
+
+                    for file in os.listdir(lang_path):
+                        file_path = os.path.join(lang_path, file)
+                        if not os.path.isfile(file_path):
+                            self.logger.warning(f"File '{file_path}' is not a valid file, skipping.")
+                            continue
+                        
+                        self.logger.info(f"Processing file: {file_path}")
+                        
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                dataJson = json.load(f)
+
+                            if isinstance(dataJson, list):
+                                language_data.extend(dataJson)
+                            elif isinstance(dataJson, dict):
+                                language_data.append(dataJson)
+                            else:
+                                self.logger.warning(f"Invalid data format in file '{file_path}', expected list or dict, got {type(dataJson)}")
+                                continue
+                        except Exception as e:
+                            self.logger.error(f"Error reading file '{file_path}': {e}")
+                            continue
+
+                    # Store the data for this language
+                    if language_data:
+                        all_splits[lang] = language_data
+                        self.logger.info(f"Collected {len(language_data)} examples for language '{lang}'")
+
+                if all_splits:
+                    # Combine all data into a single dataset with language labels
+                    combined_data = []
+                    for lang, data in all_splits.items():
+                        for item in data:
+                            # Add language label to each example
+                            item['language'] = lang
+                            combined_data.append(item)
+                    
+                    dataset = HFDataset.from_list(combined_data)
+                else:
+                    self.logger.warning("No valid data collected from multilanguage files, returning empty dataset.")
+                    dataset = HFDataset.from_list([])
+
+                return dataset
+
+       
         elif self.config.dataset.source == "huggingface":
             raise NotImplementedError("HuggingFace dataset loading not implemented yet")
         raise ValueError(f"Invalid dataset source: {self.config.dataset.source}")

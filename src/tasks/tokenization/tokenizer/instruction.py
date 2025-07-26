@@ -2,6 +2,7 @@
 from typing import Dict, List, Optional, Union, Tuple
 from datasets import Features, Sequence, Value, DatasetDict
 from datasets import Dataset as HFDataset
+from datasets import concatenate_datasets
 import os
 import json
 import time
@@ -57,6 +58,8 @@ class InstructionTokenizer(BaseTokenizer):
         self.mask_prompt = getattr(config, 'mask_prompt', True)
         self.ignore_index = getattr(config, 'ignore_index', -100)
         self.max_seq_length = getattr(config, 'max_seq_length', config.context_length)
+        self.test_size = getattr(config, 'test_size', 0.3)
+        self.seed = getattr(config, 'seed', 1234)
         
     def _get_optimal_num_proc(self) -> Optional[int]:
         """
@@ -204,6 +207,124 @@ class InstructionTokenizer(BaseTokenizer):
         return prompt
     
     def _tokenize_instruction_example(self, element: Dict) -> Dict[str, torch.Tensor]:
+        """
+        Tokenize a single instruction example with proper label masking.
+        
+        Args:
+            element (Dict): Dictionary containing structured conversation data with 'system', 'input', 'assistance' fields.
+            
+        Returns:
+            Dict[str, torch.Tensor]: Tokenized example with input_ids, attention_mask, and labels.
+        """
+        if self._tokenizer is None:
+            self._initialize_tokenizer()
+            
+        # Create conversation and format with chat template
+        conversation = element['prompt']
+        
+        # Encode instruction part
+        encoded_instruction = self._tokenizer.encode(
+            conversation,
+            max_length=self.max_seq_length,
+            add_special_tokens=False
+        )
+
+        # Create full conversation (with assistant response)
+        full_conversation = element['prompt_and_response']
+        
+        # Encode full conversation (instruction + response)
+        encoded_full = self._tokenizer.encode(
+            full_conversation, 
+            max_length=self.max_seq_length - 1,  # Reserve space for EOS
+            return_tensors="pt", 
+            add_special_tokens=False
+        ).squeeze_()
+
+        # Add EOS token
+        encoded_prompt_and_response = torch.cat((
+            encoded_full, 
+            torch.tensor([self._tokenizer.eos_token_id])
+        ))
+        
+        # Create labels and attention mask
+        labels = encoded_prompt_and_response.clone()
+        attention_mask = torch.ones_like(encoded_prompt_and_response)
+        
+        # Apply masking strategy based on configuration
+        masking_strategy = getattr(self.config, 'masking_strategy', 'context_aware')
+        
+        if self.mask_prompt:
+            # Calculate instruction length for proper masking
+            instruction_length = len(encoded_instruction)
+            
+            if masking_strategy == 'context_aware':
+                # Context-aware masking: Full attention, mask only instruction labels
+                # Model sees full context but only learns from responses
+                if instruction_length > 0:
+                    labels[:instruction_length] = self.ignore_index
+                # attention_mask remains all 1s for real tokens
+                
+            elif masking_strategy == 'response_only':
+                # Response-only masking: Mask both attention and labels
+                # Model only attends to and learns from responses
+                if instruction_length > 0:
+                    labels[:instruction_length] = self.ignore_index
+                    attention_mask[:instruction_length] = 0
+                
+            else:
+                # Default to context_aware for unknown strategies
+                self.logger.warning(f"Unknown masking_strategy '{masking_strategy}', defaulting to 'context_aware'")
+                if instruction_length > 0:
+                    labels[:instruction_length] = self.ignore_index
+            
+        # Apply padding strategy based on configuration
+        padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
+        
+        if padding_strategy == 'dynamic':
+            # Dynamic padding: return sequences as-is, padding will be handled at batch level
+            # Store original length for batch-level padding
+            return {
+                "input_ids": encoded_prompt_and_response,
+                "attention_mask": attention_mask,
+                "labels": labels,
+                "length": len(encoded_prompt_and_response)  # Store length for dynamic padding
+            }
+        else:
+            # Fixed padding: pad to context length (current behavior)
+            seq_len = len(encoded_prompt_and_response)
+            if seq_len < self.config.context_length:
+                pad_length = self.config.context_length - seq_len
+                
+                # Pad with pad_token_id (or 0 if not available)
+                pad_token_id = getattr(self._tokenizer, 'pad_token_id', 0) or 0
+                
+                encoded_prompt_and_response = torch.cat([
+                    encoded_prompt_and_response,
+                    torch.full((pad_length,), pad_token_id, dtype=torch.long)
+                ])
+                
+                labels = torch.cat([
+                    labels,
+                    torch.full((pad_length,), self.ignore_index, dtype=torch.long)
+                ])
+                
+                attention_mask = torch.cat([
+                    attention_mask,
+                    torch.zeros(pad_length, dtype=torch.long)
+                ])
+            elif seq_len > self.config.context_length:
+                # Truncate if too long
+                encoded_prompt_and_response = encoded_prompt_and_response[:self.config.context_length]
+                labels = labels[:self.config.context_length]
+                attention_mask = attention_mask[:self.config.context_length]
+        
+        return {
+            "input_ids": encoded_prompt_and_response,
+            "attention_mask": attention_mask,
+            "labels": labels
+        }
+    
+    def _tokenize_instruction_example_original(self, element: Dict) -> Dict[str, torch.Tensor]:
         """
         Tokenize a single instruction example with proper label masking.
         
@@ -404,7 +525,7 @@ class InstructionTokenizer(BaseTokenizer):
         
         return padded_dataset
     
-    def _process_multi_language_datasets(self, dataset_paths: List[str]) -> HFDataset:
+    def _process_multi_language_datasets(self, dataset: HFDataset) -> HFDataset:
         """
         Process multiple language datasets and combine them with enhanced performance and logging.
         
@@ -415,90 +536,60 @@ class InstructionTokenizer(BaseTokenizer):
             HFDataset: Combined and tokenized dataset.
         """
         start_time = time.time()
-        self.logger.info(f"Starting processing of {len(dataset_paths)} language datasets")
-        
-        # Use list for better performance than DataFrame concatenation
-        combined_data = []
-        total_files = 0
-        processed_files = 0
-        failed_files = 0
+
+        self.logger.info(f"Starting processing language datasets")
+
+        #Create a HFDataset with language, prompt, and prompt_and_response columns
+        datasetProcessed = []
+
+        languages = list(set(dataset['language']))
         language_stats = defaultdict(int)
-        
-        for lang_path in dataset_paths:
+
+        for lang in languages:
             lang_start_time = time.time()
-            language = Path(lang_path).name  # Extract language code from path
-            self.logger.info(f"Processing language dataset: {language} ({lang_path})")
+            self.logger.info(f"Processing language: {lang}")
+            lang_data = dataset.filter(lambda x: x['language'] == lang)
             
-            if not os.path.exists(lang_path):
-                self.logger.warning(f"Dataset path does not exist: {lang_path}")
+            if len(lang_data) == 0:
+                self.logger.warning(f"No data found for language '{lang}', skipping.")
                 continue
-                
-            # Count total files for progress tracking
-            json_files = [f for f in os.listdir(lang_path) if f.endswith('.json')]
-            total_files += len(json_files)
-            lang_examples = 0
             
-            self.logger.info(f"Found {len(json_files)} JSON files in {language}")
-            
-            # Process all JSON files in the directory
-            for file in json_files:
-                file_path = os.path.join(lang_path, file)
-                file_start_time = time.time()
-                
+            # Process each example in the language dataset
+            for example in lang_data:
                 try:
-                    self.logger.debug(f"Loading file: {file}")
+                    conversation, system_message = self._create_conversation(example)
+                    prompt = self._create_prompt(conversation, system_message)
+                    prompt_and_response = prompt + example['target'] + '<|im_end|>'
                     
-                    with open(file_path, encoding="UTF8") as f:
-                        data = json.load(f)
-                    
-                    file_examples = 0
-                    for element in data:
-                        try:
-                            conversation, system_message = self._create_conversation(element)
-                            prompt = self._create_prompt(conversation, system_message)
-                            prompt_and_response = prompt + element['target'] + '<|im_end|>'
-                            
-                            combined_data.append({
-                                'prompt': prompt, 
-                                'prompt_and_response': prompt_and_response
-                            })
-                            file_examples += 1
-                            
-                        except Exception as e:
-                            self.logger.debug(f"Error processing example in {file}: {str(e)}")
-                            continue
-                    
-                    # File processing statistics
-                    file_time = time.time() - file_start_time
-                    lang_examples += file_examples
-                    processed_files += 1
-                    
-                    self.logger.debug(f"Processed {file}: {file_examples} examples in {file_time:.2f}s")
-                        
+                    # Append to processed dataset
+                    datasetProcessed.append({
+                        'language': lang,
+                        'prompt': prompt,
+                        'prompt_and_response': prompt_and_response
+                    })
+
                 except Exception as e:
-                    self.logger.error(f"Error processing file {file}: {str(e)}")
-                    failed_files += 1
+                    self.logger.error(f"Error processing example for language '{lang}': {str(e)}")
                     continue
-            
-            # Language processing statistics
+
+            # Convert the processed data for this language into a HFDataset
+            lang_dataset = HFDataset.from_list(datasetProcessed)
+
             lang_time = time.time() - lang_start_time
-            language_stats[language] = lang_examples
-            
-            self.logger.info(f"Completed {language}: {lang_examples} examples in {lang_time:.2f}s")
-        
+            language_stats[lang] = len(lang_data)
+
+            self.logger.info(f"Completed {lang}: {language_stats[lang]} examples in {lang_time:.2f}s")
+
         # Final processing statistics
         total_time = time.time() - start_time
-        total_examples = len(combined_data)
+        total_examples = len(datasetProcessed)
         
-        if not combined_data:
+        if not datasetProcessed:
             raise ValueError("No valid data found in provided dataset paths")
         
         # Comprehensive logging
         self.logger.info("=== Multi-language Dataset Processing Summary ===")
         self.logger.info(f"Total processing time: {total_time:.2f} seconds")
-        self.logger.info(f"Total files found: {total_files}")
-        self.logger.info(f"Files processed successfully: {processed_files}")
-        self.logger.info(f"Files failed: {failed_files}")
         self.logger.info(f"Total examples loaded: {total_examples}")
         self.logger.info(f"Average processing speed: {total_examples/total_time:.1f} examples/sec")
         
@@ -510,7 +601,7 @@ class InstructionTokenizer(BaseTokenizer):
             
         # Convert to HuggingFace Dataset efficiently
         self.logger.info("Converting to HuggingFace Dataset format...")
-        dataset = HFDataset.from_list(combined_data)
+        dataset = HFDataset.from_list(datasetProcessed)
         
         self.logger.info(f"Dataset conversion completed. Final dataset size: {len(dataset)}")
         return dataset
@@ -538,9 +629,121 @@ class InstructionTokenizer(BaseTokenizer):
         self.logger.info(f"Using num_proc={num_proc}, batch_size={batch_size}, writer_batch_size={writer_batch_size}")
         
         # Apply tokenization with enhanced performance settings
+        
+        # Delete all column but 'language'
+        columnsToDelete = dataset.column_names.copy()
+        columnsToDelete.remove('language')
+
         map_kwargs = {
             "function": self._tokenize_instruction_example,
-            "remove_columns": dataset.column_names,
+            "remove_columns": columnsToDelete,
+            "batch_size": batch_size,
+            "writer_batch_size": writer_batch_size,
+            "desc": "Tokenizing instruction dataset"
+        }
+        
+        # Only add num_proc for slow tokenizers
+        if num_proc is not None:
+            map_kwargs["num_proc"] = num_proc
+            
+        # Add progress tracking if enabled
+        if hasattr(self.config, 'show_progress') and self.config.show_progress:
+            map_kwargs["desc"] = "Tokenizing instruction dataset"
+        
+        try:
+            tokenized_dataset = dataset.map(**map_kwargs)
+            
+            # Apply dynamic padding if configured
+            padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
+            if padding_strategy == 'dynamic':
+                tokenized_dataset = self._apply_dynamic_padding(tokenized_dataset)
+            
+            # Set format for PyTorch with explicit column specification
+            tokenized_dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
+            
+            # Performance metrics
+            elapsed_time = time.time() - start_time
+            throughput = len(dataset) / elapsed_time if elapsed_time > 0 else 0
+            
+            self.logger.info(f"Tokenization completed successfully")
+            self.logger.info(f"Processed {len(dataset)} examples in {elapsed_time:.2f} seconds")
+            self.logger.info(f"Throughput: {throughput:.1f} examples/sec")
+            self.logger.info(f"Final dataset size: {len(tokenized_dataset)}")
+            
+            
+        except Exception as e:
+            self.logger.error(f"Error during batch tokenization: {str(e)}")
+            raise
+
+        try:
+            # Split the dataset in train and validation sets per language
+            train_split = None
+            validation_split = None
+
+            self.logger.info("Splitting dataset into train and validation sets per language")
+            self.logger.info(f"Using test_size={self.test_size}, seed={self.seed}")
+
+            for lang in list(set(tokenized_dataset['language'])):
+                lang_rows = tokenized_dataset.filter(lambda x: x['language'] == lang)
+
+                #Delete the language column
+                lang_rows = lang_rows.remove_columns(['language'])
+
+                split = lang_rows.train_test_split(
+                    test_size=self.test_size,
+                    seed=self.seed
+                )
+
+                if train_split is None and validation_split is None:
+                    train_split = split['train']
+                    validation_split = split['test']
+                else:
+                    train_split = concatenate_datasets([train_split, split['train']])
+                    validation_split = concatenate_datasets([validation_split, split['test']])
+
+            # Merge the train and validation splits into a Dataset object
+            tokenized_dataset = DatasetDict({
+                'train': train_split,
+                'validation': validation_split
+            })
+        except Exception as e:
+            self.logger.error(f"Error during dataset splitting: {str(e)}")
+            raise
+
+        return tokenized_dataset
+    
+    def _tokenize_dataset_batch_original(self, dataset: HFDataset) -> HFDataset:
+        """
+        Tokenize the entire dataset using optimized batch processing.
+        
+        Args:
+            dataset (HFDataset): Dataset to tokenize.
+            
+        Returns:
+            HFDataset: Tokenized dataset.
+        """
+        start_time = time.time()
+        self.logger.info(f"Starting dataset tokenization for {len(dataset)} examples")
+        self.logger.info("COLUMN NAMES: " + str(dataset.column_names))
+        
+        # Get optimal number of processes
+        num_proc = self._get_optimal_num_proc()
+        
+        # Performance optimization parameters
+        batch_size = getattr(self.config, 'batch_size', 1000)
+        writer_batch_size = getattr(self.config, 'writer_batch_size', 10000)
+        
+        self.logger.info(f"Using num_proc={num_proc}, batch_size={batch_size}, writer_batch_size={writer_batch_size}")
+        
+        # Apply tokenization with enhanced performance settings
+        
+        # Delete all column but 'language'
+        columnsToDelete = dataset.column_names.copy()
+        columnsToDelete.remove('language')
+
+        map_kwargs = {
+            "function": self._tokenize_instruction_example,
+            "remove_columns": columnsToDelete,
             "batch_size": batch_size,
             "writer_batch_size": writer_batch_size,
             "desc": "Tokenizing instruction dataset"
@@ -580,14 +783,12 @@ class InstructionTokenizer(BaseTokenizer):
             self.logger.error(f"Error during batch tokenization: {str(e)}")
             raise
     
-    def tokenize(self, dataset: Union[HFDataset, DatasetDict, List[str]]) -> Union[HFDataset, DatasetDict]:
+    def tokenize(self, dataset: HFDataset) -> Union[HFDataset, DatasetDict]:
         """
         Tokenize input dataset(s) for instruction tuning with comprehensive performance monitoring.
 
         This method handles different input types:
         - HFDataset: Single dataset to tokenize
-        - DatasetDict: Multiple splits to tokenize
-        - List[str]: Paths to multi-language datasets
 
         Args:
             dataset: Dataset(s) to tokenize - can be HFDataset, DatasetDict, or list of paths.
@@ -631,44 +832,20 @@ class InstructionTokenizer(BaseTokenizer):
             self.logger.warning(f"  → Unknown strategy '{padding_strategy}', using 'fixed'")
         
         try:
-            # Handle different input types with detailed logging
-            if isinstance(dataset, list):
-                self.logger.info(f"Processing multi-language datasets from {len(dataset)} paths:")
-                for i, path in enumerate(dataset, 1):
-                    self.logger.info(f"  {i}. {path}")
-                
-                # Multi-language dataset paths
-                processed_dataset = self._process_multi_language_datasets(dataset)
-                result = self._tokenize_dataset_batch(processed_dataset)
-                
-            elif isinstance(dataset, HFDataset):
-                self.logger.info(f"Processing single dataset with {len(dataset)} examples")
-                # Single dataset
-                result = self._tokenize_dataset_batch(dataset)
-                
-            elif isinstance(dataset, DatasetDict):
-                self.logger.info(f"Processing DatasetDict with {len(dataset)} splits:")
-                for split_name, split_data in dataset.items():
-                    self.logger.info(f"  {split_name}: {len(split_data)} examples")
-                
-                # Multiple splits
-                result = DatasetDict()
-                total_examples = 0
-                
-                for split_name, split_dataset in dataset.items():
-                    split_start_time = time.time()
-                    self.logger.info(f"Processing split: {split_name} ({len(split_dataset)} examples)")
-                    
-                    result[split_name] = self._tokenize_dataset_batch(split_dataset)
-                    
-                    split_time = time.time() - split_start_time
-                    total_examples += len(split_dataset)
-                    self.logger.info(f"Completed {split_name} in {split_time:.2f} seconds")
-                    
-                self.logger.info(f"Processed all splits: {total_examples} total examples")
-                    
-            else:
-                raise ValueError(f"Unsupported dataset type: {type(dataset)}. Supported types: HFDataset, DatasetDict, List[str]")
+            if 'language' not in dataset.column_names:
+                # ERROR: The HFDataset must have a 'language' column for multi-language processing
+                raise ValueError("HFDataset must contain a 'language' column for multi-language processing")
+
+            langs = dataset['language']
+            langs = list(set(langs))  # Unique languages
+
+            self.logger.info(f"Processing HFDataset with {len(langs)} languages: {', '.join(langs)}")
+
+            # Multi-language dataset joined into a single HFDataset
+            result = self._process_multi_language_datasets(dataset)
+            self.logger.info(f"Multi-language dataset processing completed. Total examples: {len(result)}")
+            self.logger.info(f"Dataset column names: {result.column_names}")
+            result = self._tokenize_dataset_batch(result)
             
             # Final performance summary
             elapsed_time = time.time() - start_time

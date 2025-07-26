@@ -75,3 +75,5 @@ class TokenizerConfig:
     mask_prompt: bool = True
     ignore_index: int = -100
     max_seq_length: Optional[int] = None
+    test_size: float = 0.3
+    seed: int = 1234  # Default seed for reproducibility

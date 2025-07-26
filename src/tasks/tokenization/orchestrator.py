@@ -78,6 +78,9 @@ class TokenizationOrchestrator(BaseOrchestrator):
         mask_prompt = self.config.tokenizer.get("mask_prompt", True)
         ignore_index = self.config.tokenizer.get("ignore_index", -100)
         max_seq_length = self.config.tokenizer.get("max_seq_length", None)
+        test_size = self.config.get("test_size", 0.3)
+        seed = self.config.get("seed", 1234)
+
         
         # Create the tokenizer configuration using parameters from the orchestrator's configuration.
         tokenizer_config = TokenizerConfig(
@@ -96,6 +99,8 @@ class TokenizationOrchestrator(BaseOrchestrator):
             mask_prompt=mask_prompt,
             ignore_index=ignore_index,
             max_seq_length=max_seq_length,
+            test_size=test_size,
+            seed=seed
         )
 
         task = self.config.tokenizer.get("task", "clm_training")

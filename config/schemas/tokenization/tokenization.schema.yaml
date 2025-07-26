@@ -53,7 +53,7 @@ allOf:
             description: "Dataset name for HuggingFace or local path"
           format:
             type: string
-            enum: ["dataset", "files"]
+            enum: ["dataset", "files", "multilanguage_files"]
           file_config:
             type: object
             properties:

@@ -26,6 +26,12 @@ allOf:
             enum: ["context_aware", "response_only"]
             default: "context_aware"
             description: "Masking strategy to use for tokenization. Options: 'context_aware' (default) or 'response_only'."
+      dataset:
+        properties:
+          languagesToLoad:
+            type: array
+      seed:
+        type: integer
 
       
 
