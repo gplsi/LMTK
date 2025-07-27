@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Union
 from transformers import PreTrainedTokenizer, AutoTokenizer
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 from src.utils.logging import get_logger
-from utils import get_optimal_thread_count
+from src.utils import get_optimal_thread_count
 
 optimal_threads = get_optimal_thread_count()
 # Set Rayon threads to match CPU cores

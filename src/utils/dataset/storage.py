@@ -84,15 +84,15 @@ class DatasetStorage:
         self.enable_txt_samples = enable_txt_samples
         # Map file extensions to specific dataset loading methods.
         self.extension_to_method = {
-            "txt": partial(self.__load_dataset_from_extension, "text"),
-            "csv": partial(self.__load_dataset_from_extension, "csv"),
-            "json": partial(self.__load_dataset_from_extension, "json"),
-            "jsonl": partial(self.__load_dataset_from_extension, "json"),
+            "txt": partial(self._load_dataset_from_extension, "text"),
+            "csv": partial(self._load_dataset_from_extension, "csv"),
+            "json": partial(self._load_dataset_from_extension, "json"),
+            "jsonl": partial(self._load_dataset_from_extension, "json"),
             # Add more mappings as needed.
         }
         self.text_key = None  # Will be set when loading JSON/JSONL files if specified in config
 
-    def __load_dataset_from_extension(self, data_type: str, files: list[str]) -> Union[HFDataset, DatasetDict]:
+    def _load_dataset_from_extension(self, data_type: str, files: list[str]) -> Union[HFDataset, DatasetDict]:
         """
         Load a dataset from files with a specific file extension.
 
@@ -112,13 +112,14 @@ class DatasetStorage:
             return self.__load_text_files_as_samples(files)
         
         # Special handling for JSON/JSONL files when we're processing JSON format
-        if data_type == "json" and (self.text_key is not None or any(f.endswith('.jsonl') for f in files)):
-            return self.__load_json_with_text_key(files)
-        
+        if data_type == "json":
+            return self._load_json(files)
+
+
         # Default behavior: use Hugging Face's built-in loaders
         return load_dataset(data_type, data_files=files)
-    
-    def __load_json_with_text_key(self, files: list[str]) -> DatasetDict:
+
+    def _load_json(self, files: list[str]) -> DatasetDict:
         """
         Load JSON/JSONL files and extract text.
         
@@ -152,9 +153,9 @@ class DatasetStorage:
                         json_content = json.load(f)
                         if isinstance(json_content, list):
                             for i, item in enumerate(json_content):
-                                self.__process_json_entry(item, data, file_path, i)
+                                self._process_json_entry(item, data, file_path, i)
                         else:
-                            self.__process_json_entry(json_content, data, file_path, 0)
+                            self._process_json_entry(json_content, data, file_path, 0)
                             
             except Exception as e:
                 self.logger.error(f"Error loading file {file_path}: {str(e)}")
@@ -170,7 +171,7 @@ class DatasetStorage:
         dataset = HFDataset.from_list(data)
         return DatasetDict({"train": dataset})
     
-    def __process_json_entry(self, json_obj: Any, data: List[Dict[str, str]], file_path: str, index: int) -> None:
+    def _process_json_entry(self, json_obj: Any, data: List[Dict[str, str]], file_path: str, index: int) -> None:
         """
         Process a JSON entry and extract text. 
         
@@ -208,7 +209,7 @@ class DatasetStorage:
             except Exception as e:
                 self.logger.warning(f"Failed to convert JSON to string at index {index} in {file_path}: {e}")
     
-    def __load_text_files_as_samples(self, files: list[str]) -> DatasetDict:
+    def _load_text_files_as_samples(self, files: list[str]) -> DatasetDict:
         """
         Load text files such that each file represents a single sample.
 

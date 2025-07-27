@@ -18,7 +18,7 @@ tokenizer:
   # Instruction tuning specific settings
   mask_prompt: true
   ignore_index: -100
-  max_seq_length: 2048
+  #max_seq_length: 2048
 
   # Padding strategy configuration
   padding_strategy: "dynamic"  # Options: "fixed" (default) or "dynamic"
@@ -29,10 +29,11 @@ tokenizer:
 dataset:
   source: local
   nameOrPath: "/workspace/data/v5"
-  format: multilanguage_files
+  format: files
   file_config:
     format: json
-  languagesToLoad: ["es", "ca"]
+  #languagesToLoad: ["es", "ca"]
+  specific_keys: ["es", "ca"]
 
 output:
   path: "/workspace/data/tokenized_outputs/instruction_v5"

@@ -103,6 +103,8 @@ class InstructionTokenizer(BaseTokenizer):
         # Process conversation ensuring strict user/assistant alternation
         if row.get('assistance') and len(row['assistance']) > 0:
             # Multi-turn conversation - ensure proper alternation
+            if 'input' not in row:
+                raise ValueError(f"Missing 'input' field in row: {list(row.keys())}")
             inputs = row['input'] if isinstance(row['input'], list) else [row['input']]
             assistances = row['assistance']
             
@@ -118,12 +120,23 @@ class InstructionTokenizer(BaseTokenizer):
         else:
             # Single-turn conversation (most common case)
             # Add the user input
-            user_input = row['input'][0] if isinstance(row['input'], list) else row['input']
-            conversation.append({'role': 'user', 'content': user_input})
+            if 'input' not in row:
+                raise ValueError(f"Missing 'input' field in row: {list(row.keys())}")
+            
+            user_input = row['input']
+            if isinstance(user_input, list):
+                if len(user_input) > 0:
+                    user_input = user_input[0]
+                else:
+                    raise ValueError("'input' field is an empty list")
+            elif user_input is None:
+                raise ValueError("'input' field is None")
+            
+            conversation.append({'role': 'user', 'content': str(user_input)})
         
         # Add the target response as the final assistant message (only if include_target is True)
         if include_target and 'target' in row and row['target']:
-            target_content = row['target'].strip()
+            target_content = str(row['target']).strip() if row['target'] is not None else ""
             if target_content:  # Only add non-empty targets
                 if conversation and conversation[-1]['role'] == 'assistant':
                     # Replace the last assistant message with the target
@@ -529,10 +542,10 @@ class InstructionTokenizer(BaseTokenizer):
         
         return padded_dataset
     
-    def _process_multi_language_datasets(self, dataset: HFDataset) -> HFDataset:
+    def _process_multi_keys_dataset(self, dataset: HFDataset) -> HFDataset:
         """
-        Process multiple language datasets and combine them with enhanced performance and logging.
-        
+        Process multiple keys datasets and combine them with enhanced performance and logging.
+
         Args:
             dataset_paths (List[str]): List of paths to dataset directories.
             
@@ -541,25 +554,25 @@ class InstructionTokenizer(BaseTokenizer):
         """
         start_time = time.time()
 
-        self.logger.info(f"Starting processing language datasets")
+        self.logger.info(f"Starting processing key instruction datasets")
 
-        #Create a HFDataset with language, prompt, and prompt_and_response columns
+        #Create a HFDataset with key, prompt, and prompt_and_response columns
         datasetProcessed = []
 
-        languages = list(set(dataset['language']))
-        language_stats = defaultdict(int)
+        keys = list(set(dataset['key']))
+        key_stats = defaultdict(int)
 
-        for lang in languages:
-            lang_start_time = time.time()
-            self.logger.info(f"Processing language: {lang}")
-            lang_data = dataset.filter(lambda x: x['language'] == lang)
-            
-            if len(lang_data) == 0:
-                self.logger.warning(f"No data found for language '{lang}', skipping.")
+        for key in keys:
+            key_start_time = time.time()
+            self.logger.info(f"Processing Key: {key}")
+            key_data = dataset.filter(lambda x: x['key'] == key)
+
+            if len(key_data) == 0:
+                self.logger.warning(f"No data found for key '{key}', skipping.")
                 continue
-            
-            # Process each example in the language dataset
-            for example in lang_data:
+
+            # Process each example in the key dataset
+            for example in key_data:
                 try:
                     # Create conversation without target for prompt generation
                     conversation_without_target, system_message = self._create_conversation(example, include_target=False)
@@ -571,22 +584,20 @@ class InstructionTokenizer(BaseTokenizer):
                     
                     # Append to processed dataset
                     datasetProcessed.append({
-                        'language': lang,
+                        'key': key,
                         'prompt': prompt,
                         'prompt_and_response': prompt_and_response
                     })
 
                 except Exception as e:
-                    self.logger.error(f"Error processing example for language '{lang}': {str(e)}")
+                    self.logger.error(f"Error processing example for Key '{key}': {str(e)}")
                     continue
 
-            # Convert the processed data for this language into a HFDataset
-            lang_dataset = HFDataset.from_list(datasetProcessed)
+            key_time = time.time() - key_start_time
+            key_stats[key] = len(key_data)
 
-            lang_time = time.time() - lang_start_time
-            language_stats[lang] = len(lang_data)
+            self.logger.info(f"Completed {key}: {key_stats[key]} examples in {key_time:.2f}s")
 
-            self.logger.info(f"Completed {lang}: {language_stats[lang]} examples in {lang_time:.2f}s")
 
         # Final processing statistics
         total_time = time.time() - start_time
@@ -596,24 +607,88 @@ class InstructionTokenizer(BaseTokenizer):
             raise ValueError("No valid data found in provided dataset paths")
         
         # Comprehensive logging
-        self.logger.info("=== Multi-language Dataset Processing Summary ===")
+        self.logger.info("=== Multi-key Dataset Processing Summary ===")
         self.logger.info(f"Total processing time: {total_time:.2f} seconds")
         self.logger.info(f"Total examples loaded: {total_examples}")
         self.logger.info(f"Average processing speed: {total_examples/total_time:.1f} examples/sec")
-        
-        # Language distribution
-        self.logger.info("Language distribution:")
-        for lang, count in sorted(language_stats.items()):
+
+        # Key distribution
+        self.logger.info(f"Keys distribution:")
+        for key, count in sorted(key_stats.items()):
             percentage = (count / total_examples) * 100 if total_examples > 0 else 0
-            self.logger.info(f"  {lang}: {count} examples ({percentage:.1f}%)")
-            
+            self.logger.info(f"  {key}: {count} examples ({percentage:.1f}%)")
+
         # Convert to HuggingFace Dataset efficiently
         self.logger.info("Converting to HuggingFace Dataset format...")
         dataset = HFDataset.from_list(datasetProcessed)
         
         self.logger.info(f"Dataset conversion completed. Final dataset size: {len(dataset)}")
         return dataset
-    
+
+    def _process_generic_dataset(self, dataset: HFDataset) -> HFDataset:
+        """
+        Process a generic dataset with enhanced performance and logging.
+
+        Args:
+            dataset (HFDataset): Dataset to process.
+            
+        Returns:
+            HFDataset: Processed dataset with structured conversations.
+        """
+        start_time = time.time()
+        self.logger.info(f"Starting processing of generic instruction dataset with {len(dataset)} examples")
+        
+        # Log dataset structure for debugging
+        self.logger.info(f"Dataset column names: {dataset.column_names}")
+        if len(dataset) > 0:
+            sample = dataset[0]
+            self.logger.info(f"Sample data structure: {list(sample.keys())}")
+            self.logger.info(f"Sample data types: {[(k, type(v).__name__) for k, v in sample.items()]}") 
+        
+        # Create a HFDataset with language, prompt, and prompt_and_response columns
+        datasetProcessed = []
+
+        for example in dataset:
+            try:
+                # Create conversation without target for prompt generation
+                conversation_without_target, system_message = self._create_conversation(example, include_target=False)
+                prompt = self._create_prompt(conversation_without_target, system_message, add_generation_prompt=True)
+                
+                # Create full conversation with target for complete response
+                conversation_with_target, _ = self._create_conversation(example, include_target=True)
+                prompt_and_response = self._create_prompt(conversation_with_target, system_message, add_generation_prompt=False)
+                
+                # Append to processed dataset
+                datasetProcessed.append({
+                    'prompt': prompt,
+                    'prompt_and_response': prompt_and_response
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error processing example: {str(e)}")
+                continue
+
+        
+        # Final processing statistics
+        total_time = time.time() - start_time
+        total_examples = len(datasetProcessed)
+        
+        if not datasetProcessed:
+            raise ValueError("No valid data found in provided dataset paths")
+        
+        # Comprehensive logging
+        self.logger.info("=== Generic Instruction Dataset Processing Summary ===")
+        self.logger.info(f"Total processing time: {total_time:.2f} seconds")
+        self.logger.info(f"Total examples loaded: {total_examples}")
+        self.logger.info(f"Average processing speed: {total_examples/total_time:.1f} examples/sec")
+
+        # Convert to HuggingFace Dataset efficiently
+        self.logger.info("Converting to HuggingFace Dataset format...")
+        dataset = HFDataset.from_list(datasetProcessed)
+        
+        self.logger.info(f"Dataset conversion completed. Final dataset size: {len(dataset)}")
+        return dataset
+
     def _tokenize_dataset_batch(self, dataset: HFDataset) -> HFDataset:
         """
         Tokenize the entire dataset using optimized batch processing.
@@ -638,17 +713,37 @@ class InstructionTokenizer(BaseTokenizer):
         
         # Apply tokenization with enhanced performance settings
         
-        # Delete all column but 'language'
-        columnsToDelete = dataset.column_names.copy()
-        columnsToDelete.remove('language')
+        # Delete all column but 'key'
 
-        map_kwargs = {
-            "function": self._tokenize_instruction_example,
-            "remove_columns": columnsToDelete,
-            "batch_size": batch_size,
-            "writer_batch_size": writer_batch_size,
-            "desc": "Tokenizing instruction dataset"
-        }
+        if 'key' in dataset.column_names:
+            columnsToDelete = dataset.column_names.copy()
+            columnsToDelete.remove('key')
+
+            map_kwargs = {
+                "function": self._tokenize_instruction_example,
+                "remove_columns": columnsToDelete,
+                "batch_size": batch_size,
+                "writer_batch_size": writer_batch_size,
+                "desc": "Tokenizing instruction dataset"
+            }
+        elif set(dataset.column_names) == {'prompt', 'prompt_and_response'}:
+            # If dataset has been processed and only contains prompt columns, use the correct tokenization function
+            map_kwargs = {
+                "function": self._tokenize_instruction_example,
+                "remove_columns": dataset.column_names,
+                "batch_size": batch_size,
+                "writer_batch_size": writer_batch_size,
+                "desc": "Tokenizing instruction dataset"
+            }
+        else:
+            # If dataset has original structure, use the original tokenization function
+            map_kwargs = {
+                "function": self._tokenize_instruction_example_original,
+                "remove_columns": dataset.column_names,
+                "batch_size": batch_size,
+                "writer_batch_size": writer_batch_size,
+                "desc": "Tokenizing instruction dataset"
+            }
         
         # Only add num_proc for slow tokenizers
         if num_proc is not None:
@@ -660,7 +755,6 @@ class InstructionTokenizer(BaseTokenizer):
         
         try:
             tokenized_dataset = dataset.map(**map_kwargs)
-            
             # Apply dynamic padding if configured
             padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
             if padding_strategy == 'dynamic':
@@ -684,42 +778,69 @@ class InstructionTokenizer(BaseTokenizer):
             raise
 
         try:
-            # Split the dataset in train and validation sets per language
-            train_split = None
-            validation_split = None
-
-            self.logger.info("Splitting dataset into train and validation sets per language")
-            self.logger.info(f"Using test_size={self.test_size}, seed={self.seed}")
-
-            for lang in list(set(tokenized_dataset['language'])):
-                lang_rows = tokenized_dataset.filter(lambda x: x['language'] == lang)
-
-                #Delete the language column
-                lang_rows = lang_rows.remove_columns(['language'])
-
-                split = lang_rows.train_test_split(
+            # Split the dataset in train and validation sets per key if 'key' column exists else split directly
+            if 'key' in tokenized_dataset.column_names:
+                tokenized_dataset = self._split_dataset_per_key(tokenized_dataset)
+            else:
+                # If no 'key' column, split the dataset directly
+                self.logger.info("No 'key' column found, splitting dataset directly")
+                tokenized_dataset = tokenized_dataset.train_test_split(
                     test_size=self.test_size,
                     seed=self.seed
                 )
-
-                if train_split is None and validation_split is None:
-                    train_split = split['train']
-                    validation_split = split['test']
-                else:
-                    train_split = concatenate_datasets([train_split, split['train']])
-                    validation_split = concatenate_datasets([validation_split, split['test']])
-
-            # Merge the train and validation splits into a Dataset object
-            tokenized_dataset = DatasetDict({
-                'train': train_split,
-                'validation': validation_split
-            })
+                tokenized_dataset = DatasetDict({
+                    'train': tokenized_dataset['train'],
+                    'validation': tokenized_dataset['test']
+                })
+                
         except Exception as e:
             self.logger.error(f"Error during dataset splitting: {str(e)}")
             raise
 
         return tokenized_dataset
     
+    def _split_dataset_per_key(self, dataset: HFDataset) -> DatasetDict:
+        """
+        Split the dataset into train and validation sets per key.
+        
+        Args:
+            dataset (HFDataset): Dataset to split.
+            
+        Returns:
+            DatasetDict: Dictionary with 'train' and 'validation' splits.
+        """
+        self.logger.info("Splitting dataset into train and validation sets per key")
+        
+        # Initialize empty splits
+        train_split = None
+        validation_split = None
+        
+        for key in list(set(dataset['key'])):
+            key_rows = dataset.filter(lambda x: x['key'] == key)
+            
+            # Delete the key column
+            key_rows = key_rows.remove_columns(['key'])
+            
+            split = key_rows.train_test_split(
+                test_size=self.test_size,
+                seed=self.seed
+            )
+            
+            if train_split is None and validation_split is None:
+                train_split = split['train']
+                validation_split = split['test']
+            else:
+                train_split = concatenate_datasets([train_split, split['train']])
+                validation_split = concatenate_datasets([validation_split, split['test']])
+        
+        return DatasetDict({
+            'train': train_split,
+            'validation': validation_split
+        })
+
+
+    
+
     def _tokenize_dataset_batch_original(self, dataset: HFDataset) -> HFDataset:
         """
         Tokenize the entire dataset using optimized batch processing.
@@ -840,21 +961,27 @@ class InstructionTokenizer(BaseTokenizer):
             self.logger.warning(f"  → Unknown strategy '{padding_strategy}', using 'fixed'")
         
         try:
-            if 'language' not in dataset.column_names:
-                # ERROR: The HFDataset must have a 'language' column for multi-language processing
-                raise ValueError("HFDataset must contain a 'language' column for multi-language processing")
+            if 'key' in dataset.column_names:
+                # If dataset already has 'key' column, process as files dataset
+                self.logger.info("Detected dataset with 'key' column")
+                keys = dataset['key']
+                keys = list(set(keys))
+                self.logger.info(f"Processing HFDataset with {len(keys)} keys: {', '.join(keys)}")
 
-            langs = dataset['language']
-            langs = list(set(langs))  # Unique languages
-
-            self.logger.info(f"Processing HFDataset with {len(langs)} languages: {', '.join(langs)}")
-
-            # Multi-language dataset joined into a single HFDataset
-            result = self._process_multi_language_datasets(dataset)
-            self.logger.info(f"Multi-language dataset processing completed. Total examples: {len(result)}")
-            self.logger.info(f"Dataset column names: {result.column_names}")
-            result = self._tokenize_dataset_batch(result)
+                # Multi-key dataset joined into a single HFDataset
+                result = self._process_multi_keys_dataset(dataset)
+                self.logger.info(f"Multi-key dataset processing completed. Total examples: {len(result)}")
+                self.logger.info(f"Dataset column names: {result.column_names}")
+                result = self._tokenize_dataset_batch(result)
             
+            else:
+                # Processing Generic Dataset
+                self.logger.info("Detected generic dataset")
+                result = self._process_generic_dataset(dataset)
+                self.logger.info(f"Generic dataset processing completed. Total examples: {len(result)}")
+                self.logger.info(f"Dataset column names: {result.column_names}")
+                result = self._tokenize_dataset_batch(result)
+
             # Final performance summary
             elapsed_time = time.time() - start_time
             

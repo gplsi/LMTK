@@ -28,7 +28,7 @@ allOf:
             description: "Masking strategy to use for tokenization. Options: 'context_aware' (default) or 'response_only'."
       dataset:
         properties:
-          languagesToLoad:
+          specific_keys:
             type: array
       seed:
         type: integer
