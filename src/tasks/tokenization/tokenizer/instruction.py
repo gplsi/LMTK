@@ -46,18 +46,37 @@ class InstructionTokenizer(BaseTokenizer):
         """
         super().__init__(config)
         
-        # Define features with fixed-length sequences for better performance
+        # Define features with conditional sequence length based on padding strategy
         # Using int32 for input_ids and labels to handle large vocabularies
-        self._features = Features({
-            "input_ids": Sequence(Value("int32"), length=config.context_length),
-            "attention_mask": Sequence(Value("int32"), length=config.context_length),
-            "labels": Sequence(Value("int32"), length=config.context_length)
-        })
+        padding_strategy = getattr(config, 'padding_strategy', 'fixed')
+        
+        # Unified sequence length parameter
+        self.max_sequence_length = getattr(config, 'max_sequence_length', getattr(config, 'context_length', 2048))
+        if hasattr(config, 'context_length') and hasattr(config, 'max_sequence_length'):
+            if config.context_length != config.max_sequence_length:
+                self.logger.warning(f"Both context_length ({config.context_length}) and max_sequence_length ({config.max_sequence_length}) found. Using max_sequence_length.")
+        elif hasattr(config, 'context_length') and not hasattr(config, 'max_sequence_length'):
+            self.logger.warning("context_length is deprecated. Please use max_sequence_length instead.")
+            self.max_sequence_length = config.context_length
+        
+        if padding_strategy == 'dynamic':
+            # Dynamic padding: use variable-length sequences
+            self._features = Features({
+                "input_ids": Sequence(Value("int32")),
+                "attention_mask": Sequence(Value("int32")),
+                "labels": Sequence(Value("int32"))
+            })
+        else:
+            # Fixed padding: use fixed-length sequences for better performance
+            self._features = Features({
+                "input_ids": Sequence(Value("int32"), length=self.max_sequence_length),
+                "attention_mask": Sequence(Value("int32"), length=self.max_sequence_length),
+                "labels": Sequence(Value("int32"), length=self.max_sequence_length)
+            })
         
         # Instruction-specific configuration
         self.mask_prompt = getattr(config, 'mask_prompt', True)
         self.ignore_index = getattr(config, 'ignore_index', -100)
-        self.max_seq_length = getattr(config, 'max_seq_length', config.context_length)
         self.test_size = getattr(config, 'test_size', 0.3)
         self.seed = getattr(config, 'seed', 1234)
         
@@ -242,17 +261,26 @@ class InstructionTokenizer(BaseTokenizer):
         # Encode instruction part
         encoded_instruction = self._tokenizer.encode(
             conversation,
-            max_length=self.max_seq_length,
+            max_length=self.max_sequence_length,
             add_special_tokens=False
         )
 
         # Create full conversation (with assistant response)
         full_conversation = element['prompt_and_response']
         
-        # Encode full conversation (instruction + response)
+        # For dynamic padding, we need to know the original length before truncation
+        if getattr(self.config, 'padding_strategy', 'fixed') == 'dynamic':
+            # First encode without truncation to get the true length
+            encoded_full_untruncated = self._tokenizer.encode(
+                full_conversation,
+                add_special_tokens=False
+            )
+            original_length = len(encoded_full_untruncated) + 1  # +1 for EOS token
+        
+        # Encode full conversation (instruction + response) with truncation
         encoded_full = self._tokenizer.encode(
             full_conversation, 
-            max_length=self.max_seq_length - 1,  # Reserve space for EOS
+            max_length=self.max_sequence_length - 1,  # Reserve space for EOS
             return_tensors="pt", 
             add_special_tokens=False
         ).squeeze_()
@@ -299,18 +327,18 @@ class InstructionTokenizer(BaseTokenizer):
         
         if padding_strategy == 'dynamic':
             # Dynamic padding: return sequences as-is, padding will be handled at batch level
-            # Store original length for batch-level padding
+            # Store original length (before truncation) for batch-level padding
             return {
                 "input_ids": encoded_prompt_and_response,
                 "attention_mask": attention_mask,
                 "labels": labels,
-                "length": len(encoded_prompt_and_response)  # Store length for dynamic padding
+                "length": original_length  # Store original length before truncation for dynamic padding
             }
         else:
-            # Fixed padding: pad to context length (current behavior)
+            # Fixed padding: pad to max sequence length (current behavior)
             seq_len = len(encoded_prompt_and_response)
-            if seq_len < self.config.context_length:
-                pad_length = self.config.context_length - seq_len
+            if seq_len < self.max_sequence_length:
+                pad_length = self.max_sequence_length - seq_len
                 
                 # Pad with pad_token_id (or 0 if not available)
                 pad_token_id = getattr(self._tokenizer, 'pad_token_id', 0) or 0
@@ -329,142 +357,11 @@ class InstructionTokenizer(BaseTokenizer):
                     attention_mask,
                     torch.zeros(pad_length, dtype=torch.long)
                 ])
-            elif seq_len > self.config.context_length:
+            elif seq_len > self.max_sequence_length:
                 # Truncate if too long
-                encoded_prompt_and_response = encoded_prompt_and_response[:self.config.context_length]
-                labels = labels[:self.config.context_length]
-                attention_mask = attention_mask[:self.config.context_length]
-        
-        return {
-            "input_ids": encoded_prompt_and_response,
-            "attention_mask": attention_mask,
-            "labels": labels
-        }
-    
-    def _tokenize_instruction_example_original(self, element: Dict) -> Dict[str, torch.Tensor]:
-        """
-        Tokenize a single instruction example with proper label masking.
-        
-        Args:
-            element (Dict): Dictionary containing structured conversation data with 'system', 'input', 'assistance' fields.
-            
-        Returns:
-            Dict[str, torch.Tensor]: Tokenized example with input_ids, attention_mask, and labels.
-        """
-        if self._tokenizer is None:
-            self._initialize_tokenizer()
-            
-        # Create conversation and format with chat template
-        conversation, system_message = self._create_conversation(element)
-        
-        # Create full conversation (with assistant response)
-        full_conversation = self._create_prompt(conversation, system_message)
-        
-        # For proper masking, we need to identify where the response starts
-        # Instead of creating instruction-only conversation (which breaks alternation),
-        # we'll create a conversation that ends just before the final assistant response
-        if len(conversation) > 1 and conversation[-1]['role'] == 'assistant':
-            # Create conversation without the final assistant response
-            instruction_conversation = conversation[:-1]
-            
-            # Add generation prompt to get the instruction length
-            instruction_prompt = self._create_prompt(instruction_conversation, system_message)
-            
-            # Encode instruction part
-            encoded_instruction = self._tokenizer.encode(
-                instruction_prompt,
-                max_length=self.max_seq_length,
-                add_special_tokens=False
-            )
-        else:
-            # Fallback: if no proper conversation structure, use empty instruction
-            encoded_instruction = []
-        
-        # Encode full conversation (instruction + response)
-        encoded_full = self._tokenizer.encode(
-            full_conversation, 
-            max_length=self.max_seq_length - 1,  # Reserve space for EOS
-            return_tensors="pt", 
-            add_special_tokens=False
-        ).squeeze_()
-        
-        # Add EOS token
-        encoded_prompt_and_response = torch.cat((
-            encoded_full, 
-            torch.tensor([self._tokenizer.eos_token_id])
-        ))
-        
-        # Create labels and attention mask
-        labels = encoded_prompt_and_response.clone()
-        attention_mask = torch.ones_like(encoded_prompt_and_response)
-        
-        # Apply masking strategy based on configuration
-        masking_strategy = getattr(self.config, 'masking_strategy', 'context_aware')
-        
-        if self.mask_prompt:
-            # Calculate instruction length for proper masking
-            instruction_length = len(encoded_instruction)
-            
-            if masking_strategy == 'context_aware':
-                # Context-aware masking: Full attention, mask only instruction labels
-                # Model sees full context but only learns from responses
-                if instruction_length > 0:
-                    labels[:instruction_length] = self.ignore_index
-                # attention_mask remains all 1s for real tokens
-                
-            elif masking_strategy == 'response_only':
-                # Response-only masking: Mask both attention and labels
-                # Model only attends to and learns from responses
-                if instruction_length > 0:
-                    labels[:instruction_length] = self.ignore_index
-                    attention_mask[:instruction_length] = 0
-                
-            else:
-                # Default to context_aware for unknown strategies
-                self.logger.warning(f"Unknown masking_strategy '{masking_strategy}', defaulting to 'context_aware'")
-                if instruction_length > 0:
-                    labels[:instruction_length] = self.ignore_index
-            
-        # Apply padding strategy based on configuration
-        padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
-        
-        if padding_strategy == 'dynamic':
-            # Dynamic padding: return sequences as-is, padding will be handled at batch level
-            # Store original length for batch-level padding
-            return {
-                "input_ids": encoded_prompt_and_response,
-                "attention_mask": attention_mask,
-                "labels": labels,
-                "length": len(encoded_prompt_and_response)  # Store length for dynamic padding
-            }
-        else:
-            # Fixed padding: pad to context length (current behavior)
-            seq_len = len(encoded_prompt_and_response)
-            if seq_len < self.config.context_length:
-                pad_length = self.config.context_length - seq_len
-                
-                # Pad with pad_token_id (or 0 if not available)
-                pad_token_id = getattr(self._tokenizer, 'pad_token_id', 0) or 0
-                
-                encoded_prompt_and_response = torch.cat([
-                    encoded_prompt_and_response,
-                    torch.full((pad_length,), pad_token_id, dtype=torch.long)
-                ])
-                
-                labels = torch.cat([
-                    labels,
-                    torch.full((pad_length,), self.ignore_index, dtype=torch.long)
-                ])
-                
-                attention_mask = torch.cat([
-                    attention_mask,
-                    torch.zeros(pad_length, dtype=torch.long)
-                ])
-            elif seq_len > self.config.context_length:
-                # Truncate if too long
-                encoded_prompt_and_response = encoded_prompt_and_response[:self.config.context_length]
-                labels = labels[:self.config.context_length]
-                attention_mask = attention_mask[:self.config.context_length]
+                encoded_prompt_and_response = encoded_prompt_and_response[:self.max_sequence_length]
+                labels = labels[:self.max_sequence_length]
+                attention_mask = attention_mask[:self.max_sequence_length]
         
         return {
             "input_ids": encoded_prompt_and_response,
@@ -486,11 +383,65 @@ class InstructionTokenizer(BaseTokenizer):
             self.logger.warning("Dynamic padding requested but 'length' field not found. Skipping dynamic padding.")
             return dataset
             
-        # Find maximum sequence length in the dataset
-        max_length = max(dataset['length'])
-        max_length = min(max_length, self.config.context_length)  # Respect context length limit
+        # Find sequence length for dynamic padding
+        lengths = dataset['length']
+        original_max_length = max(lengths)
         
-        self.logger.info(f"Applying dynamic padding to maximum length: {max_length}")
+        # Calculate sequence length statistics
+        import numpy as np
+        lengths_array = np.array(lengths)
+        mean_length = np.mean(lengths_array)
+        median_length = np.median(lengths_array)
+        p95_length = np.percentile(lengths_array, 95)
+        p99_length = np.percentile(lengths_array, 99)
+        
+        self.logger.info(f"Sequence length statistics:")
+        self.logger.info(f"  Mean: {mean_length:.1f} tokens")
+        self.logger.info(f"  Median: {median_length:.1f} tokens")
+        self.logger.info(f"  95th percentile: {p95_length:.1f} tokens")
+        self.logger.info(f"  99th percentile: {p99_length:.1f} tokens")
+        self.logger.info(f"  Maximum: {original_max_length} tokens")
+        
+        # Determine padding length based on strategy
+        dynamic_padding_percentile = getattr(self.config, 'dynamic_padding_percentile', None)
+        
+        if dynamic_padding_percentile is not None:
+            # Use percentile-based padding to avoid always padding to max_sequence_length
+            percentile_length = np.percentile(lengths_array, dynamic_padding_percentile)
+            max_length = min(int(percentile_length), self.max_sequence_length)
+            
+            # Count sequences that will be truncated
+            truncated_sequences = np.sum(lengths_array > max_length)
+            truncated_percent = (truncated_sequences / len(lengths_array)) * 100
+            
+            self.logger.info(f"Using {dynamic_padding_percentile}th percentile for dynamic padding")
+            self.logger.info(f"Padding to {max_length} tokens (will truncate {truncated_sequences} sequences, {truncated_percent:.1f}%)")
+        else:
+            # Check if sequences were truncated during tokenization
+            truncated_during_tokenization = np.sum(lengths_array >= self.max_sequence_length)
+            
+            if truncated_during_tokenization > 0:
+                # If sequences were truncated, use 95th percentile to avoid wasting memory
+                max_length = min(int(p95_length), self.max_sequence_length)
+                truncated_sequences = np.sum(lengths_array > max_length)
+                truncated_percent = (truncated_sequences / len(lengths_array)) * 100
+                
+                self.logger.warning(f"Some sequences ({truncated_during_tokenization}) were truncated to max_sequence_length ({self.max_sequence_length}) during tokenization.")
+                self.logger.info(f"Using 95th percentile ({max_length} tokens) for dynamic padding to save memory")
+                self.logger.info(f"This will truncate {truncated_sequences} additional sequences ({truncated_percent:.1f}%)")
+            else:
+                # Use maximum length if no truncation occurred
+                max_length = original_max_length
+                self.logger.info(f"Using maximum length for dynamic padding")
+        
+        self.logger.info(f"Applying dynamic padding to length: {max_length}")
+        
+        # Calculate potential memory savings
+        if max_length < self.max_sequence_length:
+            savings_percent = ((self.max_sequence_length - max_length) / self.max_sequence_length) * 100
+            self.logger.info(f"Dynamic padding saves {savings_percent:.1f}% memory compared to fixed padding")
+        else:
+            self.logger.info("Dynamic padding provides no memory savings (sequences reach max sequence length limit)")
         
         # Get padding token
         pad_token_id = getattr(self._tokenizer, 'pad_token_id', 0) or 0
@@ -685,13 +636,7 @@ class InstructionTokenizer(BaseTokenizer):
         
         self.logger.info(f"Using num_proc={num_proc}, batch_size={batch_size}, writer_batch_size={writer_batch_size}")
         
-        # Determine which tokenization function to use based on dataset structure
-        if 'key' in dataset.column_names or set(dataset.column_names) == {'prompt', 'prompt_and_response'}:
-            # Use the new tokenization function for processed datasets
-            tokenization_function = self._tokenize_instruction_example
-        else:
-            # Use the original tokenization function for raw datasets
-            tokenization_function = self._tokenize_instruction_example_original
+        tokenization_function = self._tokenize_instruction_example
         
         # Apply tokenization with enhanced performance settings
         map_kwargs = {
@@ -816,8 +761,7 @@ class InstructionTokenizer(BaseTokenizer):
         self.logger.info("=== Starting Instruction Tokenization Process ===")
         self.logger.info(f"Input type: {type(dataset).__name__}")
         self.logger.info(f"Tokenizer: {self.config.tokenizer_name}")
-        self.logger.info(f"Context length: {self.config.context_length}")
-        self.logger.info(f"Max sequence length: {self.max_seq_length}")
+        self.logger.info(f"Max sequence length: {self.max_sequence_length}")
         self.logger.info(f"Mask prompt: {self.mask_prompt}")
         self.logger.info(f"Ignore index: {self.ignore_index}")
         
@@ -835,7 +779,7 @@ class InstructionTokenizer(BaseTokenizer):
         padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
         self.logger.info(f"Padding strategy: {padding_strategy}")
         if padding_strategy == 'fixed':
-            self.logger.info(f"  → Fixed padding to {self.config.context_length} tokens")
+            self.logger.info(f"  → Fixed padding to {self.max_sequence_length} tokens")
         elif padding_strategy == 'dynamic':
             self.logger.info("  → Dynamic padding to batch maximum length")
             self.logger.info("  → Sequences will be padded during batch processing")
