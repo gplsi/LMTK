@@ -38,4 +38,4 @@ output:
   path: "data/ALIA/tokenized_data/ALIA/instruction_v2_new"
 
 test_size: 0.3
-seed: 4321
+seed: 42

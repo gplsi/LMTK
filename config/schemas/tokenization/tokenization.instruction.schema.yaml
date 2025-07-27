@@ -32,6 +32,3 @@ allOf:
             type: array
       seed:
         type: integer
-
-      
-
