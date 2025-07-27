@@ -81,12 +81,14 @@ class InstructionTokenizer(BaseTokenizer):
         # For slow tokenizers, use multiprocessing with optimal thread count
         return get_optimal_thread_count()
     
-    def _create_conversation(self, row: Dict) -> tuple[List[Dict[str, str]], str]:
+    def _create_conversation(self, row: Dict, include_target: bool = True) -> tuple[List[Dict[str, str]], str]:
         """
         Create a conversation structure from a data row, handling system messages properly.
         
         Args:
             row (Dict): Data row containing 'system', 'input', 'assistance', and 'target' fields.
+            include_target (bool): Whether to include the target response in the conversation.
+                                 Set to False for prompt generation, True for complete conversation.
             
         Returns:
             tuple[List[Dict[str, str]], str]: Conversation with role-content pairs and system message.
@@ -119,58 +121,60 @@ class InstructionTokenizer(BaseTokenizer):
             user_input = row['input'][0] if isinstance(row['input'], list) else row['input']
             conversation.append({'role': 'user', 'content': user_input})
         
-        # Add the target response as the final assistant message
-        # But only if the last message isn't already an assistant message
-        if 'target' in row and row['target']:
-            # Check if we need to add the target or if it should replace the last assistant message
-            if conversation and conversation[-1]['role'] == 'assistant':
-                # Replace the last assistant message with the target
-                conversation[-1]['content'] = row['target']
-            else:
-                # Add target as new assistant message
-                conversation.append({'role': 'assistant', 'content': row['target']})
+        # Add the target response as the final assistant message (only if include_target is True)
+        if include_target and 'target' in row and row['target']:
+            target_content = row['target'].strip()
+            if target_content:  # Only add non-empty targets
+                if conversation and conversation[-1]['role'] == 'assistant':
+                    # Replace the last assistant message with the target
+                    conversation[-1]['content'] = target_content
+                else:
+                    # Add target as new assistant message
+                    conversation.append({'role': 'assistant', 'content': target_content})
+    
+        # Validate conversation alternation and fix any issues
+        # Process from the end to avoid index issues when removing items
+        i = len(conversation) - 1
+        while i > 0:
+            current_role = conversation[i]['role']
+            prev_role = conversation[i - 1]['role']
+            
+            # Check for consecutive messages with same role
+            if current_role == prev_role:
+                if current_role == 'user':
+                    # Two consecutive user messages - merge them
+                    conversation[i - 1]['content'] += "\n\n" + conversation[i]['content']
+                    conversation.pop(i)
+                elif current_role == 'assistant':
+                    # Two consecutive assistant messages - keep only the last one (target)
+                    # This prevents duplication by removing the earlier assistant message
+                    conversation.pop(i - 1)
+            i -= 1
         
-        # Validate conversation alternation before returning
-        if len(conversation) > 1:
-            for i in range(len(conversation) - 1):
-                current_role = conversation[i]['role']
-                next_role = conversation[i + 1]['role']
-                
-                # Check for invalid patterns
-                if current_role == next_role:
-                    # Two consecutive messages with same role - fix this
-                    if current_role == 'user':
-                        # Two consecutive user messages - merge them
-                        conversation[i]['content'] += "\n\n" + conversation[i + 1]['content']
-                        conversation.pop(i + 1)
-                        break  # Re-validate after modification
-                    elif current_role == 'assistant':
-                        # Two consecutive assistant messages - merge them
-                        conversation[i]['content'] += "\n\n" + conversation[i + 1]['content']
-                        conversation.pop(i + 1)
-                        break  # Re-validate after modification
-        
-        # Ensure conversation starts with user and ends with assistant for instruction tuning
+        # Ensure conversation starts with user and ends appropriately based on include_target
         if conversation:
             # Must start with user
             if conversation[0]['role'] != 'user':
                 # This shouldn't happen with our logic, but just in case
                 conversation.insert(0, {'role': 'user', 'content': 'Please help me with the following:'})
             
-            # Must end with assistant for instruction tuning
-            if conversation[-1]['role'] != 'assistant':
-                # Add a placeholder assistant response if missing
+            # For complete conversations (include_target=True), must end with assistant
+            # For prompt-only conversations (include_target=False), should end with user for generation
+            if include_target and conversation[-1]['role'] != 'assistant':
+                # Add a placeholder assistant response if missing for complete conversations
                 conversation.append({'role': 'assistant', 'content': 'I understand. How can I help you?'})
         
         return conversation, system_message
     
-    def _create_prompt(self, conversation: List[Dict[str, str]], system_message: str = "") -> str:
+    def _create_prompt(self, conversation: List[Dict[str, str]], system_message: str = "", add_generation_prompt: bool = True) -> str:
         """
         Create a formatted prompt from conversation using chat template.
         
         Args:
             conversation (List[Dict[str, str]]): Conversation with role-content pairs.
             system_message (str): Optional system message to include.
+            add_generation_prompt (bool): Whether to add generation prompt (empty assistant token).
+                                        Set to True for prompt generation, False for complete conversations.
             
         Returns:
             str: Formatted prompt string.
@@ -187,7 +191,7 @@ class InstructionTokenizer(BaseTokenizer):
             prompt = self._tokenizer.apply_chat_template(
                 conversation,
                 tokenize=False,
-                add_generation_prompt=True,
+                add_generation_prompt=add_generation_prompt,
                 date_string=date_string,
                 system_message=system_message if system_message else None
             )
@@ -200,7 +204,7 @@ class InstructionTokenizer(BaseTokenizer):
             prompt = self._tokenizer.apply_chat_template(
                 conversation,
                 tokenize=False,
-                add_generation_prompt=True,
+                add_generation_prompt=add_generation_prompt,
                 date_string=date_string
             )
         
@@ -557,9 +561,13 @@ class InstructionTokenizer(BaseTokenizer):
             # Process each example in the language dataset
             for example in lang_data:
                 try:
-                    conversation, system_message = self._create_conversation(example)
-                    prompt = self._create_prompt(conversation, system_message)
-                    prompt_and_response = prompt + example['target'] + '<|im_end|>'
+                    # Create conversation without target for prompt generation
+                    conversation_without_target, system_message = self._create_conversation(example, include_target=False)
+                    prompt = self._create_prompt(conversation_without_target, system_message, add_generation_prompt=True)
+                    
+                    # Create full conversation with target for complete response
+                    conversation_with_target, _ = self._create_conversation(example, include_target=True)
+                    prompt_and_response = self._create_prompt(conversation_with_target, system_message, add_generation_prompt=False)
                     
                     # Append to processed dataset
                     datasetProcessed.append({

@@ -7,7 +7,7 @@ verbose_level: 4
 
 tokenizer:
   tokenizer_name: "BSC-LT/salamandra-2b-instruct"
-  context_length: 512
+  context_length: 2048
   task: instruction
   
   # Performance optimization settings
@@ -18,8 +18,8 @@ tokenizer:
   # Instruction tuning specific settings
   mask_prompt: true
   ignore_index: -100
-  max_seq_length: 512
-  
+  max_seq_length: 2048
+
   # Padding strategy configuration
   padding_strategy: "dynamic"  # Options: "fixed" (default) or "dynamic"
   
@@ -28,14 +28,14 @@ tokenizer:
 
 dataset:
   source: local
-  nameOrPath: "data/ALIA/v2"
+  nameOrPath: "/workspace/data/v5"
   format: multilanguage_files
   file_config:
     format: json
-  languagesToLoad: ["eu", "pt"]
+  languagesToLoad: ["es", "ca"]
 
 output:
-  path: "data/ALIA/tokenized_data/ALIA/instruction_v2_new"
+  path: "/workspace/data/tokenized_outputs/instruction_v5"
 
 test_size: 0.3
 seed: 42
