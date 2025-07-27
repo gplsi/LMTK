@@ -504,50 +504,26 @@ class InstructionTokenizer(BaseTokenizer):
                 # Pad input_ids
                 example['input_ids'] = example['input_ids'] + [pad_token_id] * pad_length
                 
-                # Pad attention_mask
+                # Pad attention_mask (0 for padding)
                 example['attention_mask'] = example['attention_mask'] + [0] * pad_length
                 
-                # Pad labels
+                # Pad labels (ignore_index for padding)
                 example['labels'] = example['labels'] + [self.ignore_index] * pad_length
-                
-            elif current_length > max_length:
-                # Truncate if longer than max_length
-                example['input_ids'] = example['input_ids'][:max_length]
-                example['attention_mask'] = example['attention_mask'][:max_length]
-                example['labels'] = example['labels'][:max_length]
             
-            # Remove the length field as it's no longer needed
-            if 'length' in example:
-                del example['length']
-                
             return example
         
-        # Apply padding to all examples
-        padded_dataset = dataset.map(
-            pad_sequence,
-            desc="Applying dynamic padding",
-            remove_columns=['length']
-        )
+        # Apply padding and remove length column
+        padded_dataset = dataset.map(pad_sequence, remove_columns=['length'])
         
-        # Log padding statistics
-        lengths = dataset['length']
-        avg_length = sum(lengths) / len(lengths)
-        padding_efficiency = (avg_length / max_length) * 100
-        
-        self.logger.info(f"Dynamic padding statistics:")
-        self.logger.info(f"  → Maximum length: {max_length}")
-        self.logger.info(f"  → Average length: {avg_length:.1f}")
-        self.logger.info(f"  → Padding efficiency: {padding_efficiency:.1f}%")
-        self.logger.info(f"  → Memory savings vs fixed: {((self.config.context_length - max_length) / self.config.context_length) * 100:.1f}%")
-        
+        self.logger.info(f"Dynamic padding completed. All sequences padded to {max_length} tokens.")
         return padded_dataset
-    
+
     def _process_multi_keys_dataset(self, dataset: HFDataset) -> HFDataset:
         """
         Process multiple keys datasets and combine them with enhanced performance and logging.
 
         Args:
-            dataset_paths (List[str]): List of paths to dataset directories.
+            dataset (HFDataset): Dataset to process.
             
         Returns:
             HFDataset: Combined and tokenized dataset.
@@ -598,7 +574,6 @@ class InstructionTokenizer(BaseTokenizer):
 
             self.logger.info(f"Completed {key}: {key_stats[key]} examples in {key_time:.2f}s")
 
-
         # Final processing statistics
         total_time = time.time() - start_time
         total_examples = len(datasetProcessed)
@@ -643,9 +618,9 @@ class InstructionTokenizer(BaseTokenizer):
         if len(dataset) > 0:
             sample = dataset[0]
             self.logger.info(f"Sample data structure: {list(sample.keys())}")
-            self.logger.info(f"Sample data types: {[(k, type(v).__name__) for k, v in sample.items()]}") 
+            self.logger.info(f"Sample data types: {[(k, type(v).__name__) for k, v in sample.items()]}")
         
-        # Create a HFDataset with language, prompt, and prompt_and_response columns
+        # Create a HFDataset with prompt and prompt_and_response columns
         datasetProcessed = []
 
         for example in dataset:
@@ -668,7 +643,6 @@ class InstructionTokenizer(BaseTokenizer):
                 self.logger.error(f"Error processing example: {str(e)}")
                 continue
 
-        
         # Final processing statistics
         total_time = time.time() - start_time
         total_examples = len(datasetProcessed)
@@ -711,39 +685,22 @@ class InstructionTokenizer(BaseTokenizer):
         
         self.logger.info(f"Using num_proc={num_proc}, batch_size={batch_size}, writer_batch_size={writer_batch_size}")
         
-        # Apply tokenization with enhanced performance settings
-        
-        # Delete all column but 'key'
-
-        if 'key' in dataset.column_names:
-            columnsToDelete = dataset.column_names.copy()
-            columnsToDelete.remove('key')
-
-            map_kwargs = {
-                "function": self._tokenize_instruction_example,
-                "remove_columns": columnsToDelete,
-                "batch_size": batch_size,
-                "writer_batch_size": writer_batch_size,
-                "desc": "Tokenizing instruction dataset"
-            }
-        elif set(dataset.column_names) == {'prompt', 'prompt_and_response'}:
-            # If dataset has been processed and only contains prompt columns, use the correct tokenization function
-            map_kwargs = {
-                "function": self._tokenize_instruction_example,
-                "remove_columns": dataset.column_names,
-                "batch_size": batch_size,
-                "writer_batch_size": writer_batch_size,
-                "desc": "Tokenizing instruction dataset"
-            }
+        # Determine which tokenization function to use based on dataset structure
+        if 'key' in dataset.column_names or set(dataset.column_names) == {'prompt', 'prompt_and_response'}:
+            # Use the new tokenization function for processed datasets
+            tokenization_function = self._tokenize_instruction_example
         else:
-            # If dataset has original structure, use the original tokenization function
-            map_kwargs = {
-                "function": self._tokenize_instruction_example_original,
-                "remove_columns": dataset.column_names,
-                "batch_size": batch_size,
-                "writer_batch_size": writer_batch_size,
-                "desc": "Tokenizing instruction dataset"
-            }
+            # Use the original tokenization function for raw datasets
+            tokenization_function = self._tokenize_instruction_example_original
+        
+        # Apply tokenization with enhanced performance settings
+        map_kwargs = {
+            "function": tokenization_function,
+            "remove_columns": dataset.column_names,
+            "batch_size": batch_size,
+            "writer_batch_size": writer_batch_size,
+            "desc": "Tokenizing instruction dataset"
+        }
         
         # Only add num_proc for slow tokenizers
         if num_proc is not None:
@@ -755,6 +712,7 @@ class InstructionTokenizer(BaseTokenizer):
         
         try:
             tokenized_dataset = dataset.map(**map_kwargs)
+            
             # Apply dynamic padding if configured
             padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
             if padding_strategy == 'dynamic':
@@ -771,7 +729,6 @@ class InstructionTokenizer(BaseTokenizer):
             self.logger.info(f"Processed {len(dataset)} examples in {elapsed_time:.2f} seconds")
             self.logger.info(f"Throughput: {throughput:.1f} examples/sec")
             self.logger.info(f"Final dataset size: {len(tokenized_dataset)}")
-            
             
         except Exception as e:
             self.logger.error(f"Error during batch tokenization: {str(e)}")
@@ -798,7 +755,7 @@ class InstructionTokenizer(BaseTokenizer):
             raise
 
         return tokenized_dataset
-    
+
     def _split_dataset_per_key(self, dataset: HFDataset) -> DatasetDict:
         """
         Split the dataset into train and validation sets per key.
@@ -838,80 +795,6 @@ class InstructionTokenizer(BaseTokenizer):
             'validation': validation_split
         })
 
-
-    
-
-    def _tokenize_dataset_batch_original(self, dataset: HFDataset) -> HFDataset:
-        """
-        Tokenize the entire dataset using optimized batch processing.
-        
-        Args:
-            dataset (HFDataset): Dataset to tokenize.
-            
-        Returns:
-            HFDataset: Tokenized dataset.
-        """
-        start_time = time.time()
-        self.logger.info(f"Starting dataset tokenization for {len(dataset)} examples")
-        self.logger.info("COLUMN NAMES: " + str(dataset.column_names))
-        
-        # Get optimal number of processes
-        num_proc = self._get_optimal_num_proc()
-        
-        # Performance optimization parameters
-        batch_size = getattr(self.config, 'batch_size', 1000)
-        writer_batch_size = getattr(self.config, 'writer_batch_size', 10000)
-        
-        self.logger.info(f"Using num_proc={num_proc}, batch_size={batch_size}, writer_batch_size={writer_batch_size}")
-        
-        # Apply tokenization with enhanced performance settings
-        
-        # Delete all column but 'language'
-        columnsToDelete = dataset.column_names.copy()
-        columnsToDelete.remove('language')
-
-        map_kwargs = {
-            "function": self._tokenize_instruction_example,
-            "remove_columns": columnsToDelete,
-            "batch_size": batch_size,
-            "writer_batch_size": writer_batch_size,
-            "desc": "Tokenizing instruction dataset"
-        }
-        
-        # Only add num_proc for slow tokenizers
-        if num_proc is not None:
-            map_kwargs["num_proc"] = num_proc
-            
-        # Add progress tracking if enabled
-        if hasattr(self.config, 'show_progress') and self.config.show_progress:
-            map_kwargs["desc"] = "Tokenizing instruction dataset"
-        
-        try:
-            tokenized_dataset = dataset.map(**map_kwargs)
-            
-            # Apply dynamic padding if configured
-            padding_strategy = getattr(self.config, 'padding_strategy', 'fixed')
-            if padding_strategy == 'dynamic':
-                tokenized_dataset = self._apply_dynamic_padding(tokenized_dataset)
-            
-            # Set format for PyTorch with explicit column specification
-            tokenized_dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
-            
-            # Performance metrics
-            elapsed_time = time.time() - start_time
-            throughput = len(dataset) / elapsed_time if elapsed_time > 0 else 0
-            
-            self.logger.info(f"Tokenization completed successfully")
-            self.logger.info(f"Processed {len(dataset)} examples in {elapsed_time:.2f} seconds")
-            self.logger.info(f"Throughput: {throughput:.1f} examples/sec")
-            self.logger.info(f"Final dataset size: {len(tokenized_dataset)}")
-            
-            return tokenized_dataset
-            
-        except Exception as e:
-            self.logger.error(f"Error during batch tokenization: {str(e)}")
-            raise
-    
     def tokenize(self, dataset: HFDataset) -> Union[HFDataset, DatasetDict]:
         """
         Tokenize input dataset(s) for instruction tuning with comprehensive performance monitoring.
@@ -929,10 +812,9 @@ class InstructionTokenizer(BaseTokenizer):
             self._initialize_tokenizer()
             
         start_time = time.time()
+        
         self.logger.info("=== Starting Instruction Tokenization Process ===")
         self.logger.info(f"Input type: {type(dataset).__name__}")
-        
-        # Log tokenizer configuration
         self.logger.info(f"Tokenizer: {self.config.tokenizer_name}")
         self.logger.info(f"Context length: {self.config.context_length}")
         self.logger.info(f"Max sequence length: {self.max_seq_length}")
@@ -986,35 +868,24 @@ class InstructionTokenizer(BaseTokenizer):
             elapsed_time = time.time() - start_time
             
             # Calculate total examples processed
-            if isinstance(result, HFDataset):
-                total_processed = len(result)
-            elif isinstance(result, DatasetDict):
-                total_processed = sum(len(split) for split in result.values())
+            if isinstance(result, DatasetDict):
+                total_examples = sum(len(split) for split in result.values())
+                self.logger.info(f"Dataset splits: {list(result.keys())}")
+                for split_name, split_data in result.items():
+                    self.logger.info(f"  {split_name}: {len(split_data)} examples")
             else:
-                total_processed = 0
+                total_examples = len(result)
+                self.logger.info(f"Single dataset: {total_examples} examples")
             
-            throughput = total_processed / elapsed_time if elapsed_time > 0 else 0
+            throughput = total_examples / elapsed_time if elapsed_time > 0 else 0
             
-            self.logger.info("=== Instruction Tokenization Completed Successfully ===")
+            self.logger.info("=== Instruction Tokenization Complete ===")
             self.logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
-            self.logger.info(f"Total examples processed: {total_processed:,}")
+            self.logger.info(f"Total examples processed: {total_examples}")
             self.logger.info(f"Overall throughput: {throughput:.1f} examples/sec")
-            self.logger.info(f"Average time per example: {(elapsed_time/total_processed)*1000:.2f} ms")
-            
-            # Memory usage info if available
-            try:
-                import psutil
-                process = psutil.Process()
-                memory_mb = process.memory_info().rss / 1024 / 1024
-                self.logger.info(f"Memory usage: {memory_mb:.1f} MB")
-            except ImportError:
-                pass
             
             return result
             
         except Exception as e:
-            elapsed_time = time.time() - start_time
-            self.logger.error(f"=== Instruction Tokenization Failed ===")
-            self.logger.error(f"Error after {elapsed_time:.2f} seconds: {str(e)}")
-            self.logger.error(f"Error type: {type(e).__name__}")
+            self.logger.error(f"Error during instruction tokenization: {str(e)}")
             raise
