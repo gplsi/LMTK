@@ -15,8 +15,6 @@ for root, dirs, files in os.walk(dataset_path):
             
 print(f"Found {len(json_files)} JSON files in the dataset path.")
 
-
-
 text = ""
 for file in json_files:
     empty_keys = {}
