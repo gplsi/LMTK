@@ -29,7 +29,6 @@ allOf:
           required:
             - path
             - percentage
-          additionalProperties: false
 
       # Output configuration
       output_path:
@@ -53,8 +52,12 @@ allOf:
         default: true
         description: "Whether to enforce strict compatibility checking between datasets"
 
+      # Allow base schema properties
+      seed:
+        type: [integer, 'null']
+        default: null
+        description: "Random seed for reproducibility"
+
     required:
       - datasets
       - output_path
-
-    additionalProperties: false
