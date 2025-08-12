@@ -68,3 +68,12 @@ class TokenizerConfig:
     batch_size: Optional[int] = None
     num_proc: Optional[int] = None
     show_progress: bool = True
+    
+    # Instruction-specific parameters
+    padding_strategy: str = "fixed"  # "fixed" or "dynamic"
+    masking_strategy: str = "context_aware"  # "context_aware" or "response_only"
+    mask_prompt: bool = True
+    ignore_index: int = -100
+    max_seq_length: Optional[int] = None
+    test_size: float = 0.3
+    seed: int = 1234  # Default seed for reproducibility

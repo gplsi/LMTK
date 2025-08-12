@@ -24,10 +24,23 @@ def execute_task(config_path: str):
 
     # Validate using the task-specific schema (which, if desired, may include the base fields)
     validator = ConfigValidator()
-    config = validator.validate(config_path, task)
+    from pathlib import Path
+    config = validator.validate(Path(config_path), task)
 
-    # Dynamically import and dispatch to the task handler.
-    task_module = __import__(f"tasks.{task}", fromlist=[""])
+    # Map task types to their corresponding modules
+    task_module_map = {
+        'clm_training': 'training',
+        'mlm_training': 'training', 
+        'instruction': 'training',
+        'tokenization': 'tokenization',
+        'publish': 'publish'
+    }
+    
+    # Get the module name for this task type
+    module_name = task_module_map.get(task, task)
+    
+    # Dynamically import and dispatch to the task handler
+    task_module = __import__(f"tasks.{module_name}", fromlist=[""])
     task_module.execute(config)
     
 if __name__ == '__main__':

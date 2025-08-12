@@ -1,0 +1,58 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "optimizer.schema.yaml"
+description: "Schema for optimizer configuration"
+
+type: object
+properties:
+  # Gradient settings
+  gradient_accumulation:
+    type: boolean
+    default: true
+    description: "If True, use gradient accumulation"
+
+  gradient_accumulation_steps:
+    type: integer
+    default: 64
+    description: "Number of gradient accumulation steps"
+  
+  grad_clip:
+    type: number
+    default: 1.0
+    description: "Gradient clipping value"
+  
+  # Learning rate settings
+  lr:
+    type: number
+    default: 2e-5
+    description: "Learning rate for the entire model"
+  
+  lr_decay:
+    type: boolean
+    default: true
+    description: "If True, apply learning rate decay"
+
+  # Adam optimizer parameters
+  weight_decay:
+    type: number
+    default: 0.01
+    description: "Weight decay factor"
+  
+  beta1:
+    type: number
+    default: 0.9
+    description: "Beta1 for the Adam optimizer"
+
+  beta2:  
+    type: number
+    default: 0.95
+    description: "Beta2 for the Adam optimizer"
+
+required:
+  - gradient_accumulation
+  - gradient_accumulation_steps
+  - grad_clip
+  - lr
+  - lr_decay
+  - weight_decay
+  - beta1
+  - beta2

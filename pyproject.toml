@@ -28,6 +28,7 @@ sentencepiece = "^0.1.5"
 # flash-attn package is commented out as it requires special setup
 # flash-attn = { version = "^2.7.4", optional = true }
 box = "^0.1.5"
+psutil = "^7.0.0"
 
 [tool.poetry.group.dev.dependencies]
 

@@ -1,0 +1,27 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "data.schema.yaml"
+description: "Schema for dataset configuration"
+
+type: object
+properties:
+  dataset:
+    type: object
+    properties:
+      source:
+        type: string
+        enum: ["huggingface", "local"]
+        description: "Source of the dataset"
+      nameOrPath:
+        type: string
+        description: "Dataset name for HuggingFace or local path"
+      format:
+        type: string
+        enum: ["dataset", "files", "hf"]
+        description: "Format of the dataset"
+        default: "hf"
+    required:
+      - source
+      - nameOrPath
+
+required:
+  - dataset
