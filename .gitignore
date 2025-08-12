@@ -181,4 +181,5 @@ converted/
 *.err
 *.out
 .windsurf/*
+/converted
 tokenized_visualizations

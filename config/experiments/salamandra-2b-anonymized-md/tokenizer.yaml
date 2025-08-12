@@ -1,6 +1,6 @@
 task: "tokenization"
-experiment_name: "anonymized_corpus_va"
-verbose_level: 4
+experiment_name: "md_anonymized_salamandra_2b_tokenization"
+verbose_level: 3
 
 tokenizer:
   tokenizer_name: "BSC-LT/salamandra-2b"
@@ -10,7 +10,7 @@ tokenizer:
 
 dataset:
   source: "local"
-  nameOrPath: "/workspace/data/anonymized"
+  nameOrPath: "/workspace/data/md-anonymized"
   format: "files"
   file_config:
     text_key: "text"
@@ -18,6 +18,6 @@ dataset:
     encoding: "utf-8"
 
 output:
-  path: "/workspace/data/tokenized/anonymized-va"
+  path: "/workspace/data/tokenized/md-anonymized-salamandra-2b"
 
 test_size: 0

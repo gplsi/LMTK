@@ -1,6 +1,6 @@
 task: tokenization
 experiment_name: tutorial_tokenization
-verbose_level: 4
+verbose_level: 2
 
 tokenizer:
   tokenizer_name: "openai-community/gpt2"
@@ -14,11 +14,11 @@ tokenizer:
 
 dataset:
   source: "local"
-  nameOrPath: "tutorials/data/raw_text_data"   # <-- update to your real data path
+  nameOrPath: "/workspace/tutorials/data/raw_text_data"   # <-- update to your real data path
   format: "files"
 
 output:
-  path: "tutorials/data/sample_tokenized_dataset"
+  path: "/workspace/tutorials/data/sample_tokenized_dataset"
   format: "hf"
   split: true
   
