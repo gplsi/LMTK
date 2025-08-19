@@ -1,0 +1,87 @@
+# Training config for MLM with DDP using custom-modifiable RoBERTa
+
+task: "mlm_training"
+experiment_name: "roberta-mlm-ddp-modifiable"
+
+# Model
+model_name: "roberta-base"          # used if roberta.custom=false or from_scratch=false
+precision: "bf16-true"
+verbose_level: 3
+log_every_n_steps: 10
+
+# Data
+dataset:
+  source: local
+  nameOrPath: "/workspace/data/tokenized/roberta_mlm_512"   # must match tokenization output
+
+# Training args
+number_epochs: 1
+batch_size: 24
+validate_after_epoch: true
+validate_on_end: true
+validate_after_k_steps: 1000
+save_on_validate: true
+save_on_end: true
+checkpoint: null
+num_workers: 4
+gradient_checkpointing: false
+output_dir: "/workspace/output/roberta_mlm_modifiable"
+
+# Optimizer
+gradient_accumulation: true
+gradient_accumulation_steps: 1
+grad_clip: 1.0
+lr: 0.0001
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.1
+
+# MLM
+mlm_probability: 0.15
+ignore_index: -100
+
+# Strategy
+parallelization_strategy: "ddp"
+parallelization_config:
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: false
+
+# Logging
+logging_config: "wandb"
+wandb_entity: null           # set your entity
+wandb_project: "traceable-attention-experiments"
+
+# Seed
+seed: 42
+
+# Custom RoBERTa and modifications (hooked in FabricMLM)
+roberta:
+  custom: true
+  from_scratch: true
+  vocab_size: 50265
+  hidden_size: 768
+  num_hidden_layers: 1         # quick test; change as needed
+  num_attention_heads: 12
+  intermediate_size: 3072
+  max_position_embeddings: 514
+  layer_norm_eps: 1e-5
+  hidden_dropout_prob: 0.1
+  attention_dropout_prob: 0.1
+
+modifications:
+  replace_attention:
+    mode: "none"               # "chebyshev" | "orthogonal" | "orthogonal_sparse" | "sparse"
+    cheb_order: 5
+    basis_name: "dct"
+    basis_rank: 512
+    sparsity: "topk"
+    topk: 64
+    window: 128
+  replace_ffn: false
+

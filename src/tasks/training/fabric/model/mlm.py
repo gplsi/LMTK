@@ -1,6 +1,6 @@
 from typing import Tuple, Dict, Any
 import lightning as L
-from transformers import AutoModelForMaskedLM
+from transformers import AutoModelForMaskedLM, RobertaConfig, RobertaForMaskedLM
 import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
@@ -49,10 +49,92 @@ class FabricMLM(BaseModel):
         super().__init__(**kwargs)        
         self.mlm_probability = kwargs.get("mlm_probability", 0.15)
         self.ignore_index = kwargs.get("ignore_index", -100)       
-        self.model = AutoModelForMaskedLM.from_pretrained(
-            self.model_name,
-            torch_dtype=self.torch_dtype,
-        )
+        # Optional integration with custom RoBERTa variants and modifications
+        roberta_cfg = kwargs.get("roberta", {}) or {}
+        modifications_cfg = kwargs.get("modifications", {}) or {}
+
+        use_custom_roberta = bool(getattr(roberta_cfg, "custom", roberta_cfg.get("custom", False)))
+        from_scratch = bool(getattr(roberta_cfg, "from_scratch", roberta_cfg.get("from_scratch", True)))
+
+        if use_custom_roberta and from_scratch:
+            # Build Roberta config from provided fields; fall back to HF defaults where missing
+            def _get(cfg, key, default):
+                return getattr(cfg, key, cfg.get(key, default)) if isinstance(cfg, dict) or hasattr(cfg, key) else default
+
+            r_config = RobertaConfig(
+                vocab_size=_get(roberta_cfg, "vocab_size", 50265),
+                hidden_size=_get(roberta_cfg, "hidden_size", 768),
+                num_hidden_layers=_get(roberta_cfg, "num_hidden_layers", 12),
+                num_attention_heads=_get(roberta_cfg, "num_attention_heads", 12),
+                intermediate_size=_get(roberta_cfg, "intermediate_size", 3072),
+                hidden_act="gelu",
+                hidden_dropout_prob=_get(roberta_cfg, "hidden_dropout_prob", 0.1),
+                attention_probs_dropout_prob=_get(roberta_cfg, "attention_dropout_prob", 0.1),
+                max_position_embeddings=_get(roberta_cfg, "max_position_embeddings", 514),
+                type_vocab_size=1,
+                initializer_range=0.02,
+                layer_norm_eps=_get(roberta_cfg, "layer_norm_eps", 1e-5),
+                pad_token_id=1,
+                bos_token_id=0,
+                eos_token_id=2,
+            )
+            self.model = RobertaForMaskedLM(r_config)
+        else:
+            # Default: start from a pretrained checkpoint name
+            self.model = AutoModelForMaskedLM.from_pretrained(
+                self.model_name,
+                torch_dtype=self.torch_dtype,
+            )
+
+        # Apply optional architecture modifications (attention/FFN)
+        try:
+            from src.models.attention.chebyshev_kan import replace_roberta_attention_with_chebyshev  # type: ignore
+            from src.models.attention.chebyshev_kan_orthogonal_projection import replace_roberta_all_layers_with_basis  # type: ignore
+            from src.models.attention.chebyshev_kan_orthogonal_projection_sparse import replace_roberta_all_layers_with_basis_sparse  # type: ignore
+            from src.models.attention.chebyshev_kan_sparse import replace_roberta_attention_with_chebyshev_sparse  # type: ignore
+            from src.models.ffn.chebyshev_kan_ffn import replace_roberta_ffn_with_kan  # type: ignore
+        except Exception:
+            replace_roberta_attention_with_chebyshev = None  # type: ignore
+            replace_roberta_all_layers_with_basis = None  # type: ignore
+            replace_roberta_all_layers_with_basis_sparse = None  # type: ignore
+            replace_roberta_attention_with_chebyshev_sparse = None  # type: ignore
+            replace_roberta_ffn_with_kan = None  # type: ignore
+
+        if modifications_cfg:
+            # Normalize dict-like access
+            def mget(container, key, default=None):
+                return getattr(container, key, container.get(key, default)) if isinstance(container, dict) or hasattr(container, key) else default
+
+            attn_cfg = mget(modifications_cfg, "replace_attention", {}) or {}
+            attn_mode = mget(attn_cfg, "mode", "none")
+            cheb_order = int(mget(attn_cfg, "cheb_order", 5))
+
+            if attn_mode == "chebyshev" and replace_roberta_attention_with_chebyshev is not None:
+                self.model = replace_roberta_attention_with_chebyshev(self.model, order=cheb_order)
+                self.cli_logger.info(f"Applied Chebyshev attention (order={cheb_order})")
+            elif attn_mode == "orthogonal" and replace_roberta_all_layers_with_basis is not None:
+                basis_name = mget(attn_cfg, "basis_name", "dct")
+                basis_rank = int(mget(attn_cfg, "basis_rank", 512))
+                self.model = replace_roberta_all_layers_with_basis(self.model, max_order=cheb_order, basis_name=basis_name, basis_rank=basis_rank)
+                self.cli_logger.info(f"Applied Orthogonal basis-tied attention (order={cheb_order}, basis={basis_name}, rank={basis_rank})")
+            elif attn_mode == "orthogonal_sparse" and replace_roberta_all_layers_with_basis_sparse is not None:
+                basis_name = mget(attn_cfg, "basis_name", "dct")
+                basis_rank = int(mget(attn_cfg, "basis_rank", 512))
+                sparsity = mget(attn_cfg, "sparsity", "topk")
+                topk = int(mget(attn_cfg, "topk", 64))
+                window = int(mget(attn_cfg, "window", 128))
+                self.model = replace_roberta_all_layers_with_basis_sparse(self.model, max_order=cheb_order, basis_name=basis_name, basis_rank=basis_rank, sparsity=sparsity, topk=topk, window=window)
+                self.cli_logger.info(f"Applied Orthogonal sparse attention (order={cheb_order}, basis={basis_name}, rank={basis_rank}, sparsity={sparsity})")
+            elif attn_mode == "sparse" and replace_roberta_attention_with_chebyshev_sparse is not None:
+                sparsity = mget(attn_cfg, "sparsity", "topk")
+                topk = int(mget(attn_cfg, "topk", 64))
+                window = int(mget(attn_cfg, "window", 128))
+                self.model = replace_roberta_attention_with_chebyshev_sparse(self.model, order=cheb_order, sparsity=sparsity, topk=topk, window=window)
+                self.cli_logger.info(f"Applied Sparse Chebyshev attention (order={cheb_order}, sparsity={sparsity})")
+
+            if bool(mget(modifications_cfg, "replace_ffn", False)) and replace_roberta_ffn_with_kan is not None:
+                self.model = replace_roberta_ffn_with_kan(self.model, order=cheb_order)
+                self.cli_logger.info(f"Applied KAN FFN replacement (order={cheb_order})")
         
         self.cli_logger.info(f"Initialized MLM model: {self.model_name}")
         self.cli_logger.info(f"MLM probability: {self.mlm_probability}")

@@ -1,0 +1,41 @@
+# Tokenization config for MLM at seq length 512 using RoBERTa tokenizer
+
+task: "tokenization"
+experiment_name: "roberta-mlm-tokenization-512"
+verbose_level: 3
+
+tokenizer:
+  tokenizer_name: "roberta-base"
+  context_length: 512
+  task: mlm_training
+
+  batch_size: 1000
+  num_proc: 4
+  show_progress: true
+
+  max_seq_length: 512
+  mlm_probability: 0.15
+  mask_token: "<mask>"
+  # RoBERTa does not use a static [MASK] id across all tokenizers; LMTK uses provided id if present
+  # mask_token_id can be omitted; tokenizer will resolve from vocab
+  add_special_tokens: true
+
+  masking_strategy:
+    mask_token_prob: 0.8
+    random_token_prob: 0.1
+    unchanged_prob: 0.1
+
+  whole_word_masking: false
+
+dataset:
+  source: local
+  nameOrPath: "/workspace/data/raw_text"   # CHANGE ME
+  format: files
+  file_config:
+    format: txt
+
+output:
+  path: "/workspace/data/tokenized/roberta_mlm_512"  # CHANGE ME
+
+test_size: 0.01
+
