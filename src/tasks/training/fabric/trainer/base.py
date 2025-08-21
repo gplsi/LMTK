@@ -22,6 +22,10 @@ import lightning as L
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 import os
+try:  # Optional energy/emissions tracking
+    from codecarbon import EmissionsTracker  # type: ignore
+except Exception:
+    EmissionsTracker = None  # type: ignore
 
 # Import custom utilities
 from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
@@ -259,6 +263,33 @@ class FabricTrainerBase(ABC):
             lengths=self.total_lengths,
             train_loss=loss.item()
         )
+        # Additional parity metrics with initial experiments
+        try:
+            metrics: dict[str, float] = {"train/loss": float(loss.item())}
+            # Learning rate (if available)
+            last_lr = self.state.get("last_lr", None)
+            if last_lr is not None:
+                metrics["train/lr"] = float(last_lr)
+            # Rolling average of recent train loss
+            try:
+                if len(self.monitor.history_training_loss) > 0:
+                    avg_loss = sum(self.monitor.history_training_loss) / len(self.monitor.history_training_loss)
+                    metrics["train/avg_loss"] = float(avg_loss)
+            except Exception:
+                pass
+            # Steps per second since start
+            elapsed = max(1e-9, (self.train_t1 - self.train_total_t0))
+            metrics["train/steps_per_sec"] = float(self.state["step_count"]) / float(elapsed)
+            # CUDA memory snapshot
+            if torch.cuda.is_available():
+                try:
+                    metrics["mem/allocated_mb"] = float(torch.cuda.memory_allocated() / (1024 ** 2))
+                    metrics["mem/reserved_mb"] = float(torch.cuda.memory_reserved() / (1024 ** 2))
+                except Exception:
+                    pass
+            fabric.log_dict(metrics, self.state["step_count"])
+        except Exception:
+            pass
     
     def _gradient_clipping(self, fabric: L.Fabric, model: L.LightningModule, optimizer: torch.optim.Optimizer) -> None:
         """
@@ -312,6 +343,11 @@ class FabricTrainerBase(ABC):
             optimizer.zero_grad()
             self.state["step_count"] += 1
             self._try_validate(fabric)
+            # Track last LR for logging
+            try:
+                self.state["last_lr"] = float(self.state["scheduler"].get_last_lr()[0])
+            except Exception:
+                self.state["last_lr"] = None
         self.state["iter_num"] += 1
         return outputs, loss
     
@@ -397,6 +433,11 @@ class FabricTrainerBase(ABC):
             
             self._try_validate(fabric)
             self.state["iter_num"] += 1
+            # Track last LR for logging
+            try:
+                self.state["last_lr"] = float(self.state["scheduler"].get_last_lr()[0])
+            except Exception:
+                self.state["last_lr"] = None
             return outputs, loss
             
     def _train(self, fabric: L.Fabric) -> None:
@@ -572,6 +613,15 @@ class FabricTrainerBase(ABC):
             os.makedirs(self.config.output_dir, exist_ok=True)
         fabric.barrier()
 
+        # Optional energy/emissions tracking (rank 0 only)
+        self._energy_tracker = None
+        if EmissionsTracker is not None and fabric.global_rank == 0:
+            try:
+                self._energy_tracker = EmissionsTracker(save_to_file=False, log_level="error")
+                self._energy_tracker.start()
+            except Exception:
+                self._energy_tracker = None
+
         # FABRIC DATALOADERS SETUP
         self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
 
@@ -593,6 +643,16 @@ class FabricTrainerBase(ABC):
             self.model.model.gradient_checkpointing_disable()
 
         self.cli_logger.info(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
+        # Log parameter counts once (rank 0)
+        if fabric.global_rank == 0:
+            try:
+                params_total = sum(p.numel() for p in self.model.parameters())
+                fabric.log_dict({
+                    "params_total": int(params_total),
+                    "params_m": float(params_total) / 1e6,
+                }, step=0)
+            except Exception:
+                pass
         # OPTIMIZER
         optimizer = select_optimizer(
             self.config.get("optimizer", "adamw"), 
@@ -633,4 +693,27 @@ class FabricTrainerBase(ABC):
         self._train(fabric)
         self.cli_logger.info(f"Training time: {(time.perf_counter() - train_time):.2f}s")
         if fabric.device.type == "cuda":
-            self.cli_logger.info(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
+            max_mem = torch.cuda.max_memory_allocated()
+            self.cli_logger.info(f"Memory used: {max_mem / 1e9:.02f} GB")
+            try:
+                fabric.log_dict({"gpu_max_mem_bytes": int(max_mem)}, self.state.get("step_count", 0))
+            except Exception:
+                pass
+
+        # Stop energy tracker and log results (rank 0)
+        if getattr(self, "_energy_tracker", None) is not None and fabric.global_rank == 0:
+            try:
+                emissions_kg = self._energy_tracker.stop()
+                energy_kwh = None
+                data = getattr(self._energy_tracker, "final_emissions_data", None)
+                if data is not None:
+                    energy_kwh = getattr(data, "energy_consumed", None)
+                metrics = {}
+                if energy_kwh is not None:
+                    metrics["energy_kwh_total"] = float(energy_kwh)
+                if emissions_kg is not None:
+                    metrics["emissions_kg_total"] = float(emissions_kg)
+                if metrics:
+                    fabric.log_dict(metrics, self.state.get("step_count", 0))
+            except Exception:
+                pass

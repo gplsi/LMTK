@@ -1,0 +1,46 @@
+# Tokenization config for MLM at seq length 512 using RoBERTa tokenizer on WikiText-103-raw-v1
+
+task: "tokenization"
+experiment_name: "wikitext103-roberta-mlm-tokenization-512"
+verbose_level: 3
+
+tokenizer:
+  tokenizer_name: "roberta-base"
+  task: "mlm_training"
+
+  # Use max_sequence_length (used by orchestrator) and also provide context_length for tokenizer internals
+  max_sequence_length: 512
+  context_length: 512
+
+  batch_size: 1000
+  num_proc: 4
+  show_progress: true
+
+  mlm_probability: 0.15
+  mask_token: "<mask>"
+  # RoBERTa <mask> token id
+  mask_token_id: 50264
+  add_special_tokens: true
+
+  masking_strategy:
+    mask_token_prob: 0.8
+    random_token_prob: 0.1
+    unchanged_prob: 0.1
+
+dataset:
+  source: "local"
+  # Directory containing raw .txt files for WikiText-103-raw-v1
+  nameOrPath: "/app/data/wikitext-103-raw-v1"
+  format: "files"
+  file_config:
+    format: "txt"
+    encoding: "utf-8"
+
+output:
+  # Output directory where the tokenized HF dataset will be saved
+  path: "/app/data/tokenized/wikitext103_roberta_mlm_512"
+
+# Split a small validation set from the raw data
+test_size: 0.01
+
+

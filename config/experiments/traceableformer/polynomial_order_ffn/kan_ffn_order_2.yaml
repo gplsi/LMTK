@@ -1,0 +1,74 @@
+# MLM training config: RoBERTa from scratch with KAN FFN (Chebyshev order 2) using DDP
+
+task: "mlm_training"
+experiment_name: "wikitext103-roberta-mlm-ddp-kan-ffn-o2"
+verbose_level: 3
+
+# Model configuration
+model_name: "roberta-base"
+precision: "bf16-true"
+log_every_n_steps: 10
+
+roberta:
+  custom: true
+  from_scratch: true
+  vocab_size: 50265
+  hidden_size: 768
+  num_hidden_layers: 12
+  num_attention_heads: 12
+  intermediate_size: 768  # Note: KAN FFN uses hidden_size internally (no 4x expansion)
+  hidden_dropout_prob: 0.1
+  attention_dropout_prob: 0.1
+  max_position_embeddings: 514
+  layer_norm_eps: 1e-5
+
+modifications:
+  replace_ffn: true
+  replace_attention:
+    mode: "none"
+    cheb_order: 2
+
+dataset:
+  source: local
+  nameOrPath: "/app/data/tokenized/wikitext103_roberta_mlm_512"
+  format: dataset
+
+number_epochs: 5
+batch_size: 12
+num_workers: 4
+gradient_checkpointing: true
+output_dir: "/app/outputs/initial/lmtk_roberta_mlm_ddp_kan_ffn_o2"
+
+validate_after_epoch: true
+validate_on_end: true
+validate_after_k_steps: 1000
+save_on_validate: true
+save_on_end: true
+
+gradient_accumulation: true
+gradient_accumulation_steps: 1
+grad_clip: 1.0
+lr: 0.0001
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.01
+
+mlm_probability: 0.15
+ignore_index: -100
+
+parallelization_strategy: "ddp"
+find_unused_parameters: false
+process_group_backend: "nccl"
+static_graph: true
+
+logging_config: "wandb"
+wandb_project: "traceable-attention-experiments"
+wandb_entity: null
+
+seed: 42
+
+

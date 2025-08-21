@@ -1,0 +1,80 @@
+# MLM training config for RoBERTa from scratch on tokenized WikiText-103-raw-v1 using DDP
+
+task: "mlm_training"
+experiment_name: "wikitext103-roberta-mlm-ddp-from-scratch"
+verbose_level: 3
+
+# Model configuration
+# Train RoBERTa from scratch with architecture matching baseline config.py
+model_name: "roberta-base"  # used if not training from scratch
+precision: "bf16-true"
+log_every_n_steps: 10
+
+# Custom RoBERTa from scratch configuration (FabricMLM supports this via `roberta.custom`)
+roberta:
+  custom: true
+  from_scratch: true
+  vocab_size: 50265
+  hidden_size: 768
+  num_hidden_layers: 12
+  num_attention_heads: 12
+  intermediate_size: 3072
+  hidden_dropout_prob: 0.1
+  attention_dropout_prob: 0.1
+  max_position_embeddings: 514
+  layer_norm_eps: 1e-5
+
+# Data configuration: use tokenized dataset produced by tokenization config
+dataset:
+  source: local
+  nameOrPath: "/app/data/tokenized/wikitext103_roberta_mlm_512"
+  format: dataset
+
+# Training arguments
+number_epochs: 5
+batch_size: 12
+num_workers: 4
+gradient_checkpointing: true
+output_dir: "/app/outputs/initial/lmtk_roberta_mlm_ddp"
+
+# Validation and saving strategy
+validate_after_epoch: true
+validate_on_end: true
+validate_after_k_steps: 1000  # mid-epoch validation
+save_on_validate: true        # save at mid-epoch and end-of-epoch validations
+save_on_end: true             # final checkpoint at the end of training
+
+# Optimizer configuration
+gradient_accumulation: true
+gradient_accumulation_steps: 1
+grad_clip: 1.0
+lr: 0.0001
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler configuration
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.01
+
+# MLM-specific configuration
+mlm_probability: 0.15
+ignore_index: -100
+
+# Parallelization strategy: Distributed Data Parallel
+parallelization_strategy: "ddp"
+# DDP trainer reads these directly from top-level config
+find_unused_parameters: false
+process_group_backend: "nccl"
+static_graph: true
+
+# Logging
+logging_config: "wandb"
+wandb_project: "traceable-attention-experiments"
+wandb_entity: null
+
+# Seed
+seed: 42
+
+
