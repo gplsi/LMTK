@@ -25,6 +25,7 @@ pydantic = "1.10.11"
 deepspeed = "^0.13.5"
 sentencepiece = "^0.1.5"
 codecarbon = "*"
+kan = {git = "https://github.com/FabioYanezRomero/pytorch_kan.git"}
 
 # flash-attn package is commented out as it requires special setup
 # flash-attn = { version = "^2.7.4", optional = true }
