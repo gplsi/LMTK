@@ -1,29 +1,29 @@
-# Dataset Merge Configuration
-# This configuration merges multiple tokenized datasets with specified percentages
+# Simple Dataset Merge Configuration
+# This configuration merges DC1 (100%) with DC2 (15%)
 
 task: "dataset_merge"
-experiment_name: "merged_salamandra_datasets"
+experiment_name: "simple_merged_dc1_dc2"
 verbose_level: 3
 
 # Fixed sequence length for all datasets (REQUIRED for compatibility)
-sequence_length: 2048  # Specify the exact sequence length used in tokenization
+sequence_length: 2048
 
 # Datasets to merge with their sampling percentages
 datasets:
-  - path: "data/tokenized/anonymized-va-salamandra"
+  - path: "data/tokenized/anonymized-va-salamandra"  # DC1
     percentage: 1.0  # 100% of this dataset
-    name: "anonymized-va-salamandra"
+    name: "dc1"
   
-  - path: "data/tokenized/md-anonymized-salamandra-2b"
+  - path: "data/tokenized/dc2"  # CORRECTED: Use actual DC2
     percentage: 0.15  # 15% of this dataset
-    name: "md-anonymized-salamandra-2b"
+    name: "dc2"
 
 # Output path for the merged dataset
-output_path: "data/tokenized/dc3"
+output_path: "data/tokenized/dc3_corrected"
 
 # Shuffling configuration
-shuffle_seed: 42  # Set to null for random seed
-final_shuffle_seed: 123  # Set to null for random seed
+shuffle_seed: 42
+final_shuffle_seed: 123
 
 # Validation options
 strict_compatibility: true
