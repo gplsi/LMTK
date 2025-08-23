@@ -9,7 +9,6 @@ model_name: "roberta-base"  # used if not training from scratch
 precision: "bf16-true"
 log_every_n_steps: 10
 
-# Custom RoBERTa from scratch configuration (FabricMLM supports this via `roberta.custom`)
 roberta:
   custom: true
   from_scratch: true
