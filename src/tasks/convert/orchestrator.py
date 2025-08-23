@@ -53,9 +53,11 @@ class ConvertOrchestrator(BaseOrchestrator):
         initial_format = self.config.convert.get('initial_format')
         final_format = self.config.convert.get('final_format')
         key = f"{initial_format}_{final_format}"
+        task_type = self.config.convert.get('task_type')  # optional: "mlm" | "clm" | "instruction"
         format_handler = FORMAT_HANDLERS[key](
             self.config.convert.get('base_model'), 
-            self.config.convert.get('checkpoint_path')
+            self.config.convert.get('checkpoint_path'),
+            task_type=task_type
         )
         summary = format_handler.execute(output_dir=self.config.convert.get('output_dir'))
         return summary

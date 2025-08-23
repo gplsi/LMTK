@@ -1,0 +1,22 @@
+# Convert LMTK checkpoints (.pth) to Hugging Face format for roberta-base
+
+task: "convert"
+experiment_name: "convert-roberta-base-from-pth-to-hf"
+verbose_level: 1
+
+convert:
+  task_type: "mlm"
+  # Base model identifier to build the HF config/tokenizer
+  base_model: "roberta-base"
+
+  # Folder containing one or more .pth checkpoints to convert
+  checkpoint_path: "/workspace/outputs/initial/roberta_mlm_ddp_baseline"
+
+  # Input/output formats
+  initial_format: "fsdp"
+  final_format: "huggingface"
+
+  # Where to write HF model(s); subfolders per checkpoint
+  output_dir: "/workspace/outputs/converted/roberta_mlm_ddp_baseline"
+
+

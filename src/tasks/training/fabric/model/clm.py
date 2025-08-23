@@ -1,6 +1,6 @@
 from typing import Tuple
 import lightning as L
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoConfig
 import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
@@ -42,8 +42,16 @@ class FabricCLM(BaseModel):
         """
         super().__init__(**kwargs)
         
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            torch_dtype=self.torch_dtype,
-            use_cache=False
-        )
+        from_scratch: bool = bool(kwargs.get("from_scratch", False))
+        if from_scratch:
+            # Initialize model weights from scratch using the base config of model_name
+            cfg = AutoConfig.from_pretrained(self.model_name)
+            cfg.use_cache = False
+            self.model = AutoModelForCausalLM.from_config(cfg)
+        else:
+            # Default behavior: load pretrained weights
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=self.torch_dtype,
+                use_cache=False
+            )

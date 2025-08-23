@@ -1,7 +1,7 @@
-# Tokenization config for MLM at seq length 512 using RoBERTa tokenizer on WikiText-103-raw-v1
+# Tokenization config for MLM at seq length 512 using RoBERTa tokenizer on WikiText-103-raw-v1 (single-file corpus)
 
 task: "tokenization"
-experiment_name: "wikitext103-roberta-mlm-tokenization-512"
+experiment_name: "wikitext103-roberta-mlm-tokenization-512-corpus"
 verbose_level: 3
 
 tokenizer:
@@ -21,6 +21,8 @@ tokenizer:
   # RoBERTa <mask> token id
   mask_token_id: 50264
   add_special_tokens: true
+  mask_special_tokens: false
+  exclude_token_ids: []
 
   masking_strategy:
     mask_token_prob: 0.8
@@ -29,18 +31,20 @@ tokenizer:
 
 dataset:
   source: "local"
-  # Directory containing raw .txt files for WikiText-103-raw-v1
-  nameOrPath: "/workspace/data/wikitext-103-raw-v1"
+  # Directory containing a single corpus.txt file for WikiText-103-raw-v1
+  nameOrPath: "/workspace/data/wikitext-103-corpus"
   format: "files"
   file_config:
     format: "txt"
     encoding: "utf-8"
 
 output:
-  # Output directory where the tokenized HF dataset will be saved
-  path: "/workspace/data/tokenized/wikitext103_roberta_mlm_512"
+  # Output directory where the tokenized HF dataset will be saved (container path)
+  path: "/workspace/data/tokenized/wikitext103_roberta_mlm_512_corpus"
 
 # Split a small validation set from the raw data
 test_size: 0.01
+#sample_limit: 10000
+
 
 

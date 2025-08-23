@@ -3,7 +3,7 @@
 """
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
+from transformers import AutoModelForCausalLM, AutoModelForMaskedLM, AutoTokenizer, AutoConfig
 from huggingface_hub import HfApi
 import os
 from logging import getLogger
@@ -11,9 +11,11 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 class FSDPtoHuggingFace:
-    def __init__(self, base_model, checkpoint_path):
+    def __init__(self, base_model, checkpoint_path, task_type: str | None = None):
         self.base_model = base_model
         self.checkpoint_path = checkpoint_path
+        # task_type: "mlm" | "clm" | "instruction" (treated as causal)
+        self.task_type = (task_type or "").lower().strip() or None
 
     def _fix_fsdp_state_dict_keys(self, checkpoint_state_dict, model_state_dict):
         """Fix FSDP checkpoint keys with proper lm_head handling."""
@@ -126,17 +128,33 @@ class FSDPtoHuggingFace:
             logger.warning(f"⚠️  {len(unexpected_keys)} unexpected keys")
             logger.warning(f"Sample unexpected: {unexpected_keys[:3]}")
         
-        total_params = len(model_state_dict)
-        loaded_params = total_params - len(remaining_missing)
-        if total_params == 0:
-            loading_percentage = 100.0  # Assume 100% in test environment
+        # Tensor-level summary
+        total_tensors = len(model_state_dict)
+        loaded_tensors = total_tensors - len(remaining_missing)
+        if total_tensors == 0:
+            tensor_loading_pct = 100.0
         else:
-            loading_percentage = (loaded_params / total_params) * 100
+            tensor_loading_pct = (loaded_tensors / total_tensors) * 100
+
+        # Element-level summary (scalar parameters)
+        total_elems = sum(v.numel() for v in model_state_dict.values())
+        loaded_elems = sum(
+            v.numel() for k, v in model_state_dict.items() if k not in remaining_missing
+        )
+        if total_elems == 0:
+            elem_loading_pct = 100.0
+        else:
+            elem_loading_pct = (loaded_elems / total_elems) * 100
+
+        logger.info(
+            f"✅ Final result: tensors {loaded_tensors}/{total_tensors} ({tensor_loading_pct:.1f}%), "
+            f"elements {loaded_elems}/{total_elems} ({elem_loading_pct:.2f}%)"
+        )
         
-        logger.info(f"✅ Final result: {loaded_params}/{total_params} parameters ({loading_percentage:.1f}%)")
-        
-        if loading_percentage < 95:
-            raise ValueError(f"Only {loading_percentage:.1f}% of parameters loaded from FSDP checkpoint")
+        if elem_loading_pct < 95:
+            raise ValueError(
+                f"Only {elem_loading_pct:.2f}% of scalar parameters loaded from FSDP checkpoint"
+            )
         
         # Check for weight tying, but handle mock objects in tests
         try:
@@ -171,63 +189,43 @@ class FSDPtoHuggingFace:
 
     def execute(self, output_dir):
         config = AutoConfig.from_pretrained(self.base_model)
-        base_model = AutoModelForCausalLM.from_config(config)
         # Determine if single or multiple checkpoints
         checkpoint_files = []
         if self.checkpoint_path.endswith(".pth"):
             checkpoint_files = [self.checkpoint_path]
         else:
             for root, dirs, files in os.walk(self.checkpoint_path):
+                files = sorted(files)
                 for file in files:
                     if file.endswith(".pth"):
                         checkpoint_files.append(os.path.join(root, file))
-                        break
         
-        results = []
+        # Fresh model per checkpoint and save immediately
         summary = []
         total = len(checkpoint_files)
         for idx, checkpoint_file in enumerate(checkpoint_files, 1):
             logger.info(f"[Progress] Converting checkpoint {idx}/{total}: {checkpoint_file}")
+            cfg = AutoConfig.from_pretrained(self.base_model)
+            is_decoder = bool(getattr(cfg, "is_decoder", False))
+            if self.task_type == "mlm" or (not is_decoder and self.task_type is None):
+                model = AutoModelForMaskedLM.from_config(cfg)
+            else:
+                cfg.is_decoder = True
+                model = AutoModelForCausalLM.from_config(cfg)
             try:
-                model = self._convert_checkpoint(base_model, checkpoint_file)
-                success = True
-                error = None
-            except Exception as e:
-                logger.error(f"Failed to convert {checkpoint_file}: {e}")
-                model = None
-                success = False
-                error = str(e)
-            results.append(model)
-            summary.append({
-                'checkpoint': checkpoint_file,
-                'success': success,
-                'error': error
-            })
-        
-        # Save models to output directory
-
-        for idx, (checkpoint_file, model) in enumerate(zip(checkpoint_files, results), 1):
-            if model is not None:
+                model = self._convert_checkpoint(model, checkpoint_file)
                 base_name = os.path.splitext(os.path.basename(checkpoint_file))[0]
                 final_dir = os.path.join(output_dir, base_name)
-                if not os.path.exists(final_dir):
-                    os.makedirs(final_dir, exist_ok=True)
+                os.makedirs(final_dir, exist_ok=True)
                 logger.info(f"[Progress] Saving HuggingFace model {idx}/{total} to {final_dir}")
-                try:
-                    model.save_pretrained(final_dir)
-                    tokenizer = AutoTokenizer.from_pretrained(self.base_model)
-                    tokenizer.save_pretrained(final_dir)
-                    for entry in summary:
-                        if entry['checkpoint'] == checkpoint_file:
-                            entry['output_dir'] = final_dir
-                except Exception as e:
-                    logger.error(f"Failed to save model for {checkpoint_file}: {e}")
-                    for entry in summary:
-                        if entry['checkpoint'] == checkpoint_file:
-                            entry['success'] = False
-                            entry['error'] = str(e)
-            else:
-                logger.warning(f"Skipping saving for {checkpoint_file} due to previous errors.")
+                model.save_pretrained(final_dir)
+                tokenizer = AutoTokenizer.from_pretrained(self.base_model)
+                tokenizer.save_pretrained(final_dir)
+                summary.append({'checkpoint': checkpoint_file, 'success': True, 'error': None, 'output_dir': final_dir})
+            except Exception as e:
+                logger.error(f"Failed to convert {checkpoint_file}: {e}")
+                summary.append({'checkpoint': checkpoint_file, 'success': False, 'error': str(e)})
+        
         logger.info("All conversions completed.")
         logger.info(f"Summary: {summary}")
         return summary

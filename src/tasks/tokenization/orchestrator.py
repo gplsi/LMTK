@@ -81,6 +81,12 @@ class TokenizationOrchestrator(BaseOrchestrator):
         test_size = self.config.get("test_size", 0.3)
         seed = self.config.get("seed", 1234)
 
+        # MLM-specific params (optional, only used by MaskedLMTokenizer)
+        mlm_probability = self.config.tokenizer.get("mlm_probability", 0.15)
+        mask_token_id = self.config.tokenizer.get("mask_token_id")
+        mask_special_tokens = self.config.tokenizer.get("mask_special_tokens", False)
+        exclude_token_ids = self.config.tokenizer.get("exclude_token_ids", [])
+
         
         # Create the tokenizer configuration using parameters from the orchestrator's configuration.
         tokenizer_config = TokenizerConfig(
@@ -100,7 +106,12 @@ class TokenizationOrchestrator(BaseOrchestrator):
             ignore_index=ignore_index,
             max_seq_length=max_seq_length,
             test_size=test_size,
-            seed=seed
+            seed=seed,
+            # MLM-specific parameters
+            mlm_probability=mlm_probability,
+            mask_token_id=mask_token_id,
+            mask_special_tokens=mask_special_tokens,
+            exclude_token_ids=exclude_token_ids,
         )
 
         task = self.config.tokenizer.get("task", "clm_training")
@@ -141,6 +152,19 @@ class TokenizationOrchestrator(BaseOrchestrator):
             # 2. Load dataset
             dataset = self.load_dataset()
             
+            # Optional sub-sampling for quick tests
+            sample_limit = self.config.get("sample_limit", None)
+            if sample_limit is not None:
+                try:
+                    self.logger.info(f"Applying sample_limit={sample_limit} for quick run")
+                    if isinstance(dataset, DatasetDict):
+                        for split in list(dataset.keys()):
+                            dataset[split] = dataset[split].select(range(min(sample_limit, len(dataset[split]))))
+                    else:
+                        dataset = dataset.select(range(min(sample_limit, len(dataset))))
+                except Exception as e:
+                    self.logger.warning(f"Failed to apply sample_limit: {e}")
+
             # 3. Tokenize dataset
             tokenized_dataset = self.tokenize_dataset(dataset)
 

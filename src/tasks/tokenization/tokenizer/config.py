@@ -12,7 +12,7 @@ Note:
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Any
 from src.utils.logging import VerboseLevel
 
 @dataclass
@@ -71,9 +71,17 @@ class TokenizerConfig:
     
     # Instruction-specific parameters
     padding_strategy: str = "fixed"  # "fixed" or "dynamic"
-    masking_strategy: str = "context_aware"  # "context_aware" or "response_only"
+    # For MLM tokenization, this field can be a dict with keys
+    # {mask_token_prob, random_token_prob, unchanged_prob}
+    masking_strategy: Any = "context_aware"  # str for instruction, dict for MLM
     mask_prompt: bool = True
     ignore_index: int = -100
     max_seq_length: Optional[int] = None
     test_size: float = 0.3
     seed: int = 1234  # Default seed for reproducibility
+
+    # MLM-specific parameters (used by MaskedLMTokenizer)
+    mlm_probability: float = 0.15
+    mask_token_id: Optional[int] = None
+    mask_special_tokens: bool = False
+    exclude_token_ids: Optional[List[int]] = None

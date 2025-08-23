@@ -1,6 +1,6 @@
 from typing import Tuple, Dict, Any
 import lightning as L
-from transformers import AutoModelForMaskedLM, RobertaConfig, RobertaForMaskedLM
+from transformers import AutoModelForMaskedLM, RobertaConfig, RobertaForMaskedLM, AutoConfig
 import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
@@ -60,31 +60,53 @@ class FabricMLM(BaseModel):
             # Build Roberta config from provided fields; fall back to HF defaults where missing
             def _get(cfg, key, default):
                 return getattr(cfg, key, cfg.get(key, default)) if isinstance(cfg, dict) or hasattr(cfg, key) else default
+            def _to_int(v, default=None):
+                if v is None:
+                    return default
+                try:
+                    return int(v)
+                except Exception:
+                    try:
+                        return int(float(v))
+                    except Exception:
+                        return default if default is not None else v
+            def _to_float(v, default=None):
+                if v is None:
+                    return default
+                try:
+                    return float(v)
+                except Exception:
+                    return default if default is not None else v
 
             r_config = RobertaConfig(
-                vocab_size=_get(roberta_cfg, "vocab_size", 50265),
-                hidden_size=_get(roberta_cfg, "hidden_size", 768),
-                num_hidden_layers=_get(roberta_cfg, "num_hidden_layers", 12),
-                num_attention_heads=_get(roberta_cfg, "num_attention_heads", 12),
-                intermediate_size=_get(roberta_cfg, "intermediate_size", 3072),
+                vocab_size=_to_int(_get(roberta_cfg, "vocab_size", 50265), 50265),
+                hidden_size=_to_int(_get(roberta_cfg, "hidden_size", 768), 768),
+                num_hidden_layers=_to_int(_get(roberta_cfg, "num_hidden_layers", 12), 12),
+                num_attention_heads=_to_int(_get(roberta_cfg, "num_attention_heads", 12), 12),
+                intermediate_size=_to_int(_get(roberta_cfg, "intermediate_size", 3072), 3072),
                 hidden_act="gelu",
-                hidden_dropout_prob=_get(roberta_cfg, "hidden_dropout_prob", 0.1),
-                attention_probs_dropout_prob=_get(roberta_cfg, "attention_dropout_prob", 0.1),
-                max_position_embeddings=_get(roberta_cfg, "max_position_embeddings", 514),
+                hidden_dropout_prob=_to_float(_get(roberta_cfg, "hidden_dropout_prob", 0.1), 0.1),
+                attention_probs_dropout_prob=_to_float(_get(roberta_cfg, "attention_dropout_prob", 0.1), 0.1),
+                max_position_embeddings=_to_int(_get(roberta_cfg, "max_position_embeddings", 514), 514),
                 type_vocab_size=1,
-                initializer_range=0.02,
-                layer_norm_eps=_get(roberta_cfg, "layer_norm_eps", 1e-5),
+                initializer_range=_to_float(_get(roberta_cfg, "initializer_range", 0.02), 0.02),
+                layer_norm_eps=_to_float(_get(roberta_cfg, "layer_norm_eps", 1e-5), 1e-5),
                 pad_token_id=1,
                 bos_token_id=0,
                 eos_token_id=2,
             )
             self.model = RobertaForMaskedLM(r_config)
         else:
-            # Default: start from a pretrained checkpoint name
-            self.model = AutoModelForMaskedLM.from_pretrained(
-                self.model_name,
-                torch_dtype=self.torch_dtype,
-            )
+            # Honor from_scratch flag even without custom roberta
+            if from_scratch:
+                cfg = AutoConfig.from_pretrained(self.model_name)
+                self.model = AutoModelForMaskedLM.from_config(cfg)
+            else:
+                # Default: load pretrained weights
+                self.model = AutoModelForMaskedLM.from_pretrained(
+                    self.model_name,
+                    torch_dtype=self.torch_dtype,
+                )
 
         # Apply optional architecture modifications (attention/FFN)
         try:

@@ -312,10 +312,30 @@ class DatasetStorage:
 
         if datasets and len(datasets) > 0:
             if len(datasets) == 1:
+                ds = datasets[0]
+                # Optional: filter out empty text lines for text datasets
+                try:
+                    def _filter_empty_text(dataset_like: Union[HFDataset, DatasetDict]) -> Union[HFDataset, DatasetDict]:
+                        def drop_empty(ex):
+                            txt = ex.get("text", None)
+                            return isinstance(txt, str) and len(txt.strip()) > 0
+                        if isinstance(dataset_like, DatasetDict):
+                            for k in list(dataset_like.keys()):
+                                if "text" in dataset_like[k].column_names:
+                                    dataset_like[k] = dataset_like[k].filter(drop_empty)
+                            return dataset_like
+                        else:
+                            if "text" in dataset_like.column_names:
+                                return dataset_like.filter(drop_empty)
+                            return dataset_like
+                    ds = _filter_empty_text(ds)
+                except Exception as e:
+                    self.logger.warning(f"Unable to filter empty text lines: {e}")
+
                 self.logger.info(
                     f"Dataset successfully built from '{extension if 'extension' in locals() else specific_format}' files."
                 )
-                return datasets[0]
+                return ds
 
             self.logger.info(
                 f"Produced one dataset per file extension. Combining ({len(datasets)}) datasets into one."

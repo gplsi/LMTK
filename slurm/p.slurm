@@ -123,6 +123,7 @@ mkdir -p "$LOG_DIR"
 mkdir -p "$CACHE_DIR/datasets"
 mkdir -p "$CACHE_DIR/huggingface"
 mkdir -p "$CACHE_DIR/transformers"
+mkdir -p "$CACHE_DIR/wandb"
 echo "Directories created successfully"
 echo "==============================="
 
@@ -270,18 +271,30 @@ echo "Available Docker images:"
 docker images | grep -E "(REPOSITORY|lmtk)" || echo "No lmtk images found"
 echo "======================================="
 
+USER_FLAG=""
+if [[ "${RUN_AS_ROOT:-false}" == "true" ]]; then
+    USER_FLAG="--user 0:0"
+else
+    USER_FLAG="--user ${USER_ID}:${GROUP_ID}"
+fi
+
 docker run \
     --name "$CONTAINER_NAME" \
     --gpus all \
     --rm \
     --network host \
-    --user "$USER_ID:$GROUP_ID" \
+    $USER_FLAG \
     --volume "$HOST_PROJECT_ROOT:$CONTAINER_PROJECT_ROOT" \
+    --volume "/etc/passwd:/etc/passwd:ro" \
+    --volume "/etc/group:/etc/group:ro" \
     --env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES" \
     --env "PYTHONPATH=$CONTAINER_PROJECT_ROOT/src:$CONTAINER_PROJECT_ROOT:${PYTHONPATH:-}" \
     --env "HF_DATASETS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/datasets" \
     --env "HF_HOME=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface" \
     --env "TRANSFORMERS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/transformers" \
+    --env "WANDB_DIR=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/wandb" \
+    --env "WANDB_CONFIG_DIR=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/wandb" \
+    --env "HOME=$([[ "${RUN_AS_ROOT:-false}" == "true" ]] && echo "/root" || echo "$CONTAINER_PROJECT_ROOT")" \
     --env "WANDB_PROJECT=$WANDB_PROJECT" \
     --env "WANDB_ENTITY=$WANDB_ENTITY" \
     --env "WANDB_API_KEY=$WANDB_API_KEY" \

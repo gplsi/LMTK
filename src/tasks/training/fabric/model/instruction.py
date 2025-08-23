@@ -1,6 +1,6 @@
 from typing import Tuple
 import lightning as L
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoConfig
 import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
@@ -48,13 +48,19 @@ class FabricInstruction(BaseModel):
         self.cli_logger = get_logger(__name__, kwargs.get("verbose_level", VerboseLevel.DEBUG))
         self.args = kwargs
         model_name = kwargs["model_name"]
+        from_scratch: bool = bool(kwargs.get("from_scratch", False))
         
         # Store ignore_index for loss calculation (standard for instruction tuning)
         self.ignore_index = kwargs.get("ignore_index", -100)
                 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=self.torch_dtype,
-            use_cache=False
-        )
+        if from_scratch:
+            cfg = AutoConfig.from_pretrained(model_name)
+            cfg.use_cache = False
+            self.model = AutoModelForCausalLM.from_config(cfg)
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=self.torch_dtype,
+                use_cache=False
+            )
         

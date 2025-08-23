@@ -256,20 +256,29 @@ class MaskedLMTokenizer(BaseTokenizer):
         
         # Run tokenizer on the entire batch at once
         try:
+            # Enable overflowing to cover sequences longer than context_length
+            stride = int(self.config.overlap) if getattr(self.config, "overlap", None) else 0
             outputs = self._tokenizer(
                 batch["text"],
                 truncation=True,
                 max_length=self.config.context_length,
-                padding="max_length",  # Pad to max_length for consistency
-                return_tensors="np",  # Direct NumPy conversion
+                padding="max_length",
+                return_overflowing_tokens=True,
+                stride=stride,
             )
         except Exception as e:
             self.logger.error(f"Tokenization failed: {e}")
             self.logger.error(f"Batch content preview: {str(batch)[:200]}...")
             raise RuntimeError(f"Tokenization failed: {e}") from e
         
-        input_ids = outputs["input_ids"]       # Already NumPy arrays
-        attention_mask = outputs["attention_mask"]
+        # Convert to numpy arrays (overflowing may increase the number of sequences)
+        try:
+            import numpy as _np
+            input_ids = _np.array(outputs["input_ids"], dtype=_np.int32)
+            attention_mask = _np.array(outputs["attention_mask"], dtype=_np.int32)
+        except Exception as e:
+            self.logger.error(f"Failed converting tokenizer outputs to numpy: {e}")
+            raise
         
         # Apply MLM masking
         try:
@@ -280,9 +289,9 @@ class MaskedLMTokenizer(BaseTokenizer):
         
         # Return the tokenized and masked results
         return {
-            "input_ids": masked_input_ids,
-            "attention_mask": attention_mask,
-            "labels": labels,
+            "input_ids": masked_input_ids.tolist(),
+            "attention_mask": attention_mask.tolist(),
+            "labels": labels.tolist(),
         }
     
     def tokenize(self, dataset: Union[HFDataset, DatasetDict]) -> Union[HFDataset, DatasetDict]:

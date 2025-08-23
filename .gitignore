@@ -183,3 +183,7 @@ converted/
 .windsurf/*
 /converted
 tokenized_visualizations
+data/
+outputs/
+raw_data/
+text_data/

@@ -16,21 +16,22 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SLURM_SCRIPT="$SCRIPT_DIR/p.slurm"
 
 # Initialize variables (will be set by config file, CLI args, or defaults in that order)
-CONFIG_FILE=""
-WANDB_API_KEY=""
-GPU_COUNT=""
-MEMORY=""
-TIME_LIMIT=""
-PARTITION=""
-JOB_NAME=""
-CPUS_PER_TASK=""
-NODES=""
-NTASKS_PER_NODE=""
-OUTPUT_DIR=""
-OUTPUT_FILE_PATTERN=""
-ERROR_FILE_PATTERN=""
+CONFIG_FILE="config/experiments/traceableformer/convert_roberta_base_from_pth.yaml"
+WANDB_API_KEY="0002c6b12094cc0806f5d415088555cc552ca961"
+GPU_COUNT="1"
+MEMORY="16G"
+TIME_LIMIT="24:00:00"
+PARTITION="dgx"
+JOB_NAME="convert_mlm_baseline"
+CPUS_PER_TASK="1"
+NODES="1"
+NTASKS_PER_NODE="1"
+OUTPUT_DIR="convert_mlm_baseline"
+OUTPUT_FILE_PATTERN="%j_convert_mlm_baseline.out"
+ERROR_FILE_PATTERN="%j_convert_mlm_baseline.err"
 DRY_RUN=false
 FORCE_REBUILD=false
+RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
 
 # Load configuration file defaults if it exists
 SLURM_CONFIG_FILE="$SCRIPT_DIR/slurm_config.env"
@@ -42,15 +43,15 @@ if [[ -f "$SLURM_CONFIG_FILE" ]]; then
 fi
 
 # Set final defaults for any unset variables
-GPU_COUNT="${GPU_COUNT:-2}"
-MEMORY="${MEMORY:-64G}"
-TIME_LIMIT="${TIME_LIMIT:-48:00:00}"
-PARTITION="${PARTITION:-dgx}"
-JOB_NAME="${JOB_NAME:-lmtk}"
-CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
-NODES="${NODES:-1}"
-NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
-OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-%j_lmtk.out}"
+GPU_COUNT="${GPU_COUNT}"
+MEMORY="${MEMORY}"
+TIME_LIMIT="${TIME_LIMIT}"
+PARTITION="${PARTITION}"
+JOB_NAME="${JOB_NAME}"
+CPUS_PER_TASK="${CPUS_PER_TASK}"
+NODES="${NODES}"
+NTASKS_PER_NODE="${NTASKS_PER_NODE}"
+OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN}"
 ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-%j_lmtk.err}"
 
 # Function to display usage
@@ -244,7 +245,7 @@ if [[ "$CONFIG_FILE" = /* ]]; then
 else
     REL_CONFIG_FILE="$CONFIG_FILE"
 fi
-EXPORT_VARS="CONFIG_FILE=$REL_CONFIG_FILE,HOST_PROJECT_ROOT=$PROJECT_ROOT"
+EXPORT_VARS="CONFIG_FILE=$REL_CONFIG_FILE,HOST_PROJECT_ROOT=$PROJECT_ROOT,RUN_AS_ROOT=$RUN_AS_ROOT"
 
 if [[ -n "$WANDB_API_KEY" ]]; then
     EXPORT_VARS="${EXPORT_VARS},WANDB_API_KEY=$WANDB_API_KEY"
