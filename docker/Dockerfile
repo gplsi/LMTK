@@ -54,7 +54,8 @@ RUN poetry config virtualenvs.create false
 COPY pyproject.toml poetry.lock* ./
 
 # Install dependencies only (no dev dependencies for production)
-RUN poetry install --only=main --no-root && \
+# Install main dependencies (git deps like 'kan' may be installed at runtime if private)
+RUN poetry install --only=main --no-root --no-interaction && \
     rm -rf $POETRY_CACHE_DIR
 
 # Copy project files

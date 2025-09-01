@@ -4,6 +4,7 @@
 
 import torch
 from transformers import AutoModelForCausalLM, AutoModelForMaskedLM, AutoTokenizer, AutoConfig
+from box import Box
 from huggingface_hub import HfApi
 import os
 from logging import getLogger
@@ -11,11 +12,12 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 class FSDPtoHuggingFace:
-    def __init__(self, base_model, checkpoint_path, task_type: str | None = None):
+    def __init__(self, base_model, checkpoint_path, task_type: str | None = None, convert_modifications: dict | None = None):
         self.base_model = base_model
         self.checkpoint_path = checkpoint_path
         # task_type: "mlm" | "clm" | "instruction" (treated as causal)
         self.task_type = (task_type or "").lower().strip() or None
+        self.convert_modifications = Box(convert_modifications or {}, box_dots=True)
 
     def _fix_fsdp_state_dict_keys(self, checkpoint_state_dict, model_state_dict):
         """Fix FSDP checkpoint keys with proper lm_head handling."""
@@ -206,6 +208,15 @@ class FSDPtoHuggingFace:
         for idx, checkpoint_file in enumerate(checkpoint_files, 1):
             logger.info(f"[Progress] Converting checkpoint {idx}/{total}: {checkpoint_file}")
             cfg = AutoConfig.from_pretrained(self.base_model)
+            # If KAN FFN was used, annotate config to preserve architecture info in HF artifact
+            if hasattr(self.convert_modifications, 'replace_ffn'):
+                ffn_cfg = self.convert_modifications.replace_ffn
+                if isinstance(ffn_cfg, (dict, Box)):
+                    cfg._name_or_path = getattr(cfg, '_name_or_path', self.base_model)
+                    cfg.lmtk_replace_ffn = {
+                        'type': 'kan_chebyshev',
+                        'cheb_order': int(getattr(ffn_cfg, 'cheb_order', ffn_cfg.get('cheb_order', 1)))
+                    }
             is_decoder = bool(getattr(cfg, "is_decoder", False))
             if self.task_type == "mlm" or (not is_decoder and self.task_type is None):
                 model = AutoModelForMaskedLM.from_config(cfg)
@@ -213,11 +224,34 @@ class FSDPtoHuggingFace:
                 cfg.is_decoder = True
                 model = AutoModelForCausalLM.from_config(cfg)
             try:
+                # Load original to optionally extract KAN tensors
+                original_state_dict = self._load_fsdp_checkpoint_safely(checkpoint_file)
+                kan_keys = [
+                    k for k in original_state_dict.keys()
+                    if (".intermediate.kan" in k.lower()) or (".mixing." in k.lower()) or ("chebyshev" in k.lower())
+                ]
+                kan_state = {k: original_state_dict[k] for k in kan_keys}
+
                 model = self._convert_checkpoint(model, checkpoint_file)
                 base_name = os.path.splitext(os.path.basename(checkpoint_file))[0]
                 final_dir = os.path.join(output_dir, base_name)
                 os.makedirs(final_dir, exist_ok=True)
                 logger.info(f"[Progress] Saving HuggingFace model {idx}/{total} to {final_dir}")
+
+                # Persist KAN tensors if any and note in config
+                if len(kan_state) > 0:
+                    try:
+                        from safetensors.torch import save_file as save_sft
+                        kan_state_file = os.path.join(final_dir, 'kan_ffn_state.safetensors')
+                        save_sft(kan_state, kan_state_file)
+                    except Exception:
+                        kan_state_file = os.path.join(final_dir, 'kan_ffn_state.pt')
+                        torch.save(kan_state, kan_state_file)
+                    if not hasattr(model.config, 'lmtk_replace_ffn'):
+                        model.config.lmtk_replace_ffn = {'type': 'kan_chebyshev'}
+                    model.config.lmtk_kan_state_file = os.path.basename(kan_state_file)
+                    model.config.lmtk_kan_keys_count = len(kan_state)
+
                 model.save_pretrained(final_dir)
                 tokenizer = AutoTokenizer.from_pretrained(self.base_model)
                 tokenizer.save_pretrained(final_dir)

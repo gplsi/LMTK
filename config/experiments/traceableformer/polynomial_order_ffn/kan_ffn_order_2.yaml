@@ -23,21 +23,21 @@ roberta:
   layer_norm_eps: 1e-5
 
 modifications:
-  replace_ffn: true
+  replace_ffn:
+    cheb_order: 2
   replace_attention:
     mode: "none"
-    cheb_order: 2
 
 dataset:
   source: local
-  nameOrPath: "/app/data/tokenized/wikitext103_roberta_mlm_512"
+  nameOrPath: "/workspace/data/tokenized/wikitext103_roberta_mlm_512_corpus"
   format: dataset
 
 number_epochs: 5
-batch_size: 12
-num_workers: 4
-gradient_checkpointing: true
-output_dir: "/app/outputs/initial/lmtk_roberta_mlm_ddp_kan_ffn_o2"
+batch_size: 16
+num_workers: 6
+gradient_checkpointing: false
+output_dir: "/workspace/outputs/initial/roberta_mlm_ddp_kan_ffn_o2"
 
 validate_after_epoch: true
 validate_on_end: true
@@ -46,29 +46,27 @@ save_on_validate: true
 save_on_end: true
 
 gradient_accumulation: true
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 8
 grad_clip: 1.0
-lr: 0.0001
+lr: 0.00015
 lr_decay: true
 weight_decay: 0.01
 beta1: 0.9
-beta2: 0.999
+beta2: 0.98
 
 lr_scheduler: "warmup_linear"
-warmup_proportion: 0.01
+warmup_proportion: 0.03
 
 mlm_probability: 0.15
 ignore_index: -100
 
 parallelization_strategy: "ddp"
-find_unused_parameters: false
+find_unused_parameters: true
 process_group_backend: "nccl"
-static_graph: true
+static_graph: false
 
 logging_config: "wandb"
 wandb_project: "traceable-attention-experiments"
 wandb_entity: null
 
 seed: 42
-
-

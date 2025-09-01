@@ -2,6 +2,12 @@
 **/.*
 **/*.ipynb
 **/data/
+outputs/
+output/
+wandb/
+.venv/
+**/*.pth
+**/*.safetensors
 test_checkpoint_naming.py
 *.out
 *.err

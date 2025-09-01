@@ -13,6 +13,8 @@ set -u  # Exit on undefined variables
 set -o pipefail  # Exit on pipe failures
 set -x  # Print commands as they are executed
 
+umask 002
+
 echo "===== Container Script Started ====="
 echo "Current working directory: $(pwd)"
 echo "Current user: $(whoami)"
@@ -50,6 +52,32 @@ python3 -c "import sys; print('\n'.join(sys.path))"
 echo ""
 echo "Python environment ready"
 echo "=============================="
+
+# Ensure KAN library is available (install at runtime if missing)
+echo "===== Dependency Check: KAN ====="
+if python3 - <<'PY'
+import importlib.util, sys
+sys.exit(0) if importlib.util.find_spec('kan') else sys.exit(1)
+PY
+then
+  echo "✅ KAN already installed."
+else
+  echo "KAN not found. Installing KAN..."
+  # Install KAN from public GitHub repo (no PyPI fallback)
+  pip install --no-cache-dir --upgrade "git+https://github.com/Pytorch-KAN/pytorch_kan.git" || true
+  # Re-check importability
+  if python3 - <<'PY'
+import importlib.util, sys
+sys.exit(0) if importlib.util.find_spec('kan') else sys.exit(1)
+PY
+  then
+    echo "✅ KAN installed successfully."
+  else
+    echo "❌ Failed to install KAN automatically. Exiting."
+    exit 1
+  fi
+fi
+echo "==================================="
 
 echo "===== WandB Configuration ====="
 if [ -n "${WANDB_API_KEY:-}" ] && [ "${WANDB_API_KEY}" != "" ]; then

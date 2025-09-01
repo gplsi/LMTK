@@ -109,18 +109,11 @@ class FabricMLM(BaseModel):
                 )
 
         # Apply optional architecture modifications (attention/FFN)
-        try:
-            from src.models.attention.chebyshev_kan import replace_roberta_attention_with_chebyshev  # type: ignore
-            from src.models.attention.chebyshev_kan_orthogonal_projection import replace_roberta_all_layers_with_basis  # type: ignore
-            from src.models.attention.chebyshev_kan_orthogonal_projection_sparse import replace_roberta_all_layers_with_basis_sparse  # type: ignore
-            from src.models.attention.chebyshev_kan_sparse import replace_roberta_attention_with_chebyshev_sparse  # type: ignore
-            from src.models.ffn.chebyshev_kan_ffn import replace_roberta_ffn_with_kan  # type: ignore
-        except Exception:
-            replace_roberta_attention_with_chebyshev = None  # type: ignore
-            replace_roberta_all_layers_with_basis = None  # type: ignore
-            replace_roberta_all_layers_with_basis_sparse = None  # type: ignore
-            replace_roberta_attention_with_chebyshev_sparse = None  # type: ignore
-            replace_roberta_ffn_with_kan = None  # type: ignore
+        from src.models.attention.chebyshev_kan import replace_roberta_attention_with_chebyshev  # type: ignore
+        from src.models.attention.chebyshev_kan_orthogonal_projection import replace_roberta_all_layers_with_basis  # type: ignore
+        from src.models.attention.chebyshev_kan_orthogonal_projection_sparse import replace_roberta_all_layers_with_basis_sparse  # type: ignore
+        from src.models.attention.chebyshev_kan_sparse import replace_roberta_attention_with_chebyshev_sparse  # type: ignore
+        from src.models.ffn.chebyshev_kan_ffn import replace_roberta_ffn_with_kan  # type: ignore
 
         if modifications_cfg:
             # Normalize dict-like access
@@ -129,17 +122,23 @@ class FabricMLM(BaseModel):
 
             attn_cfg = mget(modifications_cfg, "replace_attention", {}) or {}
             attn_mode = mget(attn_cfg, "mode", "none")
-            cheb_order = int(mget(attn_cfg, "cheb_order", 5))
+            # Normalize/derive attention cheb_order if relevant
+            try:
+                cheb_order = int(mget(attn_cfg, "cheb_order", 5))
+            except Exception:
+                cheb_order = 5
+            # KAN FFN replacement: strictly require replace_ffn.cheb_order
+            ffn_cfg = mget(modifications_cfg, "replace_ffn", None)
 
-            if attn_mode == "chebyshev" and replace_roberta_attention_with_chebyshev is not None:
+            if attn_mode == "chebyshev":
                 self.model = replace_roberta_attention_with_chebyshev(self.model, order=cheb_order)
                 self.cli_logger.info(f"Applied Chebyshev attention (order={cheb_order})")
-            elif attn_mode == "orthogonal" and replace_roberta_all_layers_with_basis is not None:
+            elif attn_mode == "orthogonal":
                 basis_name = mget(attn_cfg, "basis_name", "dct")
                 basis_rank = int(mget(attn_cfg, "basis_rank", 512))
                 self.model = replace_roberta_all_layers_with_basis(self.model, max_order=cheb_order, basis_name=basis_name, basis_rank=basis_rank)
                 self.cli_logger.info(f"Applied Orthogonal basis-tied attention (order={cheb_order}, basis={basis_name}, rank={basis_rank})")
-            elif attn_mode == "orthogonal_sparse" and replace_roberta_all_layers_with_basis_sparse is not None:
+            elif attn_mode == "orthogonal_sparse":
                 basis_name = mget(attn_cfg, "basis_name", "dct")
                 basis_rank = int(mget(attn_cfg, "basis_rank", 512))
                 sparsity = mget(attn_cfg, "sparsity", "topk")
@@ -147,16 +146,21 @@ class FabricMLM(BaseModel):
                 window = int(mget(attn_cfg, "window", 128))
                 self.model = replace_roberta_all_layers_with_basis_sparse(self.model, max_order=cheb_order, basis_name=basis_name, basis_rank=basis_rank, sparsity=sparsity, topk=topk, window=window)
                 self.cli_logger.info(f"Applied Orthogonal sparse attention (order={cheb_order}, basis={basis_name}, rank={basis_rank}, sparsity={sparsity})")
-            elif attn_mode == "sparse" and replace_roberta_attention_with_chebyshev_sparse is not None:
+            elif attn_mode == "sparse":
                 sparsity = mget(attn_cfg, "sparsity", "topk")
                 topk = int(mget(attn_cfg, "topk", 64))
                 window = int(mget(attn_cfg, "window", 128))
                 self.model = replace_roberta_attention_with_chebyshev_sparse(self.model, order=cheb_order, sparsity=sparsity, topk=topk, window=window)
                 self.cli_logger.info(f"Applied Sparse Chebyshev attention (order={cheb_order}, sparsity={sparsity})")
 
-            if bool(mget(modifications_cfg, "replace_ffn", False)) and replace_roberta_ffn_with_kan is not None:
-                self.model = replace_roberta_ffn_with_kan(self.model, order=cheb_order)
-                self.cli_logger.info(f"Applied KAN FFN replacement (order={cheb_order})")
+            # Enforce FFN KAN replacement when configured (no fallback)
+            if isinstance(ffn_cfg, dict):
+                ffn_order_raw = ffn_cfg.get("cheb_order")
+                if ffn_order_raw is None:
+                    raise ValueError("replace_ffn.cheb_order must be specified for KAN FFN replacement")
+                ffn_order = int(ffn_order_raw)
+                self.model = replace_roberta_ffn_with_kan(self.model, order=ffn_order)
+                self.cli_logger.info(f"Applied KAN FFN replacement (order={ffn_order})")
         
         self.cli_logger.info(f"Initialized MLM model: {self.model_name}")
         self.cli_logger.info(f"MLM probability: {self.mlm_probability}")

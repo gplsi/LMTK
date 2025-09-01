@@ -31,6 +31,21 @@ allOf:
             type: string
             description: "Output dir where the folder/s of the converted model/s will be saved"
 
+          modifications:
+            type: object
+            description: "Optional architecture hints (e.g., replace FFN with KAN) used for conversion"
+            properties:
+              replace_ffn:
+                oneOf:
+                  - type: boolean
+                  - type: object
+                    properties:
+                      cheb_order:
+                        type: integer
+                        minimum: 1
+                        description: "Chebyshev polynomial order for KAN FFN"
+                    required: [cheb_order]
+
         required:
           - base_model
           - checkpoint_path

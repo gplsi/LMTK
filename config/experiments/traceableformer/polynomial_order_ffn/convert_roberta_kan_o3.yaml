@@ -1,0 +1,16 @@
+task: convert
+experiment_name: roberta_kan_o3_fsdp_to_hf
+verbose_level: 2
+
+convert:
+  base_model: "roberta-base"
+  checkpoint_path: "/workspace/outputs/initial/roberta_mlm_ddp_kan_ffn_o3"
+  initial_format: "fsdp"
+  final_format: "huggingface"
+  output_dir: "/workspace/outputs/converted/roberta_mlm_ddp_kan_ffn_o3"
+  task_type: "mlm"
+  modifications:
+    replace_ffn:
+      cheb_order: 3
+
+

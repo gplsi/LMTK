@@ -278,17 +278,62 @@ else
     USER_FLAG="--user ${USER_ID}:${GROUP_ID}"
 fi
 
+# Optional mount of host .netrc for private GitHub access (for pip/poetry)
+NETRC_MOUNT=""
+if [ -f "$HOST_PROJECT_ROOT/.netrc" ]; then
+    NETRC_MOUNT="--volume $HOST_PROJECT_ROOT/.netrc:/root/.netrc:ro --volume $HOST_PROJECT_ROOT/.netrc:$CONTAINER_PROJECT_ROOT/.netrc:ro"
+    echo "Mounting host .netrc for Git credentials"
+fi
+
+# Prepare container /etc/passwd and /etc/group with current UID/GID if missing
+echo "Preparing container NSS entries for UID:$USER_ID GID:$GROUP_ID"
+ETC_SHADOW_DIR="$HOST_PROJECT_ROOT/.slurm_etc/${SLURM_JOB_ID:-manual}"
+PASSWD_FILE="$ETC_SHADOW_DIR/passwd"
+GROUP_FILE="$ETC_SHADOW_DIR/group"
+mkdir -p "$ETC_SHADOW_DIR"
+
+# Seed from image defaults
+if docker run --rm --entrypoint cat "$DOCKER_IMAGE_NAME" /etc/passwd > "$PASSWD_FILE" 2>/dev/null; then
+    echo "Seeded passwd from image"
+else
+    echo "Could not read /etc/passwd from image, seeding from host"
+    cp /etc/passwd "$PASSWD_FILE"
+fi
+
+if docker run --rm --entrypoint cat "$DOCKER_IMAGE_NAME" /etc/group > "$GROUP_FILE" 2>/dev/null; then
+    echo "Seeded group from image"
+else
+    echo "Could not read /etc/group from image, seeding from host"
+    cp /etc/group "$GROUP_FILE"
+fi
+
+# Ensure group exists
+if ! grep -q "^[^:]*:[^:]*:${GROUP_ID}:" "$GROUP_FILE"; then
+    echo "${USERNAME}:x:${GROUP_ID}:" >> "$GROUP_FILE"
+    echo "Added group ${GROUP_ID} (${USERNAME}) to group file"
+fi
+
+# Ensure user exists
+if ! grep -q "^[^:]*:[^:]*:${USER_ID}:" "$PASSWD_FILE"; then
+    echo "${USERNAME}:x:${USER_ID}:${GROUP_ID}:${USERNAME},,,:$CONTAINER_PROJECT_ROOT:/bin/bash" >> "$PASSWD_FILE"
+    echo "Added user ${USER_ID} (${USERNAME}) to passwd file"
+fi
+
 docker run \
     --name "$CONTAINER_NAME" \
     --gpus all \
     --rm \
     --network host \
     $USER_FLAG \
+    $NETRC_MOUNT \
     --volume "$HOST_PROJECT_ROOT:$CONTAINER_PROJECT_ROOT" \
-    --volume "/etc/passwd:/etc/passwd:ro" \
-    --volume "/etc/group:/etc/group:ro" \
+    --volume "$PASSWD_FILE:/etc/passwd:ro" \
+    --volume "$GROUP_FILE:/etc/group:ro" \
     --env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES" \
     --env "PYTHONPATH=$CONTAINER_PROJECT_ROOT/src:$CONTAINER_PROJECT_ROOT:${PYTHONPATH:-}" \
+    --env "CONTAINER_PROJECT_ROOT=$CONTAINER_PROJECT_ROOT" \
+    --env "USER=$USERNAME" \
+    --env "USERNAME=$USERNAME" \
     --env "HF_DATASETS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/datasets" \
     --env "HF_HOME=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface" \
     --env "TRANSFORMERS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/transformers" \
@@ -314,6 +359,26 @@ EXIT_CODE=$?
 echo "===== Job Completion ====="
 echo "Container finished with exit code: $EXIT_CODE"
 echo "Job finished at: $(date)"
+
+# Ensure all outputs are owned by the local user (safeguard)
+echo "Ensuring ownership of output directory by $USERNAME ($USER_ID:$GROUP_ID)"
+for dir in "$HOST_PROJECT_ROOT/output" "$HOST_PROJECT_ROOT/outputs" "$HOST_PROJECT_ROOT/wandb"; do
+    if [ -d "$dir" ]; then
+        # Detect any files not owned by the current user
+        if find "$dir" -mindepth 1 -printf '%u\n' 2>/dev/null | grep -qv "^$USERNAME$"; then
+        echo "Fixing ownership via short root container..."
+        docker run --rm \
+            --user 0:0 \
+            --network host \
+            --volume "$HOST_PROJECT_ROOT:$CONTAINER_PROJECT_ROOT" \
+            "$DOCKER_IMAGE_NAME" \
+            bash -lc "chown -R $USER_ID:$GROUP_ID ${CONTAINER_PROJECT_ROOT}/${dir##$HOST_PROJECT_ROOT/} || true"
+        echo "Ownership fix completed for $dir"
+        else
+        echo "All files in $dir are already owned by $USERNAME"
+        fi
+    fi
+done
 
 if [ $EXIT_CODE -ne 0 ]; then
     echo "❌ Job failed with exit code: $EXIT_CODE"
