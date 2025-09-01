@@ -53,7 +53,7 @@ allOf:
               format:
                 type: string
                 default: "any"
-                enum: ["csv", "txt", "json", "jsonl"]
+                enum: ["csv", "txt", "json", "jsonl", "parquet"]
               text_column:
                 type: string
               text_key:

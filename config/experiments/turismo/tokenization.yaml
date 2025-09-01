@@ -1,0 +1,44 @@
+# Example configuration for MLM Tokenization
+# Uses data from /data/testing directory for masked language modeling dataset preparation
+
+task: "tokenization"
+experiment_name: "turismo-mlm-tokenization"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "BSC-LT/roberta-base-bne"
+  context_length: 512
+  task: mlm_training
+  
+  # Performance optimization settings
+  batch_size: 1000
+  num_proc: 4
+  show_progress: true
+  
+  # MLM-specific tokenization settings
+  max_seq_length: 512
+  mlm_probability: 0.15
+  mask_token: "<mask>"
+  mask_token_id: 4  # Actual mask token id for BSC-LT/roberta-base-bne
+  add_special_tokens: true
+  
+  # MLM masking strategy (required by schema)
+  masking_strategy:
+    mask_token_prob: 0.8    # 80% of selected tokens are replaced with [MASK]
+    random_token_prob: 0.1  # 10% are replaced with random tokens
+    unchanged_prob: 0.1     # 10% are kept unchanged
+  
+  # Additional MLM settings
+  whole_word_masking: false
+
+dataset:
+  source: local
+  nameOrPath: "/workspace/data/turismo_es_v1/data"
+  format: files
+  file_config:
+    format: parquet
+
+output:
+  path: "/workspace/data/tokenized_outputs/mlm_turismo"
+
+test_size: 0.05

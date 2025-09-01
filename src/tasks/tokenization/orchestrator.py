@@ -65,7 +65,13 @@ class TokenizationOrchestrator(BaseOrchestrator):
         Returns:
             HFDataset: The tokenized version of the input dataset.
         """        
-        context_length = self.config.tokenizer.max_sequence_length
+        # Derive context length robustly: accept either 'context_length' or legacy 'max_sequence_length'
+        context_length = (
+            self.config.tokenizer.get("context_length")
+            or self.config.tokenizer.get("max_sequence_length")
+        )
+        if context_length is None:
+            raise ValueError("Tokenizer context length not provided. Set tokenizer.context_length or tokenizer.max_sequence_length.")
         overlap = self.config.tokenizer.get("overlap")
         tokenizer_name = self.config.tokenizer.tokenizer_name
         batch_size = self.config.tokenizer.get("batch_size", 2000)  # Default batch size if not specified
@@ -77,7 +83,11 @@ class TokenizationOrchestrator(BaseOrchestrator):
         masking_strategy = self.config.tokenizer.get("masking_strategy", "context_aware")
         mask_prompt = self.config.tokenizer.get("mask_prompt", True)
         ignore_index = self.config.tokenizer.get("ignore_index", -100)
-        max_seq_length = self.config.tokenizer.get("max_seq_length", None)
+        # Support both 'max_seq_length' and 'max_sequence_length' keys
+        max_seq_length = self.config.tokenizer.get(
+            "max_seq_length",
+            self.config.tokenizer.get("max_sequence_length", None),
+        )
         test_size = self.config.get("test_size", 0.3)
         seed = self.config.get("seed", 1234)
 
@@ -109,6 +119,18 @@ class TokenizationOrchestrator(BaseOrchestrator):
         elif task == "instruction":
             tokenizer = InstructionTokenizer(tokenizer_config)
         elif task == "mlm_training":
+            # Enrich TokenizerConfig with MLM-specific fields if present in config
+            # Using Box-style access (self.config.tokenizer.get) to keep optionality
+            tokenizer_config.mlm_probability = self.config.tokenizer.get("mlm_probability", tokenizer_config.mlm_probability)
+            tokenizer_config.mask_token = self.config.tokenizer.get("mask_token", tokenizer_config.mask_token)
+            tokenizer_config.mask_token_id = self.config.tokenizer.get("mask_token_id", tokenizer_config.mask_token_id)
+            tokenizer_config.mask_special_tokens = self.config.tokenizer.get("mask_special_tokens", tokenizer_config.mask_special_tokens)
+            tokenizer_config.exclude_token_ids = self.config.tokenizer.get("exclude_token_ids", tokenizer_config.exclude_token_ids)
+            tokenizer_config.whole_word_masking = self.config.tokenizer.get("whole_word_masking", tokenizer_config.whole_word_masking)
+            # Masking strategy for MLM uses a dict with three probabilities
+            mlm_masking_strategy = self.config.tokenizer.get("masking_strategy", None)
+            if isinstance(mlm_masking_strategy, dict):
+                tokenizer_config.masking_strategy = mlm_masking_strategy
             tokenizer = MaskedLMTokenizer(tokenizer_config)
         # TODO: add more tasks here like the mlm_training...
         else:
