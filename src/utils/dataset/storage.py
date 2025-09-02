@@ -88,6 +88,7 @@ class DatasetStorage:
             "csv": partial(self._load_dataset_from_extension, "csv"),
             "json": partial(self._load_dataset_from_extension, "json"),
             "jsonl": partial(self._load_dataset_from_extension, "json"),
+            "parquet": partial(self._load_dataset_from_extension, "parquet"),
             # Add more mappings as needed.
         }
         self.text_key = None  # Will be set when loading JSON/JSONL files if specified in config
@@ -117,6 +118,31 @@ class DatasetStorage:
 
 
         # Default behavior: use Hugging Face's built-in loaders
+        # parquet: detect pre-existing splits in filenames/paths; else default to single train split
+        if data_type == "parquet":
+            split_map = {"train": [], "validation": [], "test": []}
+            for f in files:
+                fl = f.lower()
+                # Check directory components and filename tokens for split indicators
+                parts = fl.replace("\\", "/").split("/")
+                filename = parts[-1]
+                tokens = set(parts + [filename])
+                if any("train" in t for t in tokens):
+                    split_map["train"].append(f)
+                elif any(t in ("valid", "validation") or "valid" in t for t in tokens):
+                    split_map["validation"].append(f)
+                elif any("test" in t for t in tokens):
+                    split_map["test"].append(f)
+                else:
+                    # Unclassified files go to train by default
+                    split_map["train"].append(f)
+
+            # Build data_files dict including only non-empty splits
+            data_files = {k: v for k, v in split_map.items() if v}
+            # If nothing classified (shouldn't happen), fallback to all-as-train
+            if not data_files:
+                data_files = {"train": files}
+            return load_dataset(data_type, data_files=data_files)
         return load_dataset(data_type, data_files=files)
 
     def _load_json(self, files: list[str]) -> DatasetDict:

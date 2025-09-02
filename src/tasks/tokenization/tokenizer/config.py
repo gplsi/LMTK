@@ -77,3 +77,16 @@ class TokenizerConfig:
     max_seq_length: Optional[int] = None
     test_size: float = 0.3
     seed: int = 1234  # Default seed for reproducibility
+
+    # MLM-specific parameters
+    # Probability that an eligible token is selected for MLM
+    mlm_probability: float = 0.15
+    # Optional mask token string and id; if id is not provided, downstream code may use the tokenizer's mask_token_id
+    mask_token: Optional[str] = None
+    mask_token_id: Optional[int] = None
+    # Whether special tokens can be masked
+    mask_special_tokens: bool = False
+    # Token ids that should never be masked
+    exclude_token_ids: Optional[list[int]] = None
+    # Whole-word masking toggle (may be ignored depending on tokenizer)
+    whole_word_masking: bool = False

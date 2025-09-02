@@ -275,13 +275,17 @@ docker run \
     --gpus all \
     --rm \
     --network host \
-    --user "$USER_ID:$GROUP_ID" \
+    --user "root" \
     --volume "$HOST_PROJECT_ROOT:$CONTAINER_PROJECT_ROOT" \
     --env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES" \
+    --env "HOST_UID=$USER_ID" \
+    --env "HOST_GID=$GROUP_ID" \
     --env "PYTHONPATH=$CONTAINER_PROJECT_ROOT/src:$CONTAINER_PROJECT_ROOT:${PYTHONPATH:-}" \
     --env "HF_DATASETS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/datasets" \
     --env "HF_HOME=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface" \
     --env "TRANSFORMERS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/transformers" \
+    --env "WANDB_DIR=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/wandb" \
+    --env "HOME=$CONTAINER_PROJECT_ROOT" \
     --env "WANDB_PROJECT=$WANDB_PROJECT" \
     --env "WANDB_ENTITY=$WANDB_ENTITY" \
     --env "WANDB_API_KEY=$WANDB_API_KEY" \

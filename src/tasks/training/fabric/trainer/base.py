@@ -301,8 +301,8 @@ class FabricTrainerBase(ABC):
             outputs = training_output["outputs"]
             loss = training_output["loss"]
             
-            real_loss = (loss / gradient_accumulation_steps) if is_accumulating else loss
-            fabric.backward(real_loss)
+            # Always scale loss by accumulation steps for stable gradients
+            fabric.backward(loss / gradient_accumulation_steps)
         if not is_accumulating:
             optimizer = self.state["optimizer"]
             scheduler = self.state["scheduler"]
@@ -310,6 +310,11 @@ class FabricTrainerBase(ABC):
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
+            # Optional LR debug
+            if hasattr(optimizer, 'param_groups') and optimizer.param_groups:
+                current_lr = optimizer.param_groups[0].get('lr', None)
+                if current_lr is not None:
+                    self.cli_logger.debug(f"Optimizer step LR: {current_lr:.8f}")
             self.state["step_count"] += 1
             self._try_validate(fabric)
         self.state["iter_num"] += 1
@@ -385,14 +390,19 @@ class FabricTrainerBase(ABC):
             outputs = training_output["outputs"]
             loss = training_output["loss"]
             
-            gradient_accumulation_steps = int(self.config.gradient_accumulation_steps)
-            fabric.backward(loss / gradient_accumulation_steps)
+            # No gradient accumulation in this path; backprop full loss
+            fabric.backward(loss)
             optimizer = self.state["optimizer"]
             scheduler = self.state["scheduler"]
             self._gradient_clipping(fabric, model, optimizer)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
+            # Optional LR debug
+            if hasattr(optimizer, 'param_groups') and optimizer.param_groups:
+                current_lr = optimizer.param_groups[0].get('lr', None)
+                if current_lr is not None:
+                    self.cli_logger.debug(f"Optimizer step LR: {current_lr:.8f}")
             self.state["step_count"] += 1
             
             self._try_validate(fabric)

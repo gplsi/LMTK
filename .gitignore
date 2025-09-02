@@ -183,3 +183,5 @@ converted/
 .windsurf/*
 /converted
 tokenized_visualizations
+outputs/
+.netrc 

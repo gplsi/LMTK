@@ -56,7 +56,8 @@ class MaskedLMTokenizer(BaseTokenizer):
         self.mlm_probability = getattr(config, 'mlm_probability', 0.15)
         self.mask_token_id = getattr(config, 'mask_token_id', 103)  # Default BERT [MASK] token
         self.mask_special_tokens = getattr(config, 'mask_special_tokens', False)
-        self.exclude_token_ids = set(getattr(config, 'exclude_token_ids', []))
+        # Handle None safely when building the exclude set
+        self.exclude_token_ids = set(getattr(config, 'exclude_token_ids', []) or [])
         
         # Masking strategy probabilities
         masking_strategy = getattr(config, 'masking_strategy', {})
@@ -256,12 +257,16 @@ class MaskedLMTokenizer(BaseTokenizer):
         
         # Run tokenizer on the entire batch at once
         try:
+            # Use overflowing tokens with optional stride based on configured overlap
+            stride = int(self.config.overlap) if getattr(self.config, 'overlap', None) else 0
             outputs = self._tokenizer(
                 batch["text"],
                 truncation=True,
                 max_length=self.config.context_length,
                 padding="max_length",  # Pad to max_length for consistency
                 return_tensors="np",  # Direct NumPy conversion
+                return_overflowing_tokens=True,
+                stride=stride,
             )
         except Exception as e:
             self.logger.error(f"Tokenization failed: {e}")

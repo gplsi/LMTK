@@ -52,6 +52,20 @@ echo "Python environment ready"
 echo "=============================="
 
 echo "===== WandB Configuration ====="
+# Establish robust paths regardless of upstream env
+ROOT_DIR="${CONTAINER_PROJECT_ROOT:-/workspace}"
+# Force HOME to project root to keep .netrc and wandb files under the mounted workspace
+export HOME="$ROOT_DIR"
+export WANDB_DIR="${WANDB_DIR:-$ROOT_DIR/.cache/wandb}"
+export WANDB_CONFIG_DIR="$WANDB_DIR"
+export WANDB_CACHE_DIR="$WANDB_DIR"
+mkdir -p "$WANDB_DIR" || true
+chmod 0777 "$WANDB_DIR" || true
+# Also ensure default fallback path used by wandb CLI exists when writable
+if [ -w "$ROOT_DIR" ]; then
+    mkdir -p "$ROOT_DIR/wandb" || true
+    chmod 0777 "$ROOT_DIR/wandb" || true
+fi
 if [ -n "${WANDB_API_KEY:-}" ] && [ "${WANDB_API_KEY}" != "" ]; then
     echo "WandB API key provided, logging in..."
     echo "WANDB_PROJECT: ${WANDB_PROJECT:-unknown}"
@@ -86,3 +100,12 @@ ${PYTHON_COMMAND} ${MAIN_SCRIPT} --config ${CONFIG_FILE}
 echo "===== Training/Tokenization Completed ====="
 echo "Script finished successfully at: $(date)"
 echo "============================================="
+
+# Restore ownership of any created files to the submitting user if provided
+if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
+  echo "Restoring ownership of workspace to UID:GID ${HOST_UID}:${HOST_GID}"
+  chown -R ${HOST_UID}:${HOST_GID} /workspace || true
+  if [ -n "${OUTPUT_DIR_NAME:-}" ]; then
+    chown -R ${HOST_UID}:${HOST_GID} "/workspace/output/${OUTPUT_DIR_NAME}" 2>/dev/null || true
+  fi
+fi

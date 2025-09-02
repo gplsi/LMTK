@@ -92,10 +92,15 @@ class BaseModel(L.LightningModule):
             self._batch_validation(batch, "train")
             self._model_validation()
         
+        # Ensure correct dtypes for transformer models (indices must be long)
+        input_ids = batch['input_ids'].long()
+        attention_mask = batch['attention_mask'].long()
+        labels = batch['labels'].long()
+
         outputs = self.model(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
-            labels=batch['labels'],
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels,
         )
         
         # Log training metrics periodically

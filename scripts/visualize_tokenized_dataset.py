@@ -138,8 +138,9 @@ class TokenizedDatasetVisualizer:
                 # Add label information for training
                 if i < len(labels):
                     token_info['label'] = labels[i]
-                    token_info['is_masked'] = labels[i] == -100
+                    # For MLM/instruction, positions that contribute to loss have label != -100
                     token_info['contributes_to_loss'] = labels[i] != -100
+                    token_info['is_masked'] = token_info['contributes_to_loss']
                 
                 token_breakdown.append(token_info)
             
