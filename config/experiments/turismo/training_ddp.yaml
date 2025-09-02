@@ -17,7 +17,7 @@ dataset:
   nameOrPath: "/workspace/data/tokenized/mlm_turismo"
 
 # Training arguments (from components/training_args.schema.yaml)
-number_epochs: 3
+number_epochs: 1
 batch_size: 4
 validate_after_epoch: true
 validate_on_end: true
@@ -31,7 +31,7 @@ output_dir: "/workspace/output/mlm_training_turismo"
 
 # Optimizer configuration (from components/optimizer.schema.yaml)
 gradient_accumulation: true
-gradient_accumulation_steps: 64
+gradient_accumulation_steps: 32
 grad_clip: 1.0
 lr: 0.00005
 lr_decay: true
@@ -44,7 +44,7 @@ lr_scheduler: "warmup_linear"
 warmup_proportion: 0.06
 
 # MLM-specific configuration
-mlm_probability: 0.15
+#mlm_probability: 0.15
 ignore_index: -100
 
 # Parallelization strategy
