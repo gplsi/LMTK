@@ -1,0 +1,23 @@
+task: "tokenization"
+experiment_name: "md_anonymized_salamandra_2b_tokenization_dc4"
+verbose_level: 3
+
+tokenizer:
+  tokenizer_name: "BSC-LT/salamandra-2b"
+  context_length: 2048
+  overlap: 512
+  task: "clm_training"
+
+dataset:
+  source: "local"
+  nameOrPath: "/workspace/data/dc4"
+  format: "files"
+  file_config:
+    text_key: "text"
+    format: "txt"
+    encoding: "utf-8"
+
+output:
+  path: "/workspace/data/tokenized/dc4"
+
+test_size: 0

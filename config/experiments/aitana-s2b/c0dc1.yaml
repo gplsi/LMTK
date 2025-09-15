@@ -1,17 +1,17 @@
 task: "pretraining"   # pretraining, tokenization
-experiment_name: "news_corpus_val-es"
+experiment_name: "anonymized_corpus_va_continual"
 verbose_level: 4
 
 # Training data
 dataset:
   source: "local"  # huggingface, local
-  nameOrPath: "/workspace/data/tokenized/news_corpus"
+  nameOrPath: "/workspace/data/tokenized/anonymized-va-salamandra"
 
 # Output dir
 output_dir: "output/"
 
 # Model
-model_name: "meta-llama/Llama-3.2-3B"
+model_name: "BSC-LT/salamandra-2b"
 
 # Model precision
 precision: "bf16-true"
@@ -21,8 +21,10 @@ static_graph: false
 number_epochs: 1
 batch_size: 4
 
-# Validation and checkpoint saving parameters
-validations_per_epoch: 1
+# Validation parameters
+validate_on_end: false
+validate_after_epoch: false
+validate_after_k_steps: null
 
 # Gradient parameters
 gradient_accumulation: true
@@ -44,7 +46,7 @@ warmup_proportion: 0.06
 logging_config: "wandb"
 
 # Wandb logging specific parameters
-wandb_project: "prueba_llama-3.2-3B_fsdp__allen"
+wandb_project: "salamandra-2b_fsdp__allen"
 wandb_entity: "gplsi_continual"
 log_model: false
 log_iter_interval: 10
@@ -53,7 +55,7 @@ log_iter_interval: 10
 parallelization_strategy: "fsdp"
 
 # FSDP specific parameters
-auto_wrap_policy: "llama"
+# auto_wrap_policy: "llama"
 sharding_strategy: "FULL_SHARD"
 state_dict_type: "sharded"
 limit_all_gathers: true

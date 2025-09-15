@@ -149,47 +149,68 @@ class FSDPtoHuggingFace:
             # Skip weight tying check in test environment with mock objects
             logger.info("Skipping weight tying check in test environment")
 
-    def _convert_checkpoint(self, model, checkpoint_file):
-            original_state_dict = self._load_fsdp_checkpoint_safely(checkpoint_file)
-            model_state_dict = model.state_dict()
-            fixed_state_dict = self._fix_fsdp_state_dict_keys(original_state_dict, model_state_dict)
-            
-            
-            # Handle both tuple return and None return (in tests)
-            result = model.load_state_dict(fixed_state_dict, strict=False)
-            if result is None:
+    def _convert_checkpoint(self, checkpoint_file):
+        """Convert a single checkpoint file to HuggingFace format."""
+        # Create a fresh model instance for each checkpoint
+        config = AutoConfig.from_pretrained(self.base_model)
+        model = AutoModelForCausalLM.from_config(config)
+        
+        original_state_dict = self._load_fsdp_checkpoint_safely(checkpoint_file)
+        model_state_dict = model.state_dict()
+        fixed_state_dict = self._fix_fsdp_state_dict_keys(original_state_dict, model_state_dict)
+        
+        # Handle both tuple return and None return (in tests)
+        result = model.load_state_dict(fixed_state_dict, strict=False)
+        if result is None:
+            missing_keys, unexpected_keys = [], []
+        else:
+            try:
+                missing_keys, unexpected_keys = result
+            except (ValueError, TypeError):
                 missing_keys, unexpected_keys = [], []
-            else:
-                try:
-                    missing_keys, unexpected_keys = result
-                except (ValueError, TypeError):
-                    missing_keys, unexpected_keys = [], []
-            logger.info(self._info(model, missing_keys, unexpected_keys))
-            logger.info("🔗 Applying weight tying...")
-            model.tie_weights()
-            return model
+        logger.info(self._info(model, missing_keys, unexpected_keys))
+        logger.info("🔗 Applying weight tying...")
+        model.tie_weights()
+        return model
 
     def execute(self, output_dir):
-        config = AutoConfig.from_pretrained(self.base_model)
-        base_model = AutoModelForCausalLM.from_config(config)
         # Determine if single or multiple checkpoints
         checkpoint_files = []
-        if self.checkpoint_path.endswith(".pth"):
+        if os.path.isfile(self.checkpoint_path) and self.checkpoint_path.endswith(".pth"):
+            # Single checkpoint file
             checkpoint_files = [self.checkpoint_path]
-        else:
+            logger.info(f"Found single checkpoint file: {self.checkpoint_path}")
+        elif os.path.isdir(self.checkpoint_path):
+            # Directory containing checkpoints - discover all .pth files
+            logger.info(f"Scanning directory for checkpoint files: {self.checkpoint_path}")
             for root, dirs, files in os.walk(self.checkpoint_path):
                 for file in files:
                     if file.endswith(".pth"):
-                        checkpoint_files.append(os.path.join(root, file))
-                        break
+                        full_path = os.path.join(root, file)
+                        checkpoint_files.append(full_path)
+                        logger.info(f"Discovered checkpoint: {full_path}")
+            
+            if not checkpoint_files:
+                logger.warning(f"No .pth checkpoint files found in directory: {self.checkpoint_path}")
+            else:
+                # Sort checkpoints for consistent processing order
+                checkpoint_files.sort()
+                logger.info(f"Total checkpoints discovered: {len(checkpoint_files)}")
+        else:
+            raise ValueError(f"Checkpoint path does not exist or is not a file/directory: {self.checkpoint_path}")
         
         results = []
         summary = []
         total = len(checkpoint_files)
+        
+        if total == 0:
+            logger.warning("No checkpoint files to convert")
+            return summary
+        
         for idx, checkpoint_file in enumerate(checkpoint_files, 1):
             logger.info(f"[Progress] Converting checkpoint {idx}/{total}: {checkpoint_file}")
             try:
-                model = self._convert_checkpoint(base_model, checkpoint_file)
+                model = self._convert_checkpoint(checkpoint_file)
                 success = True
                 error = None
             except Exception as e:
@@ -205,29 +226,57 @@ class FSDPtoHuggingFace:
             })
         
         # Save models to output directory
+        logger.info(f"Saving converted models to output directory: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        successful_conversions = 0
+        failed_conversions = 0
 
         for idx, (checkpoint_file, model) in enumerate(zip(checkpoint_files, results), 1):
             if model is not None:
-                base_name = os.path.splitext(os.path.basename(checkpoint_file))[0]
+                # Create output directory name from checkpoint file
+                relative_path = os.path.relpath(checkpoint_file, self.checkpoint_path if os.path.isdir(self.checkpoint_path) else os.path.dirname(self.checkpoint_path))
+                base_name = os.path.splitext(relative_path)[0].replace(os.sep, '_')
                 final_dir = os.path.join(output_dir, base_name)
-                if not os.path.exists(final_dir):
-                    os.makedirs(final_dir, exist_ok=True)
-                logger.info(f"[Progress] Saving HuggingFace model {idx}/{total} to {final_dir}")
+                
+                logger.info(f"[Progress] Saving HuggingFace model {idx}/{total}: {os.path.basename(checkpoint_file)} -> {final_dir}")
                 try:
+                    os.makedirs(final_dir, exist_ok=True)
                     model.save_pretrained(final_dir)
                     tokenizer = AutoTokenizer.from_pretrained(self.base_model)
                     tokenizer.save_pretrained(final_dir)
+                    
+                    # Update summary with output directory
                     for entry in summary:
                         if entry['checkpoint'] == checkpoint_file:
                             entry['output_dir'] = final_dir
+                    
+                    successful_conversions += 1
+                    logger.info(f"✅ Successfully saved model to {final_dir}")
                 except Exception as e:
-                    logger.error(f"Failed to save model for {checkpoint_file}: {e}")
+                    logger.error(f"❌ Failed to save model for {checkpoint_file}: {e}")
                     for entry in summary:
                         if entry['checkpoint'] == checkpoint_file:
                             entry['success'] = False
                             entry['error'] = str(e)
+                    failed_conversions += 1
             else:
-                logger.warning(f"Skipping saving for {checkpoint_file} due to previous errors.")
-        logger.info("All conversions completed.")
-        logger.info(f"Summary: {summary}")
+                logger.warning(f"⏭️  Skipping saving for {checkpoint_file} due to previous conversion errors.")
+                failed_conversions += 1
+        
+        # Final summary
+        logger.info("=" * 60)
+        logger.info("CONVERSION SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Total checkpoints found: {total}")
+        logger.info(f"Successfully converted: {successful_conversions}")
+        logger.info(f"Failed conversions: {failed_conversions}")
+        logger.info(f"Output directory: {output_dir}")
+        
+        if successful_conversions > 0:
+            logger.info("✅ Conversion completed with at least some successes")
+        else:
+            logger.error("❌ All conversions failed")
+        
+        logger.info("=" * 60)
         return summary
