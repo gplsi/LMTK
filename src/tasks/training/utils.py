@@ -158,11 +158,13 @@ def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:f
         torch.optim.Optimizer: Configured optimizer instance.
     """
     
-    optimizer = OPTIMIZERS[optimizer](model.parameters(), 
-                                                lr=lr, 
-                                                weight_decay=weight_decay,
-                                                betas=(beta1, beta2),
-                                                foreach=True)
+    # Let PyTorch select the best implementation; do not force 'foreach'.
+    optimizer = OPTIMIZERS[optimizer](
+        model.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+        betas=(beta1, beta2),
+    )
     
     return optimizer
 
