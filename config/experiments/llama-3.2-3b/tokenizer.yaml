@@ -3,7 +3,7 @@ experiment_name: "anonymized_corpus_va"
 verbose_level: 4
 
 tokenizer:
-  name: "meta-llama/Llama-3.2-3B"
+  name: "meta-llama/Llama-3.2-3B-Instruct"
   context_length: 2048
   overlap: 512
   task: "causal_pretraining"

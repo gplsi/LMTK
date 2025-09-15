@@ -1,0 +1,41 @@
+# Example configuration for Instruction Tokenization
+# Uses data from /data/v5 directory for instruction tuning dataset preparation
+
+task: "tokenization"
+experiment_name: "instruction-tokenization-v5-example"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "BSC-LT/salamandra-2b-instruct"
+  max_sequence_length: 2048
+  task: instruction
+  
+  # Performance optimization settings
+  batch_size: 1000
+  num_proc: 4
+  show_progress: true
+  
+  # Instruction tuning specific settings
+  mask_prompt: true
+  ignore_index: -100
+
+  # Padding strategy configuration
+  padding_strategy: "dynamic"  # Options: "fixed" (default) or "dynamic"
+  
+  # Masking strategy configuration
+  masking_strategy: "context_aware"  # Options: "context_aware" (default) or "response_only"
+
+dataset:
+  source: local
+  nameOrPath: "/workspace/data/v5"
+  format: files
+  file_config:
+    format: json
+  #languagesToLoad: ["es", "ca"]
+  specific_keys: ["es", "ca"]
+
+output:
+  path: "/workspace/data/tokenized_outputs/instruction_v5"
+
+test_size: 0.3
+seed: 42

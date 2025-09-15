@@ -1,0 +1,74 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "clm_training.schema.yaml"
+description: "Schema for Causal Language Model training configuration"
+
+allOf:
+  - $ref: "file:///workspace/config/schemas/base.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/model.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/data.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/training_args.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/optimizer.schema.yaml"
+  - $ref: "file:///workspace/config/schemas/training/components/scheduler.schema.yaml"
+  - type: object
+    properties:
+      # CLM-specific model default
+      model_name:
+        type: string
+        default: "meta-llama/Meta-Llama-3-8B"
+        description: "Name or path of the causal language model to load"
+
+      # Training strategy arguments
+      parallelization_strategy:
+        type: string
+        enum: ["none", "ddp", "fsdp", "deep_speed", "dp"]
+        default: "none"
+        description: "Which distributed training strategy to use"
+
+      # Parallelization config - details differ depending on strategy
+      parallelization_config:
+        type: object
+        default: {}
+        description: "Configuration object for the selected parallelization strategy"
+
+      # Logging arguments
+      logging_config:
+        type: string
+        enum: ["none", "wandb"]
+        default: "none"
+        description: "Which logging strategy to use"
+
+      # Seed arguments
+      seed:
+        type: [integer, 'null']
+        default: null
+        description: "Seed for reproducibility"
+
+    required:
+      - dataset
+      - model_name
+      - precision
+      - number_epochs
+      - batch_size
+      - lr
+
+    dependentSchemas:
+      fsdp:
+        properties:
+          parallelization_config:
+            $ref: "file:///workspace/config/schemas/training/strategy/fsdp.schema.yaml"
+        required: ["parallelization_config"]
+      ddp:
+        properties:
+          parallelization_config:
+            $ref: "file:///workspace/config/schemas/training/strategy/ddp.schema.yaml"
+        required: ["parallelization_config"]
+      deep_speed:
+        properties:
+          parallelization_config:
+            $ref: "file:///workspace/config/schemas/training/strategy/deepspeed.schema.yaml"
+        required: ["parallelization_config"]
+      wandb:
+        properties:
+          logging_config:
+            $ref: "file:///workspace/config/schemas/training/logging/training_logging.schema.yaml"
+        required: ["logging_config"]
