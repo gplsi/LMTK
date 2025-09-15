@@ -585,12 +585,35 @@ class FabricTrainerBase(ABC):
             self.model = fabric.setup(self.model)
 
         # GRADIENT CHECKPOINTING
-        if self.config.gradient_checkpointing:
-            self.model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={
-                "use_reentrant": False
-            })
+        parallel_cfg = getattr(self.config, "parallelization_config", {})
+        try:
+            gc_parallel = bool(parallel_cfg.get("gradient_checkpointing", False))
+        except Exception:
+            # If parallel_cfg is not a mapping/Box
+            gc_parallel = False
+        gc_top_level = bool(self.config.get("gradient_checkpointing", False))
+        gc_effective = gc_top_level or gc_parallel
+
+        def _enable_gc(m):
+            if hasattr(m, "gradient_checkpointing_enable"):
+                m.gradient_checkpointing_enable(
+                    gradient_checkpointing_kwargs={"use_reentrant": False}
+                )
+        def _disable_gc(m):
+            if hasattr(m, "gradient_checkpointing_disable"):
+                m.gradient_checkpointing_disable()
+
+        if gc_effective:
+            # Handle both plain HF model and wrapped (FSDP/DDP) modules
+            if hasattr(self.model, "module"):
+                _enable_gc(self.model.module)
+            else:
+                _enable_gc(self.model)
         else:
-            self.model.model.gradient_checkpointing_disable()
+            if hasattr(self.model, "module"):
+                _disable_gc(self.model.module)
+            else:
+                _disable_gc(self.model)
 
         self.cli_logger.info(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
         # OPTIMIZER

@@ -46,26 +46,32 @@ class FSDP(FabricTrainerBase):
         self.cli_logger.info("Using Devices: %s", self.devices)
         if self.devices > 1:
             # Resolve FSDP configuration with sensible defaults
+            parallel_cfg = getattr(self.config, "parallelization_config", {})
+            # Convert Box to dict if needed
+            try:
+                parallel_cfg = dict(parallel_cfg)
+            except Exception:
+                pass
+
             fsdp_config = resolve_fsdp_config(
-                config=self.config.__dict__,
-                model_name=self.config.model_name
+                config=parallel_cfg,
+                model_name=self.config.model_name,
             )
             
             # FSDP strategy for multiple devices
             self.strategy = FSDPStrategy(
                 sharding_strategy=fsdp_config["sharding_strategy"],
                 auto_wrap_policy=fsdp_config["auto_wrap_policy"],
-                activation_checkpointing_policy=fsdp_config["activation_checkpointing"],
-                activation_checkpointing=fsdp_config["activation_checkpointing"],
+                activation_checkpointing_policy=fsdp_config.get("activation_checkpointing_policy"),
+                activation_checkpointing=fsdp_config.get("gradient_checkpointing", False),
                 state_dict_type=fsdp_config["state_dict_type"],
                 limit_all_gathers=fsdp_config["limit_all_gathers"],
                 cpu_offload=fsdp_config["cpu_offload"],
-                
             )
             
             self.cli_logger.info(f"Using auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
-            if fsdp_config["activation_checkpointing"]:
-                self.cli_logger.info(f"Using activation_checkpointing: {fsdp_config['activation_checkpointing']}")
+            if fsdp_config.get("gradient_checkpointing", False):
+                self.cli_logger.info("Gradient checkpointing enabled for FSDP")
         else:
             self.strategy = "auto"
             self.cli_logger.warning("Using automatic strategy for 1 device.")

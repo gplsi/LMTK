@@ -20,12 +20,13 @@ def get_default_fsdp_config() -> Dict[str, Any]:
     
     return {
         "sharding_strategy": "FULL_SHARD",  # Default sharding strategy
-        "auto_wrap_policy": None,  # Auto-wrap policy to be determined based on the model
-        "activation_checkpointing": None,  # Activation checkpointing policy to be determined
+        "auto_wrap_policy": None,  # Auto-wrap policy callable (resolved later)
+        "activation_checkpointing_policy": None,  # Policy mapping for which layers to checkpoint
+        "gradient_checkpointing": False,  # Whether to enable activation checkpointing
         "state_dict_type": "full",  # State dict type for saving/loading model states
         "limit_all_gathers": True,  # Limit all-gather operations to reduce communication overhead
         "cpu_offload": False,  # Disable CPU offloading by default
-        "min_num_params": 1e7  # Minimum number of parameters for size-based auto-wrap policy
+        "min_num_params": 1e7,  # Minimum number of parameters for size-based auto-wrap policy
     }
 
 def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, Any]:
@@ -46,26 +47,39 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, An
     
     # Start with default config
     fsdp_config = get_default_fsdp_config()
-    # Override with user config if provided
-    for key, value in config.items():
+
+    # Merge user config values that overlap with our known keys
+    for key, value in (config or {}).items():
         if key in fsdp_config and value is not None:
             fsdp_config[key] = value
-    
-    # If auto_wrap_policy not specified, determine based on model
-    if not config.get("auto_wrap_policy"):
-        auto_wrap_policy = create_auto_wrap_policy(
-            model_name=model_name,
-            min_num_params=fsdp_config["min_num_params"]
+
+    # Resolve/normalize auto_wrap_policy
+    user_awp = (config or {}).get("auto_wrap_policy")
+    if user_awp is None or isinstance(user_awp, str):
+        # If not provided or provided as a string (e.g. "gpt2"/"llama"), build a callable
+        policy_model_name = user_awp if isinstance(user_awp, str) else model_name
+        fsdp_config["auto_wrap_policy"] = create_auto_wrap_policy(
+            model_name=policy_model_name,
+            min_num_params=fsdp_config["min_num_params"],
         )
-        fsdp_config["auto_wrap_policy"] = auto_wrap_policy
-    
-    # Instead of a tuple, use the new activation_checkpointing_policy
-    if not config.get("activation_checkpointing", False) and fsdp_config["auto_wrap_policy"]:
-        if hasattr(fsdp_config["auto_wrap_policy"], "keywords") and "transformer_layer_cls" in fsdp_config["auto_wrap_policy"].keywords:
-            # Here we create a policy dictionary for those layers.
-            layer_cls = fsdp_config["auto_wrap_policy"].keywords["transformer_layer_cls"]
-            fsdp_config["activation_checkpointing_policy"] = {layer_cls: dict()}
-    
+    # else: assume user provided a valid callable and keep as-is in fsdp_config
+
+    # Build activation checkpointing policy only if gradient checkpointing is enabled
+    gc_flag = bool(fsdp_config.get("gradient_checkpointing", False))
+    if gc_flag and fsdp_config["auto_wrap_policy"] and hasattr(fsdp_config["auto_wrap_policy"], "keywords"):
+        layer_spec = fsdp_config["auto_wrap_policy"].keywords.get("transformer_layer_cls")
+        if layer_spec:
+            # layer_spec can be a single class or an iterable of classes
+            policy = {}
+            try:
+                # Try to iterate (tuple/set) of classes
+                for cls in layer_spec:
+                    policy[cls] = {"use_reentrant": False}
+            except TypeError:
+                # Single class
+                policy[layer_spec] = {"use_reentrant": False}
+            fsdp_config["activation_checkpointing_policy"] = policy
+
     return fsdp_config
 
 
