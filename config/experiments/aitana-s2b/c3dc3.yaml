@@ -22,9 +22,9 @@ static_graph: false
 
 # Training arguments
 number_epochs: 2
-batch_size: 1
+batch_size: 2
 gradient_accumulation: true
-gradient_accumulation_steps: 16
+gradient_accumulation_steps: 4
 grad_clip: 1.0
 
 # Optimizer parameters
