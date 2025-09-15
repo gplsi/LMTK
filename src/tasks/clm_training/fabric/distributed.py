@@ -45,26 +45,30 @@ class FSDP(FabricTrainerBase):
         """
         self.cli_logger.info("Setting up FSDP strategy.")
         self.cli_logger.info("Using Devices: %s", self.devices)
+
+
         if self.devices > 1:
             # Resolve FSDP configuration with sensible defaults
             fsdp_config = resolve_fsdp_config(
-                config=self.config.__dict__,
+                config=self.config.to_dict(),
                 model_name=self.config.model_name
             )
             
             # FSDP strategy for multiple devices
+            from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+            policy = {LlamaDecoderLayer} #EMBEED TO REMOVE AN REFACTOR
             self.strategy = FSDPStrategy(
                 sharding_strategy=fsdp_config["sharding_strategy"],
-                auto_wrap_policy=fsdp_config["auto_wrap_policy"],
-                activation_checkpointing_policy=fsdp_config["activation_checkpointing"],
-                activation_checkpointing=fsdp_config["activation_checkpointing"],
+                auto_wrap_policy=policy,#auto_wrap_policy=fsdp_config["auto_wrap_policy"],
+                activation_checkpointing_policy=policy,#activation_checkpointing_policy=fsdp_config["activation_checkpointing"],#activation_checkpointing=fsdp_config["activation_checkpointing"] is deprecated,
                 state_dict_type=fsdp_config["state_dict_type"],
                 limit_all_gathers=fsdp_config["limit_all_gathers"],
                 cpu_offload=fsdp_config["cpu_offload"],
                 
             )
             
-            self.cli_logger.info(f"Using auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
+            #self.cli_logger.info(f"Using auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
+            self.cli_logger.info(f"Using auto_wrap_policy: {policy}")
             if fsdp_config["activation_checkpointing"]:
                 self.cli_logger.info(f"Using activation_checkpointing: {fsdp_config['activation_checkpointing']}")
         else:
