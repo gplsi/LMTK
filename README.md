@@ -130,7 +130,29 @@ The project follows [Semantic Versioning](https://semver.org/):
 
 During development phase (before 1.0.0), minor version bumps may include breaking changes.
 
-## 🌟 Key Features
+## 🌟 Major Tasks
+
+### 🧩 Tokenization
+- Efficiently preprocess and tokenize large text corpora using YAML-driven configs.
+- Supports fast and slow tokenizers, parallelism, and memory-optimized workflows.
+- See [`TOKENIZATION_INDEX.md`](docs/TOKENIZATION_INDEX.md) and [`TOKENIZATION_PERFORMANCE.md`](docs/TOKENIZATION_PERFORMANCE.md).
+
+### 🔁 Training
+- Further train language models on new data using scalable, resumable pipelines.
+- Distributed training, curriculum support, and robust checkpointing.
+- See [`CLM_TRAINING.md`](docs/CLM_TRAINING.md).
+
+### 🚀 Publish
+- Upload trained models, tokenizers, or datasets to the Hugging Face Hub.
+- YAML-driven, supports safe serialization and authentication best practices.
+- See [`PUBLISH.md`](docs/PUBLISH.md).
+
+## 📚 Documentation by Task
+- [Tokenization Guide](docs/TOKENIZATION.md)
+- [Training Guide](docs/CLM_TRAINING.md)
+- [Publish Guide](docs/PUBLISH.md)
+
+---
 
 ### 🔧 Core Infrastructure
 - **Configuration System** - Type-safe YAML schemas with Pydantic validation
@@ -154,6 +176,8 @@ During development phase (before 1.0.0), minor version bumps may include breakin
 
 ## 🚀 Quick Start
 
+All major tasks are YAML-driven. See the `/docs` folder for detailed per-task guides and example configs.
+
 # Build environment
 ```
 make build
@@ -163,14 +187,20 @@ make build
 ```
 make validate CONFIG=config/pretraining.yaml
 ```
-# Run tokenization pipeline
+# Run tokenization task (YAML-driven)
 ```
-make tokenize CONFIG=config/tokenization.yaml
+python src/main.py --config tutorials/configs/tokenization_tutorial.yaml
 ```
-# Launch distributed pretraining`
+# Launch CLM training (continual pretraining)
 ```
-make train CONFIG=config/pretraining.yaml
+python src/main.py --config tutorials/configs/clm_training_tutorial.yaml
 ```
+# Publish a trained model to Hugging Face Hub
+```
+python src/main.py --config tutorials/configs/publish_tutorial.yaml
+```
+
+**Note:** For publish tasks, authenticate with Hugging Face via `huggingface-cli login` or set the `HUGGINGFACE_HUB_TOKEN` environment variable.
 
 ## 🖥️ SLURM Cluster Execution
 

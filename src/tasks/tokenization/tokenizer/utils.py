@@ -8,7 +8,8 @@ Functions:
       downstream processing.
     - build_causal_lm_outputs_old: Creates language modeling outputs using pre-allocated numpy
       arrays for potentially improved performance.
-
+    - build_masked_lm_outputs: Converts tokenized lists to numpy arrays for efficient
+      downstream processing.
 Classes:
     - StateManager: Manages processing states and asynchronous error handling.
 """
@@ -70,6 +71,28 @@ def build_causal_lm_outputs_old(outputs: Dict[str, List]) -> Dict[str, List]:
         "attention_mask": attention_mask.tolist(),
         "labels": labels.tolist()
     }
+
+def build_masked_lm_outputs(outputs: Dict[str, List]) -> Dict[str, List]:
+    """
+    Build and return a dictionary of masked language modeling outputs.
+
+    Args:
+        outputs (Dict[str, List]):
+            A dictionary containing:
+                - "input_ids": List of token ID lists.
+                - "attention_mask": List of attention mask lists.
+
+    Returns:
+        Dict[str, np.ndarray]:
+            Dictionary with numpy arrays for "input_ids", "attention_mask", and "labels".
+    """
+    
+    return {
+        "input_ids": np.asarray(outputs["input_ids"], dtype=np.int32),
+        "attention_mask": np.asarray(outputs["attention_mask"], dtype=np.int32),
+        "labels": np.asarray(outputs["input_ids"], dtype=np.int32)
+    }
+
 
 class StateManager:
     """

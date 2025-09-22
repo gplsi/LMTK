@@ -1,0 +1,76 @@
+task: "clm_training"   # pretraining, tokenization
+experiment_name: "aitana-v1-md"
+verbose_level: 3
+
+# Training data
+dataset:
+  source: "local"  # huggingface, local
+  nameOrPath: "/workspace/data/tokenized/md-anonymized-salamandra-2b"
+  format: "hf"
+
+# Output dir
+output_dir: "output/aitana-v1-md"
+
+# Model
+model_name: "BSC-LT/salamandra-2b"
+
+# Checkpoint options (choose one):
+# Option 1: Resume training from where it left off (includes training state)
+# checkpoint: "/path/to/your/checkpoint.pth"
+
+# Option 2: Load only model weights for transfer learning on new dataset
+initial_weights_checkpoint: "/workspace/output/aitana.pth"
+
+# Model precision
+precision: "bf16-true"
+static_graph: false
+
+# Training parameters
+number_epochs: 1
+batch_size: 2
+
+# Training data ratio (use only 25% of training data for faster iteration)
+train_data_ratio: 0.15
+
+# Validation parameters
+validate_on_end: true
+validate_after_epoch: true
+validate_after_k_steps: 10000
+
+# Gradient parameters
+gradient_accumulation: true
+gradient_accumulation_steps: 4
+grad_clip: 1.0
+
+# Optimizer parameters
+lr: 0.00002      
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler parameters
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06   
+
+# Logging
+logging_config: "wandb"
+
+# Wandb logging specific parameters
+wandb_project: "aitana-v1"
+wandb_entity: "gplsi_continual"
+log_model: false
+log_iter_interval: 10
+
+# Distributed_strategy
+parallelization_strategy: "fsdp"
+
+# FSDP specific parameters
+# auto_wrap_policy: "llama"
+sharding_strategy: "FULL_SHARD"
+state_dict_type: "sharded"
+limit_all_gathers: true
+cpu_offload: false
+num_workers: 4
+gradient_checkpointing: true
+

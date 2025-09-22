@@ -1,0 +1,75 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "training_args.schema.yaml"
+description: "Schema for common training arguments"
+
+type: object
+properties:
+  # Training loop settings
+  number_epochs:
+    type: integer
+    default: 2
+    description: "Number of epochs to train"
+
+  num_workers:
+    type: integer
+    default: 4
+    description: "Number of CPU workers for data loading"
+
+  batch_size:
+    type: integer
+    default: 1
+    description: "Size of each data batch"
+
+  # Model optimization settings
+  gradient_checkpointing:
+    type: boolean
+    default: false
+    description: "Enable gradient checkpointing to reduce memory usage during training"
+    
+  # Validation settings
+  validate_after_epoch:
+    type: boolean
+    default: true
+    description: "If True, validate after each epoch"
+  
+  validate_on_end:
+    type: boolean
+    default: true
+    description: "If True, validate at the end of training"
+  
+  validate_after_k_steps:
+    type: [integer, 'null']
+    default: null
+    description: "Number of steps to validate after"
+
+  # Checkpoint settings
+  save_on_validate:
+    type: boolean
+    default: false
+    description: "If True, save checkpoint after validation"
+
+  save_on_end:
+    type: boolean
+    default: false
+    description: "If True, save checkpoint at the end of training"
+
+  checkpoint:
+    type: [string, 'null']
+    default: null
+    description: "Path to the checkpoint file for resume"
+
+  # Output settings
+  output_dir:
+    type: string
+    default: "/data/training_outputs"
+    description: "Path to the output directory"
+
+required:
+  - number_epochs
+  - batch_size
+  - validate_after_epoch
+  - validate_on_end
+  - save_on_validate
+  - save_on_end
+  - output_dir
+  - num_workers

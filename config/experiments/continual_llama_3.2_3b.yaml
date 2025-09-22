@@ -21,10 +21,8 @@ static_graph: false
 number_epochs: 1
 batch_size: 4
 
-# Validation parameters
-validate_on_end: false
-validate_after_epoch: false
-validate_after_k_steps: null
+# Validation and checkpoint saving parameters
+validations_per_epoch: 1
 
 # Gradient parameters
 gradient_accumulation: true

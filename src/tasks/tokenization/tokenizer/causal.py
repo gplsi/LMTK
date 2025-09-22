@@ -78,115 +78,210 @@ class CausalLMTokenizer(BaseTokenizer):
                 # Fallback to single process
                 return 1
     
-    def tokenize(self, dataset: Union[HFDataset, DatasetDict]) -> HFDataset:
+    def tokenize(self, dataset: Union[HFDataset, DatasetDict]) -> Union[HFDataset, DatasetDict]:
         """
         Tokenize the input dataset for causal language modeling.
 
         This method applies tokenization to either a single dataset (HFDataset) or a dictionary 
-        of datasets (DatasetDict) containing multiple splits. It utilizes the Hugging Face's map 
-        function to efficiently process data in batches. Post tokenization, it removes unnecessary 
-        columns from the original dataset.        Args:
-            dataset (Union[HFDataset, DatasetDict]): The dataset or dataset dictionary to be tokenized.
-            
+        of datasets (DatasetDict). For DatasetDict inputs, each split is tokenized separately. 
+        The tokenization process includes text truncation, padding, and the generation of 
+        attention masks and labels.
+
+        Args:
+            dataset (Union[HFDataset, DatasetDict]): The dataset(s) to tokenize.
+
         Returns:
-            Union[HFDataset, DatasetDict]: A tokenized dataset if a single HFDataset is provided, or
-                                           a DatasetDict if multiple splits were tokenized. In the case
-                                           of a DatasetDict with only one split, the single tokenized dataset                                           is returned directly.        """
-        self.logger.info("Initializing tokenizer")
-        self._initialize_tokenizer()
-          # Get optimal multiprocessing configuration
-        num_proc = self._get_optimal_num_proc()
-        batch_size = self.config.batch_size or 2000
+            Union[HFDataset, DatasetDict]: The tokenized dataset(s). In the special case
+                                           of a DatasetDict with only one split, the single tokenized dataset                                           is returned directly.        
+        """
+        # Initialize tokenizer if not already done
+        if self._tokenizer is None:
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
         
-        # Log performance configuration with parallelism strategy
-        if num_proc is None:
-            self.logger.info(f"Performance configuration: batch_size={batch_size}, parallelism=fast_tokenizer_internal")
-        else:
-            self.logger.info(f"Performance configuration: batch_size={batch_size}, num_proc={num_proc}, parallelism=python_multiprocessing")
+        # Validate tokenizer is properly initialized
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
         
-        # Enable fast tokenizer detection for performance monitoring
-        if isinstance(dataset, DatasetDict):
-            self.logger.info("Detected 'DatasetDict' instance")
-            # Handle DatasetDict case
-            tokenized_datasets = DatasetDict()
-            for split, split_dataset in dataset.items():
-                self.logger.info(f"Tokenizing split '{split}' with {len(split_dataset)} examples")
-                start_time = time.time()                # Configure mapping parameters based on config
+        start_time = time.time()
+        self.logger.info("=== Starting Causal LM Tokenization ===")
+        
+        try:
+            # Log configuration details
+            self.logger.info(f"Tokenizer configuration:")
+            self.logger.info(f"  - Context length: {self.config.context_length}")
+            self.logger.info(f"  - Overlap: {self.config.overlap}")
+            self.logger.info(f"  - Batch size: {getattr(self.config, 'batch_size', 1000)}")
+            
+            # Get optimal number of processes
+            num_proc = self._get_optimal_num_proc()
+            
+            # Performance optimization parameters
+            batch_size = getattr(self.config, 'batch_size', 1000)
+            writer_batch_size = getattr(self.config, 'writer_batch_size', 40000)
+            
+            self.logger.info(f"Processing parameters:")
+            self.logger.info(f"  - num_proc: {num_proc}")
+            self.logger.info(f"  - batch_size: {batch_size}")
+            self.logger.info(f"  - writer_batch_size: {writer_batch_size}")
+            
+            if isinstance(dataset, DatasetDict):
+                self.logger.info(f"Processing DatasetDict with {len(dataset)} splits:")
+                for split_name, split_data in dataset.items():
+                    self.logger.info(f"  {split_name}: {len(split_data)} examples")
+                
+                result = DatasetDict()
+                total_examples = 0
+                
+                for split_name, split_dataset in dataset.items():
+                    split_start_time = time.time()
+                    self.logger.info(f"Processing split: {split_name} ({len(split_dataset)} examples)")
+                    
+                    # Configure mapping parameters
+                    map_kwargs = {
+                        "function": self._tokenize_function,
+                        "batched": True,
+                        "features": self._features,
+                        "remove_columns": split_dataset.column_names,
+                        "batch_size": batch_size,
+                        "writer_batch_size": writer_batch_size,
+                    }
+                    
+                    # Only add num_proc for slow tokenizers
+                    if num_proc is not None:
+                        map_kwargs["num_proc"] = num_proc
+                    
+                    # Add progress description if enabled
+                    if hasattr(self.config, 'show_progress') and self.config.show_progress:
+                        map_kwargs["desc"] = f"Tokenizing {split_name} split"
+                    
+                    try:
+                        result[split_name] = split_dataset.map(**map_kwargs)
+                        
+                        split_time = time.time() - split_start_time
+                        split_throughput = len(split_dataset) / split_time if split_time > 0 else 0
+                        total_examples += len(split_dataset)
+                        
+                        self.logger.info(f"Completed {split_name} in {split_time:.2f} seconds")
+                        self.logger.info(f"Split throughput: {split_throughput:.1f} examples/sec")
+                        self.logger.info(f"Final split size: {len(result[split_name])}")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error processing split {split_name}: {str(e)}")
+                        raise
+                
+                self.logger.info(f"Processed all splits: {total_examples} total examples")
+                
+                # Return single dataset if only one split
+                if len(result) == 1:
+                    self.logger.debug("Only one dataset split found, returning single tokenized dataset")
+                    return result[list(result.keys())[0]]
+                    
+            elif isinstance(dataset, HFDataset):
+                self.logger.info(f"Processing single dataset with {len(dataset)} examples")
+                
+                # Configure mapping parameters
                 map_kwargs = {
                     "function": self._tokenize_function,
                     "batched": True,
                     "features": self._features,
-                    "keep_in_memory": False,
-                    "remove_columns": split_dataset.column_names,
+                    "remove_columns": dataset.column_names,
                     "batch_size": batch_size,
-                    "writer_batch_size": 40000,  # Write in larger chunks for better I/O performance
+                    "writer_batch_size": writer_batch_size,
                 }
                 
-                # Only add num_proc for slow tokenizers (fast tokenizers use internal Rust parallelism)
+                # Only add num_proc for slow tokenizers
                 if num_proc is not None:
                     map_kwargs["num_proc"] = num_proc
                 
-                # Add progress description if progress monitoring is enabled
+                # Add progress description if enabled
                 if hasattr(self.config, 'show_progress') and self.config.show_progress:
-                    map_kwargs["desc"] = f"Tokenizing {split} split"
-
-                tokenized_datasets[split] = split_dataset.map(**map_kwargs)                
-                elapsed_time = time.time() - start_time
-                throughput = len(split_dataset) / elapsed_time if elapsed_time > 0 else 0
-                self.logger.info(f"Completed tokenizing split '{split}' in {elapsed_time:.2f} seconds")
-                self.logger.info(f"Processed {len(split_dataset)} examples at {throughput:.1f} examples/sec")
+                    map_kwargs["desc"] = "Tokenizing causal dataset"
+                
+                try:
+                    result = dataset.map(**map_kwargs)
+                    self.logger.info(f"Tokenization completed successfully")
+                    self.logger.info(f"Final dataset size: {len(result)}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error during tokenization: {str(e)}")
+                    raise
+                    
+            else:
+                raise ValueError(f"Unsupported dataset type: {type(dataset)}. Supported types: HFDataset, DatasetDict")
             
-            if len(tokenized_datasets) == 1:
-                self.logger.debug("Only one dataset split found, returning single tokenized dataset")
-                return tokenized_datasets[list(tokenized_datasets.keys())[0]]
-            self.logger.debug("Multiple dataset splits found, returning tokenized 'DatasetDict'")
-            return tokenized_datasets
-        else:
-            self.logger.info("Detected regular 'Dataset' instance")
-            self.logger.info(f"Tokenizing dataset with {len(dataset)} examples")
-            start_time = time.time()            # Configure mapping parameters based on config
-            map_kwargs = {
-                "function": self._tokenize_function,
-                "batched": True,
-                "features": self._features,
-                "remove_columns": dataset.column_names,
-                "batch_size": batch_size,
-                "writer_batch_size": 40000,  # Write in larger chunks for better I/O performance
-            }
-            
-            # Only add num_proc for slow tokenizers (fast tokenizers use internal Rust parallelism)
-            if num_proc is not None:
-                map_kwargs["num_proc"] = num_proc
-            
-            # Add progress description if progress monitoring is enabled
-            if hasattr(self.config, 'show_progress') and self.config.show_progress:
-                map_kwargs["desc"] = "Tokenizing dataset"
-            
-            # Handle single Dataset case
-            tokenized_dataset = dataset.map(**map_kwargs)
-            
+            # Final performance summary
             elapsed_time = time.time() - start_time
-            throughput = len(dataset) / elapsed_time if elapsed_time > 0 else 0
-            self.logger.info(f"Completed tokenization in {elapsed_time:.2f} seconds")
-            self.logger.info(f"Processed {len(dataset)} examples at {throughput:.1f} examples/sec")
-            self.logger.debug("Returning tokenized dataset")
-            return tokenized_dataset
+            
+            # Calculate total examples processed
+            if isinstance(result, HFDataset):
+                total_processed = len(result)
+            elif isinstance(result, DatasetDict):
+                total_processed = sum(len(split) for split in result.values())
+            else:
+                total_processed = 0
+            
+            throughput = total_processed / elapsed_time if elapsed_time > 0 else 0
+            
+            self.logger.info("=== Causal LM Tokenization Completed Successfully ===")
+            self.logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
+            self.logger.info(f"Total examples processed: {total_processed:,}")
+            self.logger.info(f"Overall throughput: {throughput:.1f} examples/sec")
+            self.logger.info(f"Average time per example: {(elapsed_time/total_processed)*1000:.2f} ms")
+            
+            # Memory usage info if available
+            try:
+                import psutil
+                process = psutil.Process()
+                memory_mb = process.memory_info().rss / 1024 / 1024
+                self.logger.info(f"Memory usage: {memory_mb:.1f} MB")
+            except ImportError:
+                pass
+            
+            return result
+            
+        except Exception as e:
+            elapsed_time = time.time() - start_time
+            self.logger.error(f"=== Causal LM Tokenization Failed ===")
+            self.logger.error(f"Error after {elapsed_time:.2f} seconds: {str(e)}")
+            self.logger.error(f"Error type: {type(e).__name__}")
+            raise
 
     def _tokenize_function(self, batch: Dict[str, List[str]]) -> Dict[str, List[List[int]]]:
         """
         Batch-tokenize input texts with overflow/stride and build input IDs, attention masks, and labels.
         Optimized for performance with efficient label generation.
         """
+        # Ensure tokenizer is initialized (important for multiprocessing)
+        if self._tokenizer is None:
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
+        
+        # Validate tokenizer is properly initialized
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
+        
         # Run tokenizer on the entire batch at once
-        outputs = self._tokenizer(
-            batch["text"],
-            truncation=True,
-            max_length=self.config.context_length,
-            stride=self.config.overlap,
-            return_overflowing_tokens=True,
-            padding="max_length",  # Pad to max_length for consistency
-            return_tensors="np",  # Direct NumPy conversion
-        )
+        try:
+            outputs = self._tokenizer(
+                batch["text"],
+                truncation=True,
+                max_length=self.config.context_length,
+                stride=self.config.overlap,
+                return_overflowing_tokens=True,
+                padding="max_length",  # Pad to max_length for consistency
+                return_tensors="np",  # Direct NumPy conversion
+            )
+        except Exception as e:
+            self.logger.error(f"Tokenization failed: {e}")
+            self.logger.error(f"Batch content preview: {str(batch)[:200]}...")
+            raise RuntimeError(f"Tokenization failed: {e}") from e
         
         input_ids = outputs["input_ids"]       # Already NumPy arrays
         attention_mask = outputs["attention_mask"]

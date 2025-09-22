@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Union
 from transformers import PreTrainedTokenizer, AutoTokenizer
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 from src.utils.logging import get_logger
-from utils import get_optimal_thread_count
+from src.utils import get_optimal_thread_count
 
 optimal_threads = get_optimal_thread_count()
 # Set Rayon threads to match CPU cores
@@ -68,14 +68,30 @@ class BaseTokenizer(ABC):
         self.logger.info(f"Initializing tokenizer: {self.config.tokenizer_name}")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.config.tokenizer_name,
-            use_fast=True,           # ← the big speed boost
+            use_fast=True,           
             padding_side="right",
             truncation_side="right",
         )
-        self._tokenizer.pad_token = self._tokenizer.eos_token
+        
+        # Set padding token with proper fallback for different tokenizer types
+        if self._tokenizer.pad_token is None:
+            if self._tokenizer.eos_token is not None:
+                # For GPT-style models
+                self._tokenizer.pad_token = self._tokenizer.eos_token
+                self.logger.debug(f"Set pad_token to eos_token: {self._tokenizer.pad_token}")
+            elif self._tokenizer.sep_token is not None:
+                # For BERT-style models
+                self._tokenizer.pad_token = self._tokenizer.sep_token
+                self.logger.debug(f"Set pad_token to sep_token: {self._tokenizer.pad_token}")
+            else:
+                # Fallback: add a new pad token
+                self._tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+                self.logger.debug(f"Added new pad_token: {self._tokenizer.pad_token}")
+        else:
+            self.logger.debug(f"Tokenizer already has pad_token: {self._tokenizer.pad_token}")
         
     @abstractmethod
-    def tokenize(self, texts: Union[str, List[str]]) -> Dict[str, List[int]]:
+    def tokenize(self, dataset: Union[str, List[str]]) -> Dict[str, List[int]]:
         """
         Abstract method to tokenize input texts into token IDs.
 

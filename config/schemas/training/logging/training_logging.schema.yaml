@@ -1,0 +1,41 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "clm_training.fsdp.schema.yaml"
+description: "Schema for FSDP experiments"
+
+allOf:
+  - $ref: "../../base.schema.yaml"
+  - type: object
+    
+    properties:
+
+      wandb_entity:
+        type: string
+        default: none
+        description: "Wandb entity to log the experiment"
+
+      wandb_project:
+        type: string
+        default: none
+        description: "Wandb project to log the experiment"
+
+      wandb_run_name:
+        type: string
+        default: none
+        description: "Wandb run name for the experiment (optional, auto-generated if not provided)"
+
+      log_model:
+        type: boolean
+        default: false
+        description: "If True, log the model to wandb"
+
+      log_iter_interval:
+        type: integer
+        default: 10
+        description: "Interval to log metrics to wandb and print in terminal"
+      
+    
+    required:
+    - wandb_entity
+    - wandb_project
+    - log_model
+    - log_iter_interval

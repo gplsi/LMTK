@@ -31,6 +31,7 @@ TIME_LIMIT="${TIME_LIMIT:-48:00:00}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 NODES="${NODES:-1}"
 NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
+NODELIST="${NODELIST:-}"
 
 # --- Project Paths (auto-detected) ---
 PROJECT_NAME="${PROJECT_NAME:-LMTK}"
@@ -116,6 +117,7 @@ LOG_DIR="$HOST_PROJECT_ROOT/output/$OUTPUT_DIR_NAME/$LOG_SUBDIR"
 CACHE_DIR="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME"
 CONFIG_PATH="$HOST_PROJECT_ROOT/$CONFIG_FILE"
 
+echo $CACHE_DIR
 # --- Create Required Directories ---
 echo "===== Setting up directories ====="
 mkdir -p "$LOG_DIR"
@@ -133,6 +135,9 @@ echo "Docker Image: $DOCKER_IMAGE_NAME"
 echo "Config File: $CONFIG_FILE"
 echo "Config Path: $CONFIG_PATH"
 echo "Output Directory: $LOG_DIR"
+if [[ -n "$NODELIST" ]]; then
+echo "Nodelist: $NODELIST"
+fi
 echo "WandB Project: $WANDB_PROJECT"
 echo "WandB Entity: $WANDB_ENTITY"
 echo "WandB API Key: ${WANDB_API_KEY:+[PROVIDED]}${WANDB_API_KEY:-[NOT PROVIDED]}"
@@ -287,6 +292,9 @@ docker run \
     --env "WANDB_MODE=$WANDB_MODE" \
     --env "SLURM_JOB_ID=$SLURM_JOB_ID" \
     --env "SLURM_NODELIST=$SLURM_NODELIST" \
+    --env "USER=$USERNAME" \
+    --env "HOME=/home/$USERNAME" \
+    --env "LOGNAME=$USERNAME" \
     --env "PYTHON_COMMAND=$PYTHON_COMMAND" \
     --env "MAIN_SCRIPT=$MAIN_SCRIPT" \
     --env "CONFIG_FILE=$CONFIG_FILE" \
