@@ -17,7 +17,8 @@ SLURM_SCRIPT="$SCRIPT_DIR/p.slurm"
 
 # Initialize variables (will be set by config file, CLI args, or defaults in that order)
 CONFIG_FILE=""
-WANDB_API_KEY=""
+WANDB_API_KEY="${WANDB_API_KEY:-}"
+HUGGINGFACE_API_KEY="${HUGGINGFACE_API_KEY:-}"
 GPU_COUNT=""
 MEMORY=""
 TIME_LIMIT=""
@@ -71,6 +72,7 @@ REQUIRED:
 
 OPTIONAL:
     -k, --wandb-key API_KEY      WandB API key (optional, warning if not provided)
+        --hf-key API_KEY         Hugging Face API key (optional, enables gated repo access)
     -g, --gpus GPU_COUNT         Number of GPUs to request (default: 2)
     -m, --memory MEMORY          Memory to request (default: 64G)
     -t, --time TIME_LIMIT        Time limit (default: 48:00:00)
@@ -130,6 +132,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -k|--wandb-key)
             WANDB_API_KEY="$2"
+            shift 2
+            ;;
+        --hf-key)
+            HUGGINGFACE_API_KEY="$2"
             shift 2
             ;;
         -g|--gpus)
@@ -228,6 +234,17 @@ if [[ -z "$WANDB_API_KEY" && -n "${WANDB_API_KEY:-}" ]]; then
     WANDB_API_KEY="${WANDB_API_KEY}"
 fi
 
+# Check for Hugging Face key from common environment variables if not provided via CLI
+if [[ -z "$HUGGINGFACE_API_KEY" ]]; then
+    if [[ -n "${HUGGINGFACE_API_KEY:-}" ]]; then
+        HUGGINGFACE_API_KEY="${HUGGINGFACE_API_KEY}"
+    elif [[ -n "${HUGGINGFACEHUB_API_TOKEN:-}" ]]; then
+        HUGGINGFACE_API_KEY="${HUGGINGFACEHUB_API_TOKEN}"
+    elif [[ -n "${HF_TOKEN:-}" ]]; then
+        HUGGINGFACE_API_KEY="${HF_TOKEN}"
+    fi
+fi
+
 # Warn about WandB key but don't fail
 if [[ -z "$WANDB_API_KEY" ]]; then
     echo "⚠️  WARNING: No WandB API key provided."
@@ -248,6 +265,10 @@ EXPORT_VARS="CONFIG_FILE=$REL_CONFIG_FILE,HOST_PROJECT_ROOT=$PROJECT_ROOT"
 
 if [[ -n "$WANDB_API_KEY" ]]; then
     EXPORT_VARS="${EXPORT_VARS},WANDB_API_KEY=$WANDB_API_KEY"
+fi
+
+if [[ -n "$HUGGINGFACE_API_KEY" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY"
 fi
 
 if [[ -n "$OUTPUT_DIR" ]]; then
@@ -309,6 +330,11 @@ if [[ -n "$WANDB_API_KEY" ]]; then
     echo "WandB API Key: ${WANDB_API_KEY:0:10}..."
 else
     echo "WandB API Key: [NOT PROVIDED]"
+fi
+if [[ -n "$HUGGINGFACE_API_KEY" ]]; then
+    echo "Hugging Face API Key: ${HUGGINGFACE_API_KEY:0:10}..."
+else
+    echo "Hugging Face API Key: [NOT PROVIDED]"
 fi
 if [[ -n "$OUTPUT_DIR" ]]; then
     echo "Output Directory: $OUTPUT_DIR"

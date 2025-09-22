@@ -53,6 +53,7 @@ CACHE_DIR_NAME="${CACHE_DIR_NAME:-.cache}"
 WANDB_PROJECT="${WANDB_PROJECT:-lmtk-experiments}"
 WANDB_ENTITY="${WANDB_ENTITY:-}"
 WANDB_API_KEY="${WANDB_API_KEY:-}"
+HUGGINGFACE_API_KEY="${HUGGINGFACE_API_KEY:-}"
 
 # --- Python Environment ---
 PYTHON_COMMAND="${PYTHON_COMMAND:-python3}"
@@ -137,6 +138,7 @@ echo "Output Directory: $LOG_DIR"
 echo "WandB Project: $WANDB_PROJECT"
 echo "WandB Entity: $WANDB_ENTITY"
 echo "WandB API Key: ${WANDB_API_KEY:+[PROVIDED]}${WANDB_API_KEY:-[NOT PROVIDED]}"
+echo "Hugging Face API Key: ${HUGGINGFACE_API_KEY:+[PROVIDED]}${HUGGINGFACE_API_KEY:-[NOT PROVIDED]}"
 echo "=============================="
 
 # --- Data Validation ---
@@ -175,6 +177,18 @@ if [ -z "$WANDB_API_KEY" ]; then
 else
     echo "✅ WandB API key provided - experiment tracking enabled"
     WANDB_MODE="online"
+fi
+echo "==============================="
+
+# --- Hugging Face Authentication Validation ---
+echo "===== Hugging Face Configuration ====="
+if [ -z "$HUGGINGFACE_API_KEY" ]; then
+    echo "⚠️  WARNING: Hugging Face API key not provided"
+    echo "   - Access to gated Hugging Face repositories will fail"
+    echo "   - Provide a key via: ./submit_job.sh -c $CONFIG_FILE --hf-key your_key_here"
+    echo "   - Or set environment variable: export HUGGINGFACEHUB_API_TOKEN=your_key"
+else
+    echo "✅ Hugging Face API key provided"
 fi
 echo "==============================="
 
@@ -285,6 +299,9 @@ docker run \
     --env "WANDB_PROJECT=$WANDB_PROJECT" \
     --env "WANDB_ENTITY=$WANDB_ENTITY" \
     --env "WANDB_API_KEY=$WANDB_API_KEY" \
+    --env "HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY" \
+    --env "HUGGINGFACEHUB_API_TOKEN=$HUGGINGFACE_API_KEY" \
+    --env "HF_TOKEN=$HUGGINGFACE_API_KEY" \
     --env "WANDB_MODE=$WANDB_MODE" \
     --env "SLURM_JOB_ID=$SLURM_JOB_ID" \
     --env "SLURM_NODELIST=$SLURM_NODELIST" \

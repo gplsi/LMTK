@@ -13,6 +13,52 @@ set -u  # Exit on undefined variables
 set -o pipefail  # Exit on pipe failures
 set -x  # Print commands as they are executed
 
+# Ensure the container has an /etc/passwd entry for the current UID so libraries
+# relying on getpwuid (e.g., transformers) work even when running with a host UID
+# that is unknown inside the image.
+USER_ID="$(id -u)"
+GROUP_ID="$(id -g)"
+HOME_DIR="${HOME:-/workspace}"
+PASSWD_ENTRY_EXISTS=false
+
+if command -v getent >/dev/null 2>&1; then
+    if getent passwd "${USER_ID}" >/dev/null 2>&1; then
+        PASSWD_ENTRY_EXISTS=true
+    fi
+else
+    if grep -qE "^([^:]*:){2}${USER_ID}:" /etc/passwd; then
+        PASSWD_ENTRY_EXISTS=true
+    fi
+fi
+
+if [ "${PASSWD_ENTRY_EXISTS}" = "false" ]; then
+    echo "UID ${USER_ID} not found in /etc/passwd, attempting to create a synthetic entry"
+    USER_NAME="user_${USER_ID}"
+    if [ -w /etc/passwd ]; then
+        echo "${USER_NAME}:x:${USER_ID}:${GROUP_ID}:Generated User:${HOME_DIR}:/bin/bash" >> /etc/passwd
+        echo "Added ${USER_NAME} to /etc/passwd"
+    else
+        echo "Warning: /etc/passwd is not writable; continuing without adding user entry"
+    fi
+    export USER="${USER_NAME}"
+fi
+
+# Guarantee HOME is set so Python falls back gracefully even if we could not
+# create a passwd entry.
+export HOME="${HOME_DIR}"
+
+# Normalize Hugging Face authentication environment variables so any one of the
+# supported names enables gated repository access for downstream libraries.
+if [ -n "${HUGGINGFACE_API_KEY:-}" ]; then
+    export HUGGINGFACEHUB_API_TOKEN="${HUGGINGFACE_API_KEY}"
+    export HF_TOKEN="${HUGGINGFACE_API_KEY}"
+elif [ -n "${HUGGINGFACEHUB_API_TOKEN:-}" ]; then
+    export HF_TOKEN="${HUGGINGFACEHUB_API_TOKEN}"
+elif [ -n "${HF_TOKEN:-}" ]; then
+    export HUGGINGFACEHUB_API_TOKEN="${HF_TOKEN}"
+fi
+
+
 echo "===== Container Script Started ====="
 echo "Current working directory: $(pwd)"
 echo "Current user: $(whoami)"
@@ -27,6 +73,11 @@ echo "PYTHON_COMMAND: ${PYTHON_COMMAND:-not set}"
 echo "MAIN_SCRIPT: ${MAIN_SCRIPT:-not set}"
 echo "CONTAINER_PROJECT_ROOT: ${CONTAINER_PROJECT_ROOT:-not set}"
 echo "PYTHONPATH: ${PYTHONPATH:-not set}"
+if [ -n "${HUGGINGFACE_API_KEY:-}" ]; then
+    echo "HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:0:6}..."
+else
+    echo "HUGGINGFACE_API_KEY: not provided"
+fi
 echo "=================================="
 
 echo "===== Checking File System ====="
