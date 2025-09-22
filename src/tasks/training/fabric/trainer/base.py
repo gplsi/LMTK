@@ -153,8 +153,9 @@ class FabricTrainerBase(ABC):
         logger = step_csv_logger(
             self.config.output_dir, 
             self.config.model_name, 
-            flush_logs_every_n_steps=self.config.log_every_n_steps
+            flush_logs_every_n_steps=self.config.get("log_iter_interval", 100)
         )
+        
         if self.config.logging_config == "wandb":
             # Use default values if WandB config is not provided
             wandb_entity = getattr(self.config, 'wandb_entity', None)

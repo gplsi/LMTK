@@ -30,7 +30,7 @@ allOf:
 
       log_iter_interval:
         type: integer
-        default: 10
+        default: 100
         description: "Interval to log metrics to wandb and print in terminal"
       
     

@@ -35,7 +35,7 @@ def execute_task(config_path: str):
         'tokenization': 'tokenization',
         'publish': 'publish'
     }
-    
+
     # Get the module name for this task type
     module_name = task_module_map.get(task, task)
     
