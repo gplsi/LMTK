@@ -155,8 +155,8 @@ class FabricTrainerBase(ABC):
             self.config.model_name, 
             flush_logs_every_n_steps=self.config.get("log_iter_interval", 100)
         )
-        
-        if self.config.logging_config == "wandb":
+         
+        if self.config.get("logging_config", None) == "wandb":
             # Use default values if WandB config is not provided
             wandb_entity = getattr(self.config, 'wandb_entity', None)
             wandb_project = getattr(self.config, 'wandb_project', 'continual-pretraining')
@@ -749,7 +749,7 @@ class FabricTrainerBase(ABC):
             fabric.seed_everything(self.config.seed)
 
         # MONITORING
-        self.monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=self.config.log_every_n_steps)
+        self.monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=self.config.get("log_iter_interval", 100))
 
         # OUTPUT DIR AND SYNC
         if fabric.global_rank == 0:
