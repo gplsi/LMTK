@@ -812,8 +812,10 @@ class FabricTrainerBase(ABC):
         }
         # LOAD INITIAL WEIGHTS (for continual training learning)
         self._load_initial_weights(fabric)
+        
         # RESUME (for continuing training)
         self._load_from_checkpoint(fabric)
+        
         # TRAINING
         train_time = time.perf_counter()
         self._train(fabric)
