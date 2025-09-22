@@ -46,11 +46,14 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, An
     
     # Start with default config
     fsdp_config = get_default_fsdp_config()
+
+
     # Override with user config if provided
     for key, value in config.items():
         if key in fsdp_config and value is not None:
             fsdp_config[key] = value
     
+
     # If auto_wrap_policy not specified, determine based on model
     if not config.get("auto_wrap_policy"):
         auto_wrap_policy = create_auto_wrap_policy(
@@ -66,6 +69,7 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, An
             layer_cls = fsdp_config["auto_wrap_policy"].keywords["transformer_layer_cls"]
             fsdp_config["activation_checkpointing_policy"] = {layer_cls: dict()}
     
+
     return fsdp_config
 
 

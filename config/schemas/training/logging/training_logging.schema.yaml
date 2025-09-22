@@ -18,6 +18,11 @@ allOf:
         default: none
         description: "Wandb project to log the experiment"
 
+      wandb_run_name:
+        type: string
+        default: none
+        description: "Wandb run name for the experiment (optional, auto-generated if not provided)"
+
       log_model:
         type: boolean
         default: false
