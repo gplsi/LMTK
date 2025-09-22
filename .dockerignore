@@ -2,6 +2,7 @@
 **/.*
 **/*.ipynb
 **/data/
+output/
 test_checkpoint_naming.py
 *.out
 *.err

@@ -1,0 +1,63 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "dataset_merge.schema.yaml"
+description: "Schema for dataset merge task configuration"
+
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      
+      # Task-specific properties
+      datasets:
+        type: array
+        minItems: 2
+        description: "List of datasets to merge with their sampling percentages"
+        items:
+          type: object
+          properties:
+            path:
+              type: string
+              description: "Path to the tokenized dataset directory"
+            percentage:
+              type: number
+              minimum: 0.01
+              maximum: 10.0
+              description: "Percentage of data to sample from this dataset (1.0 = 100%, can exceed 1.0 for oversampling)"
+            name:
+              type: string
+              description: "Optional human-readable name for this dataset"
+          required:
+            - path
+            - percentage
+
+      # Output configuration
+      output_path:
+        type: string
+        description: "Path where the merged dataset will be saved"
+
+      # Shuffling configuration
+      shuffle_seed:
+        type: [integer, 'null']
+        default: null
+        description: "Seed for shuffling datasets before sampling (null for random)"
+
+      final_shuffle_seed:
+        type: [integer, 'null'] 
+        default: null
+        description: "Seed for final shuffle after merging (null for random)"
+
+      # Validation options
+      strict_compatibility:
+        type: boolean
+        default: true
+        description: "Whether to enforce strict compatibility checking between datasets"
+
+      # Allow base schema properties
+      seed:
+        type: [integer, 'null']
+        default: null
+        description: "Random seed for reproducibility"
+
+    required:
+      - datasets
+      - output_path

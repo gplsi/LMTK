@@ -12,6 +12,8 @@ from datasets import DatasetDict
 from datasets import Dataset as HFDataset
 from src.utils.logging import get_logger, set_logger_level
 from src.tasks.tokenization.tokenizer import CausalLMTokenizer
+from src.tasks.tokenization.tokenizer.instruction import InstructionTokenizer
+from src.tasks.tokenization.tokenizer.mlm import MaskedLMTokenizer
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
 from src.utils.orchestrator import BaseOrchestrator
@@ -63,13 +65,22 @@ class TokenizationOrchestrator(BaseOrchestrator):
         Returns:
             HFDataset: The tokenized version of the input dataset.
         """        
-        context_length = self.config.tokenizer.context_length
+        context_length = self.config.tokenizer.max_sequence_length
         overlap = self.config.tokenizer.get("overlap")
         tokenizer_name = self.config.tokenizer.tokenizer_name
         batch_size = self.config.tokenizer.get("batch_size", 2000)  # Default batch size if not specified
         num_proc = self.config.tokenizer.get("num_proc", None)
         show_progress = self.config.tokenizer.get("show_progress", True)
         
+        # Extract instruction-specific parameters
+        padding_strategy = self.config.tokenizer.get("padding_strategy", "fixed")
+        masking_strategy = self.config.tokenizer.get("masking_strategy", "context_aware")
+        mask_prompt = self.config.tokenizer.get("mask_prompt", True)
+        ignore_index = self.config.tokenizer.get("ignore_index", -100)
+        max_seq_length = self.config.tokenizer.get("max_seq_length", None)
+        test_size = self.config.get("test_size", 0.3)
+        seed = self.config.get("seed", 1234)
+
         
         # Create the tokenizer configuration using parameters from the orchestrator's configuration.
         tokenizer_config = TokenizerConfig(
@@ -82,13 +93,24 @@ class TokenizationOrchestrator(BaseOrchestrator):
             verbose_level=VerboseLevel(
                 self.config.get("verbose_level", VerboseLevel.INFO)
             ),
+            # Instruction-specific parameters
+            padding_strategy=padding_strategy,
+            masking_strategy=masking_strategy,
+            mask_prompt=mask_prompt,
+            ignore_index=ignore_index,
+            max_seq_length=max_seq_length,
+            test_size=test_size,
+            seed=seed
         )
 
         task = self.config.tokenizer.get("task", "clm_training")
         if task == "clm_training":
             tokenizer = CausalLMTokenizer(tokenizer_config)
-
-        # TODO: add more tasks here like the mlm_training or instruction...
+        elif task == "instruction":
+            tokenizer = InstructionTokenizer(tokenizer_config)
+        elif task == "mlm_training":
+            tokenizer = MaskedLMTokenizer(tokenizer_config)
+        # TODO: add more tasks here like the mlm_training...
         else:
             raise ValueError(f"Unsupported tokenization task: {task}")
         

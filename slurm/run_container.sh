@@ -61,9 +61,40 @@ fi
 
 echo "===== Container Script Started ====="
 echo "Current working directory: $(pwd)"
-echo "Current user: $(whoami)"
+echo "Current user: $(whoami 2>/dev/null || echo 'unknown')"
 echo "Current user ID: $(id -u)"
 echo "Current group ID: $(id -g)"
+
+# Create home directory if it doesn't exist
+if [ ! -d "$HOME" ]; then
+    mkdir -p "$HOME" 2>/dev/null || true
+    chmod 755 "$HOME" 2>/dev/null || true
+fi
+
+# Handle user database issue by setting environment variables
+# This prevents transformers from trying to look up user info
+if [ -z "$(whoami 2>/dev/null)" ]; then
+    echo "⚠️  User database issue detected. Setting environment workarounds..."
+    # These environment variables help libraries that need user info
+    export PYTORCH_TRANSFORMERS_CACHE="$HOME/.cache/transformers"
+    export HF_HOME="$HOME/.cache/huggingface"
+    export TRANSFORMERS_CACHE="$HOME/.cache/transformers"
+    
+    # Disable user-specific features that might cause issues
+    export WANDB_CACHE_DIR="/tmp/wandb_cache"
+    export WANDB_CONFIG_DIR="/tmp/wandb_config"
+    
+    # Create WandB directories if they don't exist
+    mkdir -p "$WANDB_CACHE_DIR" 2>/dev/null || true
+    mkdir -p "$WANDB_CONFIG_DIR" 2>/dev/null || true
+    
+    # Set additional environment variables that transformers might use
+    export PWD=$(pwd)
+    export SHELL="/bin/bash"
+    
+    echo "✅ Environment workarounds applied"
+fi
+
 echo "Python version: $(python3 --version)"
 echo "====================================="
 
@@ -103,19 +134,36 @@ echo "Python environment ready"
 echo "=============================="
 
 echo "===== WandB Configuration ====="
+# Ensure WandB directories exist (regardless of user database issues)
+export WANDB_CACHE_DIR="${WANDB_CACHE_DIR:-/tmp/wandb_cache}"
+export WANDB_CONFIG_DIR="${WANDB_CONFIG_DIR:-/tmp/wandb_config}"
+mkdir -p "$WANDB_CACHE_DIR" 2>/dev/null || true
+mkdir -p "$WANDB_CONFIG_DIR" 2>/dev/null || true
+chmod 755 "$WANDB_CACHE_DIR" 2>/dev/null || true
+chmod 755 "$WANDB_CONFIG_DIR" 2>/dev/null || true
+
 if [ -n "${WANDB_API_KEY:-}" ] && [ "${WANDB_API_KEY}" != "" ]; then
     echo "WandB API key provided, logging in..."
     echo "WANDB_PROJECT: ${WANDB_PROJECT:-unknown}"
     echo "WANDB_ENTITY: ${WANDB_ENTITY:-unknown}"
     echo "WANDB_MODE: ${WANDB_MODE:-online}"
+    echo "WANDB_CACHE_DIR: $WANDB_CACHE_DIR"
+    echo "WANDB_CONFIG_DIR: $WANDB_CONFIG_DIR"
     
     # Login to WandB
+    echo "Attempting WandB login..."
+    echo "Directory permissions:"
+    ls -la "$WANDB_CACHE_DIR" || echo "WANDB_CACHE_DIR not accessible"
+    ls -la "$WANDB_CONFIG_DIR" || echo "WANDB_CONFIG_DIR not accessible"
+    
     wandb login "$WANDB_API_KEY"
     if [ $? -eq 0 ]; then
         echo "✅ WandB login successful"
     else
         echo "❌ WandB login failed"
-        exit 1
+        echo "Note: This may be expected for non-training tasks (e.g., dataset_merge)"
+        echo "Continuing with execution..."
+        # Don't exit on WandB login failure - some tasks don't need WandB
     fi
 else
     echo "⚠️  No WandB API key provided - experiments will not be tracked"

@@ -30,17 +30,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user with matching UID/GID from host
-RUN if getent group $GROUP_ID >/dev/null; then \
-      echo "Group with GID $GROUP_ID already exists."; \
-    else \
-      groupadd -g $GROUP_ID $USERNAME; \
+RUN set -e && \
+    # First check if group exists, if not create it
+    if ! getent group $GROUP_ID >/dev/null; then \
+        groupadd -g $GROUP_ID $USERNAME; \
     fi && \
+    # Get the group name for the GID (might be different from USERNAME)
+    GROUP_NAME=$(getent group $GROUP_ID | cut -d: -f1) && \
+    # Remove any existing user with this UID to avoid conflicts
     if id -u $USER_ID >/dev/null 2>&1; then \
-      echo "User with UID $USER_ID already exists."; \
-    else \
-      useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash $USERNAME; \
+        userdel -f $(id -nu $USER_ID) 2>/dev/null || true; \
     fi && \
-    echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+    # Create the user with specified UID and primary group
+    useradd -u $USER_ID -g $GROUP_NAME -m -s /bin/bash $USERNAME && \
+    # Add to sudoers
+    echo "$USERNAME ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    # Verify user creation
+    id $USERNAME && \
+    echo "User $USERNAME created successfully with UID $USER_ID and GID $GROUP_ID"
+
+# Add a more robust NSS configuration and fallback
+RUN echo "passwd: files" > /etc/nsswitch.conf.new && \
+    echo "group: files" >> /etc/nsswitch.conf.new && \
+    echo "shadow: files" >> /etc/nsswitch.conf.new && \
+    echo "hosts: files dns" >> /etc/nsswitch.conf.new && \
+    mv /etc/nsswitch.conf.new /etc/nsswitch.conf
 
 # Ensure all files in /workspace are owned by the mapped user (handles .git and all contents)
 RUN chown -R $USER_ID:$GROUP_ID /workspace

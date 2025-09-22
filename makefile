@@ -1,4 +1,3 @@
-# Cross-platform Makefile for Continual Pretraining Framework
 PROJECT_NAME = lmtk
 CONFIG_PATH = config
 GPU_DEVICES ?= all  # Can specify "0", "0,1" or "none" for CPU-only
@@ -37,9 +36,12 @@ container:
 		--gpus all \
 		--user "$(USER_ID):$(GROUP_ID)" \
 		--workdir /workspace \
-		-v $(shell pwd):/workspace \
 		$(PROJECT_NAME) bash
 
 clean:
 	-@find . -name "*.pyc" -delete 2> /dev/null
 	-@rm -rf build dist *.egg-info 2> /dev/null
+
+install-poetry:
+	@echo "Installing dependencies with Poetry (recommended)"
+	poetry install

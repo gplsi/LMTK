@@ -175,7 +175,11 @@ output/*
 experiments/*
 wandb/*
 wandb_cache/*
-
+tutorials/data/sample_tokenized_dataset
+tutorials/output
+converted/
 *.err
 *.out
 .windsurf/*
+/converted
+tokenized_visualizations
