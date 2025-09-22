@@ -125,12 +125,14 @@ class FabricTrainerBase(ABC):
             self.config.model_name, 
             flush_logs_every_n_steps=self.config.log_iter_interval
         )
-        
-        if self.config.logging_config == "wandb":
+
+        if self.config.get("logging_config", None) == "wandb" \
+            and self.config.get("wandb_entity", None) is not None \
+            and self.config.get("wandb_project", None) is not None:
             wandb_logger = WandbLogger(
                 entity=self.config.wandb_entity, 
                 project=self.config.wandb_project,                
-                log_model=self.config.log_model
+                log_model=self.config.get("log_model", False)
             )
             return [logger, wandb_logger]
         return [logger]
