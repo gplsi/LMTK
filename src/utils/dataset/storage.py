@@ -145,7 +145,7 @@ class DatasetStorage:
                         for i, line in enumerate(f):
                             try:
                                 json_obj = json.loads(line.strip())
-                                self.__process_json_entry(json_obj, data, file_path, i)
+                                self._process_json_entry(json_obj, data, file_path, i)
                             except json.JSONDecodeError:
                                 self.logger.error(f"Error parsing JSON at line {i+1} in {file_path}: Invalid JSON format")
                     else:
