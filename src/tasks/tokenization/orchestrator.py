@@ -65,7 +65,15 @@ class TokenizationOrchestrator(BaseOrchestrator):
         Returns:
             HFDataset: The tokenized version of the input dataset.
         """        
-        context_length = self.config.tokenizer.max_sequence_length
+        context_length = getattr(
+            self.config.tokenizer,
+            "max_sequence_length",
+            getattr(self.config.tokenizer, "context_length", None),
+        )
+        if context_length is None:
+            raise ValueError(
+                "Tokenizer configuration must define either max_sequence_length or context_length"
+            )
         overlap = self.config.tokenizer.get("overlap")
         tokenizer_name = self.config.tokenizer.tokenizer_name
         batch_size = self.config.tokenizer.get("batch_size", 2000)  # Default batch size if not specified

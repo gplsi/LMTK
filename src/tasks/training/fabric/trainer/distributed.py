@@ -20,7 +20,7 @@ from src.tasks.training.fabric.trainer.base import FabricTrainerBase
 from src.tasks.training.fabric.wrappers.fsdp_config import resolve_fsdp_config
 from utils import inherit_init_params
 from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
-
+from torch.distributed.fsdp import BackwardPrefetch
 
 @inherit_init_params
 class FSDP(FabricTrainerBase):
@@ -60,13 +60,20 @@ class FSDP(FabricTrainerBase):
             self.strategy = FSDPStrategy(
                 sharding_strategy=fsdp_config["sharding_strategy"],
                 auto_wrap_policy=policy,#auto_wrap_policy=fsdp_config["auto_wrap_policy"],
-                activation_checkpointing_policy=policy,#activation_checkpointing_policy=fsdp_config["activation_checkpointing"],#activation_checkpointing=fsdp_config["activation_checkpointing"] is deprecated,
-                state_dict_type=fsdp_config["state_dict_type"],
+            state_dict_type=fsdp_config["state_dict_type"],
                 limit_all_gathers=fsdp_config["limit_all_gathers"],
                 cpu_offload=fsdp_config["cpu_offload"],
+                mixed_precision=fsdp_config["mixed_precision"],
+                backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+                forward_prefetch=False,  # Deshabilitar para evitar conflictos con checkpointing
+                use_orig_params=True,    # Importante para compatibilidad con gradient checkpointing
+                sync_module_states=True, # Asegurar sincronización entre ranks
+                                #activation_checkpointing_policy=policy,#activation_checkpointing_policy=fsdp_config["activation_checkpointing"],#activation_checkpointing=fsdp_config["activation_checkpointing"] is deprecated,
+                
                 
             )
             
+            self.cli_logger.info(f"Strategy : {self.strategy}")
             #self.cli_logger.info(f"Using auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
             self.cli_logger.info(f"Using auto_wrap_policy: {policy}")
             if fsdp_config["activation_checkpointing"]:

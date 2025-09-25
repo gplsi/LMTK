@@ -770,9 +770,9 @@ class FabricTrainerBase(ABC):
 
         # GRADIENT CHECKPOINTING
         if self.config.gradient_checkpointing:
-            self.model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={
-                "use_reentrant": False
-            })
+            self.model.model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
         else:
             self.model.model.gradient_checkpointing_disable()
 
