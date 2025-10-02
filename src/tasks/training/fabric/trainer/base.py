@@ -767,12 +767,12 @@ class FabricTrainerBase(ABC):
             
             # Properly set up the model with fabric for FSDP
             self.model = fabric.setup(self.model)
-
+            self.cli_logger.info(f"Time to SetUP model: {time.perf_counter() - t0:.02f} seconds.")
         # GRADIENT CHECKPOINTING
         if self.config.gradient_checkpointing:
-            self.model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={
-                "use_reentrant": False
-            })
+            self.model.model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
         else:
             self.model.model.gradient_checkpointing_disable()
 
