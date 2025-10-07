@@ -4,7 +4,21 @@ The Language Model ToolKit
 **A Modular Toolkit for Efficient Language Model Pretraining and Adaptation**  
 *Streamlining continual pretraining of foundation language models through scalable pipelines and reproducible configurations*
 
+> **Note:** Docker support has been discontinued. The project now uses Conda for environment management and job launching.
+
 ## 🚀 Installation
+
+
+### Setting up Conda Enviroment (Recommended)
+
+```bash
+# Create a new conda environment
+conda create -n lmtk python=3.10 -y
+conda activate lmtk
+
+# Install the package
+pip install -e .  # Regular installation
+```
 
 ### Option 1: Using Poetry (Recommended)
 
@@ -157,7 +171,6 @@ During development phase (before 1.0.0), minor version bumps may include breakin
 ### 🔧 Core Infrastructure
 - **Configuration System** - Type-safe YAML schemas with Pydantic validation
 - **Task Orchestration** - Modular task execution via CLI/config mapping
-- **Environment Management** - Dockerized training stack with Makefile control
 
 ### 🛠️ Training Capabilities
 - **Resumable Workflows** - Atomic checkpoints with full state serialization
@@ -220,7 +233,6 @@ sbatch p1-dgx.slurm
 
 **Key Features:**
 - 🔧 **Fully Configurable** - All paths, resources, and settings via environment variables
-- 🐳 **Docker Integration** - Containerized execution with automatic user mapping
 - 📊 **WandB Integration** - Automatic experiment tracking and logging
 - 🔍 **Debug Support** - Comprehensive error reporting and troubleshooting
 - 📁 **Organized Structure** - Clean separation of job scripts and configurations
@@ -264,28 +276,6 @@ project/
     ├── config/            # Pydantic schema definitions
     ├── tasks/             # Task implementations
     └── utils/             # Monitoring/checkpointing
-```
-
-## 🐋 Docker & Makefile
-
-**Dockerfile Highlights**:
-```
-FROM nvcr.io/nvidia/pytorch:23.10-py3
-COPY requirements.txt . 
-RUN pip install -r requirements.txt
-ENTRYPOINT ["make"]
-```
-
-**Makefile Targets**:
-```
-validate:  # Config schema check
-    python -m src.main --validate $(CONFIG)
-
-tokenize:  # Process datasets
-    python -m src.main --task tokenize $(CONFIG)
-
-train:     # Launch training
-    torchrun --nproc_per_node=$(GPUS) src/main.py --task train $(CONFIG)
 ```
 
 ## 📝 Reproducibility Features
