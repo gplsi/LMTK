@@ -36,12 +36,6 @@ NODELIST="${NODELIST:-}"
 # --- Project Paths (auto-detected) ---
 PROJECT_NAME="${PROJECT_NAME:-LMTK}"
 HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-/home/gplsi/$(whoami)/$PROJECT_NAME}"
-CONTAINER_PROJECT_ROOT="${CONTAINER_PROJECT_ROOT:-/workspace}"
-
-# --- Docker Configuration ---
-DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-lmtk:latest}"
-DOCKERFILE_RELATIVE_PATH="${DOCKERFILE_RELATIVE_PATH:-docker/Dockerfile}"
-FORCE_REBUILD="${FORCE_REBUILD:-false}"
 
 # --- Output Configuration (derived from config or defaults) ---
 OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-experiment_$(date +%Y%m%d_%H%M%S)}"
@@ -113,12 +107,10 @@ echo "Group ID: $GROUP_ID"
 echo "============================="
 
 # --- Build Derived Paths ---
-DOCKERFILE_PATH="$HOST_PROJECT_ROOT/$DOCKERFILE_RELATIVE_PATH"
 LOG_DIR="$HOST_PROJECT_ROOT/output/$OUTPUT_DIR_NAME/$LOG_SUBDIR"
 CACHE_DIR="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME"
 CONFIG_PATH="$HOST_PROJECT_ROOT/$CONFIG_FILE"
 
-echo $CACHE_DIR
 # --- Create Required Directories ---
 echo "===== Setting up directories ====="
 mkdir -p "$LOG_DIR"
@@ -131,8 +123,6 @@ echo "==============================="
 # --- Configuration Summary ---
 echo "===== Job Configuration ====="
 echo "Project Root: $HOST_PROJECT_ROOT"
-echo "Container Root: $CONTAINER_PROJECT_ROOT"
-echo "Docker Image: $DOCKER_IMAGE_NAME"
 echo "Config File: $CONFIG_FILE"
 echo "Config Path: $CONFIG_PATH"
 echo "Output Directory: $LOG_DIR"
@@ -153,12 +143,6 @@ if [ ! -d "$HOST_PROJECT_ROOT" ]; then
     exit 1
 fi
 echo "✅ Project root: $HOST_PROJECT_ROOT"
-
-if [ ! -f "$DOCKERFILE_PATH" ]; then
-    echo "❌ ERROR: Dockerfile not found: $DOCKERFILE_PATH"
-    exit 1
-fi
-echo "✅ Dockerfile: $DOCKERFILE_PATH"
 
 if [ ! -f "$CONFIG_PATH" ]; then
     echo "❌ ERROR: Config file not found: $CONFIG_PATH"
@@ -204,121 +188,54 @@ echo "==============================="
 # echo "Modules loaded successfully"
 # echo "============================"
 
-# --- Docker Image Management ---
-echo "===== Docker Image Management ====="
-echo "Checking for Docker image: $DOCKER_IMAGE_NAME"
+ENV_SCRIPT="$HOST_PROJECT_ROOT/scripts/set_environment.sh"
 
-# Check if force rebuild is requested
-if [[ "$FORCE_REBUILD" == "true" ]]; then
-    echo "🔨 Force rebuild requested. Rebuilding Docker image: $DOCKER_IMAGE_NAME"
-    echo "Build arguments: USER_ID=$USER_ID, GROUP_ID=$GROUP_ID, USERNAME=$USERNAME"
-    
-    # Remove existing image first
-    docker rmi "$DOCKER_IMAGE_NAME" 2>/dev/null || true
-    
-    docker build \
-        --build-arg USER_ID="$USER_ID" \
-        --build-arg GROUP_ID="$GROUP_ID" \
-        --build-arg USERNAME="$USERNAME" \
-        --network=host \
-        -t "$DOCKER_IMAGE_NAME" \
-        -f "$DOCKERFILE_PATH" \
-        "$HOST_PROJECT_ROOT"
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Docker image built successfully: $DOCKER_IMAGE_NAME"
-    else
-        echo "❌ Docker build failed"
-        exit 1
-    fi
-# More robust image existence check - actually try to run a simple command
-elif docker run --rm --entrypoint /bin/echo "$DOCKER_IMAGE_NAME" "Image test successful" &> /dev/null; then
-    echo "✅ Using existing Docker image: $DOCKER_IMAGE_NAME"
-else
-    echo "🔨 Docker image not found or corrupted. Building: $DOCKER_IMAGE_NAME"
-    echo "Build arguments: USER_ID=$USER_ID, GROUP_ID=$GROUP_ID, USERNAME=$USERNAME"
-    
-    # Remove any potentially corrupted image first
-    docker rmi "$DOCKER_IMAGE_NAME" 2>/dev/null || true
-    
-    docker build \
-        --build-arg USER_ID="$USER_ID" \
-        --build-arg GROUP_ID="$GROUP_ID" \
-        --build-arg USERNAME="$USERNAME" \
-        --network=host \
-        -t "$DOCKER_IMAGE_NAME" \
-        -f "$DOCKERFILE_PATH" \
-        "$HOST_PROJECT_ROOT"
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Docker image built successfully: $DOCKER_IMAGE_NAME"
-    else
-        echo "❌ Docker build failed"
-        exit 1
-    fi
+echo "===== Environment Setup ====="
+if [ ! -f "$ENV_SCRIPT" ]; then
+    echo "❌ ERROR: Environment script not found: $ENV_SCRIPT"
+    exit 1
 fi
-echo "================================="
 
-# --- Container Execution ---
-echo "===== Starting Training Container ====="
-CONTAINER_NAME="${SLURM_JOB_ID}_lmtk"
-echo "Container name: $CONTAINER_NAME"
-echo "Running as user: $USERNAME (UID: $USER_ID, GID: $GROUP_ID)"
-echo "======================================="
+echo "Sourcing environment script: $ENV_SCRIPT"
+source "$ENV_SCRIPT"
 
-# Trap to clean up container on script exit
-cleanup() {
-    echo "===== Cleanup ====="
-    echo "Stopping and removing container if it exists..."
-    docker stop "$CONTAINER_NAME" 2>/dev/null || true
-    docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    echo "Cleanup completed"
-    echo "=================="
-}
-trap cleanup EXIT
+echo "Python executable after environment setup: $(which python || true)"
+echo "Conda environment: ${CONDA_DEFAULT_ENV:-unknown}"
+echo "PYTHONPATH: ${PYTHONPATH:-not set}"
+echo "================================"
 
-# Run the training container
-echo "===== Starting Docker Container ====="
-echo "Container name: $CONTAINER_NAME"
-echo "Docker image: $DOCKER_IMAGE_NAME"
-echo "Host project root: $HOST_PROJECT_ROOT"
-echo "Container project root: $CONTAINER_PROJECT_ROOT"
-echo "Docker version: $(docker --version)"
-echo "Available Docker images:"
-docker images | grep -E "(REPOSITORY|lmtk)" || echo "No lmtk images found"
-echo "======================================="
+# Ensure cache directories mirror container defaults
+export HF_DATASETS_CACHE="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/datasets"
+export HF_HOME="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface"
+export TRANSFORMERS_CACHE="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/transformers"
+export PYTORCH_TRANSFORMERS_CACHE="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/transformers"
+export WANDB_CACHE_DIR="$HOST_PROJECT_ROOT/tmp/wandb_cache"
+export WANDB_CONFIG_DIR="$HOST_PROJECT_ROOT/tmp/wandb_config"
 
-docker run \
-    --name "$CONTAINER_NAME" \
-    --gpus all \
-    --rm \
-    --network host \
-    --user "$USER_ID:$GROUP_ID" \
-    --volume "$HOST_PROJECT_ROOT:$CONTAINER_PROJECT_ROOT" \
-    --env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES" \
-    --env "PYTHONPATH=$CONTAINER_PROJECT_ROOT/src:$CONTAINER_PROJECT_ROOT:${PYTHONPATH:-}" \
-    --env "HF_DATASETS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/datasets" \
-    --env "HF_HOME=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface" \
-    --env "TRANSFORMERS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/transformers" \
-    --env "WANDB_PROJECT=$WANDB_PROJECT" \
-    --env "WANDB_ENTITY=$WANDB_ENTITY" \
-    --env "WANDB_API_KEY=$WANDB_API_KEY" \
-    --env "HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY" \
-    --env "HUGGINGFACEHUB_API_TOKEN=$HUGGINGFACE_API_KEY" \
-    --env "HF_TOKEN=$HUGGINGFACE_API_KEY" \
-    --env "WANDB_MODE=$WANDB_MODE" \
-    --env "SLURM_JOB_ID=$SLURM_JOB_ID" \
-    --env "SLURM_NODELIST=$SLURM_NODELIST" \
-    --env "USER=$USERNAME" \
-    --env "HOME=/home/$USERNAME" \
-    --env "LOGNAME=$USERNAME" \
-    --env "PYTHON_COMMAND=$PYTHON_COMMAND" \
-    --env "MAIN_SCRIPT=$MAIN_SCRIPT" \
-    --env "CONFIG_FILE=$CONFIG_FILE" \
-    --workdir "$CONTAINER_PROJECT_ROOT" \
-    "$DOCKER_IMAGE_NAME" \
-    /workspace/slurm/run_container.sh
+mkdir -p "$WANDB_CACHE_DIR" "$WANDB_CONFIG_DIR"
 
+# Normalise HF tokens for downstream libraries
+if [ -n "$HUGGINGFACE_API_KEY" ]; then
+    export HUGGINGFACEHUB_API_TOKEN="$HUGGINGFACE_API_KEY"
+    export HF_TOKEN="$HUGGINGFACE_API_KEY"
+fi
+
+if [ -n "${WANDB_API_KEY:-}" ]; then
+    export WANDB_API_KEY
+    export WANDB_MODE="${WANDB_MODE:-online}"
+else
+    export WANDB_MODE="disabled"
+fi
+
+TRAIN_CMD=("$PYTHON_COMMAND" "$MAIN_SCRIPT" "--config" "$CONFIG_PATH")
+
+echo "===== Launching Training ====="
+echo "Command: ${TRAIN_CMD[*]}"
+echo "Running with srun to leverage SLURM allocation"
+echo "================================"
+
+cd ..
+${TRAIN_CMD[@]}
 # Capture exit code
 EXIT_CODE=$?
 
@@ -329,20 +246,10 @@ echo "Job finished at: $(date)"
 if [ $EXIT_CODE -ne 0 ]; then
     echo "❌ Job failed with exit code: $EXIT_CODE"
     echo "===== Debugging Information ====="
-    echo "Docker images available:"
-    docker images | head -10
-    
-    echo "Recent Docker events:"
-    docker events --since="1h" --until="$(date --iso-8601=seconds)" | tail -10 || echo "No Docker events available"
-    
-    echo "Docker system info:"
-    docker system df || echo "Docker system info not available"
-    
-    echo "Testing Docker image again:"
-    docker run --rm --entrypoint /bin/echo "$DOCKER_IMAGE_NAME" "Test after failure" || echo "Image test failed"
-    
     echo "SLURM job details:"
     scontrol show job "$SLURM_JOB_ID" 2>/dev/null || echo "SLURM job details not available"
+    echo "Active modules:"
+    module list 2>/dev/null || echo "Module system not in use"
     echo "================================"
 else
     echo "✅ Job completed successfully"
