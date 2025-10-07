@@ -90,21 +90,15 @@ class BaseModel(L.LightningModule):
         if self.cli_logger.getEffectiveLevel() == logging.DEBUG:
             self._batch_validation(batch, "train")
             self._model_validation()
-        
-        if self.torch_dtype in (torch.bfloat16, torch.float16):
-            with torch.autocast(device_type="cuda", dtype=self.torch_dtype):
-                outputs = self.model(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask'],
-                    labels=batch['labels'],
-                )
-        else:
+
+        # CONVERTS THE INPUTS TO THE APPROPRIATE TYPE 
+        with self.fabric.autocast():
             outputs = self.model(
                 input_ids=batch['input_ids'],
                 attention_mask=batch['attention_mask'],
                 labels=batch['labels'],
             )
-        
+
         # Log training metrics periodically
         if hasattr(self, 'global_step') and self.global_step % 5 == 0:
             self.cli_logger.debug(f"Training step {self.global_step}: loss = {outputs.loss.item():.4f}")
