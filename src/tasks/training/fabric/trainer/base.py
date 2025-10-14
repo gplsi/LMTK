@@ -119,7 +119,7 @@ class FabricTrainerBase(ABC):
         This method configures the training strategy, sets up loggers, and then launches the training pipeline using Lightning Fabric.
         """
         self.cli_logger.info("Setting up FSDP strategy.")
-        
+        torch.set_float32_matmul_precision("high")
         # Debug logging for configuration values that might cause type issues
         config_keys_to_check = ['gradient_accumulation_steps', 'validations_per_epoch', 'max_epochs', 'max_steps', 'batch_size', 'eval_batch_size']
         for key in config_keys_to_check:
@@ -129,18 +129,23 @@ class FabricTrainerBase(ABC):
         
         strategy = self._setup_strategy()
         loggers = self._set_loggers()
+
         fabric = L.Fabric(
             devices=self.devices,
             strategy=strategy,
             precision=self.config.precision,
             loggers=loggers,
         )
+
+        self.cli_logger.info(f"Precision {self.config.precision}")
+
         self.hparams = {
             k: v
             for k, v in locals().items()
             if isinstance(v, (int, float, str)) and not k.startswith("_")
         }
         self.cli_logger.debug(self.hparams)
+
         fabric.launch(self._pipeline)
 
     def _set_loggers(self) -> list:
@@ -764,17 +769,12 @@ class FabricTrainerBase(ABC):
         with fabric.init_module():
             # Instantiate the model that inheriths from LightningModule
             self.model = self._instantiate_model()
+        
+
             
-            # Properly set up the model with fabric for FSDP
-            self.model = fabric.setup(self.model)
-            self.cli_logger.info(f"Time to SetUP model: {time.perf_counter() - t0:.02f} seconds.")
-        # GRADIENT CHECKPOINTING
-        if self.config.gradient_checkpointing:
-            self.model.model.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs={"use_reentrant": False}
-            )
-        else:
-            self.model.model.gradient_checkpointing_disable()
+        # Properly set up the model with fabric for FSDP TODO: check if this is the problem with Salamandra
+        self.model = fabric.setup(self.model)
+        self.cli_logger.info(f"Time to SetUp model: {time.perf_counter() - t0:.02f} seconds.")
 
         self.cli_logger.info(f"Time to instantiate model: {time.perf_counter() - t0:.02f} seconds.")
         # OPTIMIZER

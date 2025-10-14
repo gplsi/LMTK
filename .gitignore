@@ -43,6 +43,7 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
+.cache2
 nosetests.xml
 coverage.xml
 *.cover
@@ -183,3 +184,4 @@ converted/
 .windsurf/*
 /converted
 tokenized_visualizations
+.vscode/settings.json
