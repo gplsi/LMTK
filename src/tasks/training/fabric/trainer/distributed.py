@@ -57,12 +57,11 @@ class FSDP(FabricTrainerBase):
             # TO-DO WRAP invocation of policy and include it in resolve_fsdp_config
             # FSDP strategy for multiple devices
             from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-            policy = {LlamaDecoderLayer} #EMBEED TO REMOVE AN REFACTOR
-
-
+            policy = {LlamaDecoderLayer}
+            
             self.strategy = FSDPStrategy(
                 auto_wrap_policy=policy, # POLICY USED TO WRAP MODEL ACROSS DIFFERENT GPUs
-                activation_checkpointing_policy={LlamaDecoderLayer}, # ACTIVATION CHECKPOINTING POLICY TO SAVE UP MEMORY
+                activation_checkpointing_policy=policy, # ACTIVATION CHECKPOINTING POLICY TO SAVE UP MEMORY
                 state_dict_type="full",
                 limit_all_gathers=True,
                 cpu_offload=False,
