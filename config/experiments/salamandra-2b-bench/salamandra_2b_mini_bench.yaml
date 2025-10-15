@@ -1,11 +1,11 @@
 task: "clm_training"
-experiment_name: "llama3.2-3b-bench-continual"
+experiment_name: "salamandra2b-bench-continual"
 verbose_level: 3
 
 # Training data
 dataset:
   source: "local"
-  nameOrPath: "/workspace/data/tokenized/dc6-salamandra-2b"
+  nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc6-salamandra-2b"
   #nameOrPath: "/workspace/data/tokenized/anonymized-va-bench"
   format: "hf"
 
@@ -60,9 +60,9 @@ gradient_checkpointing: true
 
 # Wandb logging specific parameters
 logging_config: wandb
-wandb_project: "lmtk-benchmark-2"
+wandb_project: "lmtk-benchmark-hpc"
 wandb_entity: "gplsi_continual"
-wandb_run_name: "salamandra2b-bench-continual-8gpu-prueba-batch4"
+wandb_run_name: "salamandra2b-bench-continual-hpc"
 log_model: false
 log_iter_interval: 10
 
