@@ -23,6 +23,7 @@ GPU_COUNT=""
 MEMORY=""
 TIME_LIMIT=""
 PARTITION=""
+QOS=""
 JOB_NAME=""
 CPUS_PER_TASK=""
 NODES=""
@@ -47,6 +48,7 @@ GPU_COUNT="${GPU_COUNT:-2}"
 MEMORY="${MEMORY:-64G}"
 TIME_LIMIT="${TIME_LIMIT:-48:00:00}"
 PARTITION="${PARTITION:-dgx}"
+QOS="${QOS:-boost_qos_dbg}"
 JOB_NAME="${JOB_NAME:-lmtk}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 NODES="${NODES:-1}"
@@ -77,6 +79,7 @@ OPTIONAL:
     -m, --memory MEMORY          Memory to request (default: 64G)
     -t, --time TIME_LIMIT        Time limit (default: 48:00:00)
     -p, --partition PARTITION    SLURM partition (default: dgx)
+    -q, --qos QOS                SLURM QoS (default: boost_qos_dbg)
     -j, --job-name JOB_NAME      Job name (default: lmtk)
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
@@ -150,6 +153,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -p|--partition)
             PARTITION="$2"
+            shift 2
+            ;;
+        -q|--qos)
+            QOS="$2"
             shift 2
             ;;
         -j|--job-name)
@@ -278,6 +285,7 @@ EXPORT_VARS="${EXPORT_VARS},GPU_COUNT=$GPU_COUNT"
 EXPORT_VARS="${EXPORT_VARS},MEMORY=$MEMORY"
 EXPORT_VARS="${EXPORT_VARS},TIME_LIMIT=$TIME_LIMIT"
 EXPORT_VARS="${EXPORT_VARS},PARTITION=$PARTITION"
+EXPORT_VARS="${EXPORT_VARS},QOS=$QOS"
 EXPORT_VARS="${EXPORT_VARS},JOB_NAME=$JOB_NAME"
 EXPORT_VARS="${EXPORT_VARS},CPUS_PER_TASK=$CPUS_PER_TASK"
 EXPORT_VARS="${EXPORT_VARS},NODES=$NODES"
@@ -291,6 +299,7 @@ fi
 SBATCH_CMD="sbatch"
 SBATCH_CMD="$SBATCH_CMD --job-name=$JOB_NAME"
 SBATCH_CMD="$SBATCH_CMD --partition=$PARTITION"
+SBATCH_CMD="$SBATCH_CMD --qos=$QOS"
 SBATCH_CMD="$SBATCH_CMD --gres=gpu:$GPU_COUNT"
 SBATCH_CMD="$SBATCH_CMD --mem=$MEMORY"
 SBATCH_CMD="$SBATCH_CMD --time=$TIME_LIMIT"
@@ -324,6 +333,7 @@ echo "Config File: $CONFIG_FILE"
 echo "Full Config Path: $FULL_CONFIG_PATH"
 echo "Job Name: $JOB_NAME"
 echo "Partition: $PARTITION"
+echo "QoS: $QOS"
 echo "GPU Count: $GPU_COUNT"
 echo "Memory: $MEMORY"
 echo "Time Limit: $TIME_LIMIT"
