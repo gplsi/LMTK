@@ -160,17 +160,33 @@ class FabricTrainerBase(ABC):
             self.config.model_name, 
             flush_logs_every_n_steps=self.config.get("log_iter_interval", 100)
         )
-         
-        if self.config.get("logging_config", None) == "wandb":
+        
+        logging_config = self.config.get("logging_config", None)
+        raw_wandb_mode = getattr(self.config, "wandb_mode", None)
+        wandb_mode = "offline"
+        if raw_wandb_mode:
+            wandb_mode = str(raw_wandb_mode).strip().lower()
+            if wandb_mode not in {"offline", "online"}:
+                wandb_mode = "offline"
+
+        if logging_config == "wandb":
             # Use default values if WandB config is not provided
             wandb_entity = getattr(self.config, 'wandb_entity', None)
             wandb_project = getattr(self.config, 'wandb_project', 'continual-pretraining')
             log_model = getattr(self.config, 'log_model', False)
             
+            if wandb_mode == "offline":
+                os.environ["WANDB_MODE"] = "offline"
+                self.cli_logger.info("WandB logging set to offline mode; no API key required")
+            else:
+                if os.environ.get("WANDB_MODE") == "offline":
+                    os.environ.pop("WANDB_MODE", None)
+            
             wandb_logger = WandbLogger(
                 entity=wandb_entity, 
-                project=wandb_project,                
-                log_model=log_model
+                project=wandb_project,
+                log_model=log_model,
+                offline=(wandb_mode == "offline")
             )
             return [logger, wandb_logger]
         return [logger]

@@ -33,6 +33,8 @@ OUTPUT_DIR=""
 OUTPUT_FILE_PATTERN=""
 ERROR_FILE_PATTERN=""
 DRY_RUN=false
+CONFIG_LOGGING_MODE=""
+CONFIG_WANDB_MODE=""
 
 # Load configuration file defaults if it exists
 SLURM_CONFIG_FILE="$SCRIPT_DIR/slurm_config.env"
@@ -52,7 +54,7 @@ QOS="${QOS:-boost_qos_dbg}"
 JOB_NAME="${JOB_NAME:-lmtk}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 NODES="${NODES:-1}"
-NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
+NTASKS_PER_NODE="${NTASKS_PER_NODE:-}"
 OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-%j_lmtk.out}"
 ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-%j_lmtk.err}"
 
@@ -83,6 +85,7 @@ OPTIONAL:
     -j, --job-name JOB_NAME      Job name (default: lmtk)
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
+    --ntasks-per-node TASKS      Number of tasks per node (default: matches GPU count)
     --nodelist NODELIST          Specific nodes to use (optional, e.g., lovelace.iuii.ua.es)
     -o, --output OUTPUT_DIR      Output directory name (optional)
     -d, --dry-run                Show the command that would be executed without running it
@@ -171,6 +174,10 @@ while [[ $# -gt 0 ]]; do
             NODES="$2"
             shift 2
             ;;
+        --ntasks-per-node)
+            NTASKS_PER_NODE="$2"
+            shift 2
+            ;;
         --nodelist)
             NODELIST="$2"
             shift 2
@@ -234,6 +241,51 @@ if [[ ! -f "$FULL_CONFIG_PATH" ]]; then
     exit 1
 fi
 
+# Extract logging configuration details from the experiment file
+IFS=$'\n' read -r CONFIG_LOGGING_MODE CONFIG_WANDB_MODE < <(python - <<'PY' "$FULL_CONFIG_PATH"
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+logging_config = ""
+wandb_mode = ""
+
+try:
+    import yaml  # type: ignore
+except ModuleNotFoundError:
+    yaml = None
+
+if yaml is not None:
+    with path.open("r") as f:
+        data = yaml.safe_load(f) or {}
+    logging_config = data.get("logging_config") or ""
+    wandb_mode = data.get("wandb_mode") or ""
+else:
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("logging_config:"):
+            logging_config = stripped.split(":", 1)[1].strip().strip("'\"")
+        elif stripped.startswith("wandb_mode:"):
+            wandb_mode = stripped.split(":", 1)[1].strip().strip("'\"")
+
+print(logging_config)
+print(wandb_mode)
+PY
+)
+
+CONFIG_LOGGING_MODE="${CONFIG_LOGGING_MODE,,}"
+CONFIG_WANDB_MODE="${CONFIG_WANDB_MODE,,}"
+
+if [[ -z "$CONFIG_WANDB_MODE" ]]; then
+    CONFIG_WANDB_MODE="offline"
+fi
+
+if [[ "$CONFIG_LOGGING_MODE" == "wandb" && "$CONFIG_WANDB_MODE" == "offline" ]]; then
+    export WANDB_MODE="offline"
+else
+    unset WANDB_MODE
+fi
+
 # Check if WandB key is set via environment variable if not provided via command line
 if [[ -z "$WANDB_API_KEY" && -n "${WANDB_API_KEY:-}" ]]; then
     WANDB_API_KEY="${WANDB_API_KEY}"
@@ -250,13 +302,20 @@ if [[ -z "$HUGGINGFACE_API_KEY" ]]; then
     fi
 fi
 
-# Warn about WandB key but don't fail
+# Warn about WandB key but don't fail (unless offline mode requested)
 if [[ -z "$WANDB_API_KEY" ]]; then
-    echo "⚠️  WARNING: No WandB API key provided."
-    echo "   - Experiment tracking will be disabled"
-    echo "   - To enable WandB, use: $0 -c $CONFIG_FILE -k your_wandb_key"
-    echo "   - Or set environment variable: export WANDB_API_KEY=your_key"
-    echo ""
+    if [[ "$CONFIG_LOGGING_MODE" == "wandb" && "$CONFIG_WANDB_MODE" != "offline" ]]; then
+        echo "⚠️  WARNING: No WandB API key provided."
+        echo "   - Experiment tracking will be disabled"
+        echo "   - To enable WandB, use: $0 -c $CONFIG_FILE -k your_wandb_key"
+        echo "   - Or set environment variable: export WANDB_API_KEY=your_key"
+        echo ""
+    fi
+fi
+
+# Default ntasks-per-node to the GPU count if not explicitly provided
+if [[ -z "$NTASKS_PER_NODE" ]]; then
+    NTASKS_PER_NODE="$GPU_COUNT"
 fi
 
 # Always pass CONFIG_FILE relative to PROJECT_ROOT for the container
@@ -293,6 +352,10 @@ EXPORT_VARS="${EXPORT_VARS},NTASKS_PER_NODE=$NTASKS_PER_NODE"
 
 if [[ -n "$NODELIST" ]]; then
     EXPORT_VARS="${EXPORT_VARS},NODELIST=$NODELIST"
+fi
+
+if [[ "$CONFIG_LOGGING_MODE" == "wandb" && "$CONFIG_WANDB_MODE" == "offline" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},WANDB_MODE=offline"
 fi
 
 # Build the sbatch command with proper SLURM directives
@@ -339,6 +402,10 @@ echo "Memory: $MEMORY"
 echo "Time Limit: $TIME_LIMIT"
 echo "CPUs per Task: $CPUS_PER_TASK"
 echo "Nodes: $NODES"
+echo "Tasks per Node: $NTASKS_PER_NODE"
+if [[ "$CONFIG_LOGGING_MODE" == "wandb" ]]; then
+    echo "WandB Mode: $CONFIG_WANDB_MODE"
+fi
 if [[ -n "$NODELIST" ]]; then
     echo "Nodelist: $NODELIST"
 fi

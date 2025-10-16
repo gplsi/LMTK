@@ -23,6 +23,12 @@ allOf:
         default: none
         description: "Wandb run name for the experiment (optional, auto-generated if not provided)"
 
+      wandb_mode:
+        type: string
+        enum: ["online", "offline"]
+        default: "offline"
+        description: "Set to 'offline' to store WandB logs locally without requiring an API key"
+
       log_model:
         type: boolean
         default: false
