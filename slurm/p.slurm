@@ -235,7 +235,15 @@ echo "Running with srun to leverage SLURM allocation"
 echo "================================"
 
 cd ..
-${TRAIN_CMD[@]}
+SRUN_TOTAL_TASKS="${TOTAL_TASKS:-${SLURM_NTASKS:-}}"
+SRUN_ARGS=()
+if [[ -n "$SRUN_TOTAL_TASKS" ]]; then
+    SRUN_ARGS+=(--ntasks="$SRUN_TOTAL_TASKS")
+fi
+if [[ -n "${NTASKS_PER_NODE:-}" ]]; then
+    SRUN_ARGS+=(--ntasks-per-node="$NTASKS_PER_NODE")
+fi
+srun "${SRUN_ARGS[@]}" "${TRAIN_CMD[@]}"
 # Capture exit code
 EXIT_CODE=$?
 
