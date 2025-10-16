@@ -47,22 +47,12 @@ save_on_validate: false
 
 
 # Distributed_strategy
-parallelization_strategy: "fsdp"
+parallelization_strategy: "ddp"
 
-# FSDP specific parameters
-auto_wrap_policy: "llama"
-sharding_strategy: "FULL_SHARD"
-state_dict_type: "sharded"
-limit_all_gathers: true
-cpu_offload: false
 num_workers: 4
-gradient_checkpointing: true
 
-# Wandb logging specific parameters
-logging_config: wandb
-wandb_project: "lmtk-benchmark-hpc"
-wandb_entity: "gplsi_continual"
-wandb_run_name: "salamandra2b-bench-continual-hpc"
+#logging specific parameters
+logging_config: none
 log_model: false
 log_iter_interval: 10
 
