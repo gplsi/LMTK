@@ -318,14 +318,9 @@ if [[ -z "$NTASKS_PER_NODE" ]]; then
     NTASKS_PER_NODE="$GPU_COUNT"
 fi
 
-# Derive total number of tasks so SLURM and srun launch one process per device
+# Default total ntasks to the GPU count if not explicitly provided
 if [[ -z "${NTASKS:-}" ]]; then
-    if [[ "$NODES" =~ ^[0-9]+$ && "$NTASKS_PER_NODE" =~ ^[0-9]+$ ]]; then
-        NTASKS=$(( NODES * NTASKS_PER_NODE ))
-    else
-        echo "❌ ERROR: Unable to derive --ntasks because NODES ($NODES) or NTASKS_PER_NODE ($NTASKS_PER_NODE) is not numeric."
-        exit 1
-    fi
+    NTASKS="$GPU_COUNT"
 fi
 
 # Always pass CONFIG_FILE relative to PROJECT_ROOT for the container
