@@ -242,7 +242,19 @@ if [[ ! -f "$FULL_CONFIG_PATH" ]]; then
 fi
 
 # Extract logging configuration details from the experiment file
-IFS=$'\n' read -r CONFIG_LOGGING_MODE CONFIG_WANDB_MODE < <(python - <<'PY' "$FULL_CONFIG_PATH"
+CONFIG_PYTHON="${PYTHON_COMMAND:-}"
+if [[ -z "$CONFIG_PYTHON" ]]; then
+    if command -v python3 >/dev/null 2>&1; then
+        CONFIG_PYTHON="python3"
+    elif command -v python >/dev/null 2>&1; then
+        CONFIG_PYTHON="python"
+    else
+        echo "❌ ERROR: No python interpreter found to inspect config file." >&2
+        exit 1
+    fi
+fi
+
+IFS=$'\n' read -r CONFIG_LOGGING_MODE CONFIG_WANDB_MODE < <("$CONFIG_PYTHON" - <<'PY' "$FULL_CONFIG_PATH"
 import sys
 from pathlib import Path
 
