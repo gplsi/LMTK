@@ -86,6 +86,7 @@ OPTIONAL:
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
     --ntasks-per-node TASKS      Number of tasks per node (default: matches GPU count)
+    --ntasks TASKS               Total number of tasks (default: matches GPU count)
     --nodelist NODELIST          Specific nodes to use (optional, e.g., lovelace.iuii.ua.es)
     -o, --output OUTPUT_DIR      Output directory name (optional)
     -d, --dry-run                Show the command that would be executed without running it
@@ -176,6 +177,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ntasks-per-node)
             NTASKS_PER_NODE="$2"
+            shift 2
+            ;;
+        --ntasks)
+            NTASKS="$2"
             shift 2
             ;;
         --nodelist)
@@ -331,7 +336,7 @@ if [[ -z "$NTASKS_PER_NODE" ]]; then
 fi
 
 # Default total ntasks to the GPU count if not explicitly provided
-if [[ -z "${NTASKS:-}" ]]; then
+if [[ -z "$NTASKS" ]]; then
     NTASKS="$GPU_COUNT"
 fi
 
@@ -422,6 +427,7 @@ echo "Time Limit: $TIME_LIMIT"
 echo "CPUs per Task: $CPUS_PER_TASK"
 echo "Nodes: $NODES"
 echo "Tasks per Node: $NTASKS_PER_NODE"
+echo "Total Tasks: $NTASKS"
 if [[ "$CONFIG_LOGGING_MODE" == "wandb" ]]; then
     echo "WandB Mode: $CONFIG_WANDB_MODE"
 fi
