@@ -214,6 +214,8 @@ class FabricTrainerBase(ABC):
             checkpoint_name = f"e-{current_epoch:03d}-gs-{global_iteration:06d}.pth"
             
             output_checkpoint_path = Path(self.config.output_dir, checkpoint_name)
+
+            self.cli_logger.info(f"Saving checkpoint to {output_checkpoint_path}")
             
             # Log checkpoint saving info
             progress_info = ""
