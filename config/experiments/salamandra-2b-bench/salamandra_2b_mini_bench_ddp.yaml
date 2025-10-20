@@ -10,7 +10,7 @@ dataset:
   format: "hf"
 
 # Output dir
-output_dir: "output/salamadnra-2b-test_llama-bench/"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/salamadnra-2b-test_llama-bench"
 precision: "bf16-true"
 # Model
 model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
@@ -21,9 +21,9 @@ static_graph: false
 
 # Training parameters
 number_epochs: 1
-batch_size: 3
+batch_size: 2
 gradient_accumulation: true
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 16
 grad_clip: 1.0
 
 # Optimizer parameters
