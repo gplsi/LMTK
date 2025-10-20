@@ -5,16 +5,15 @@ from pathlib import Path
 # Get the project root directory (parent of src/)
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-# Get temporary directory from the place that is been launching
-tmpdir = Path(os.environ.get("TMPDIR","/tmp"))
+
 
 # Set cache directories relative to project root
 os.environ["HF_DATASETS_CACHE"] = str(PROJECT_ROOT / ".cache" / "datasets")
 os.environ["HF_HOME"] = str(PROJECT_ROOT / ".cache" / "huggingface")
 os.environ["TRANSFORMERS_CACHE"] = str(PROJECT_ROOT / ".cache" / "transformers")
 os.environ["PYTORCH_TRANSFORMERS_CACHE"] = str(PROJECT_ROOT / ".cache" / "transformers")
-os.environ["WANDB_CACHE_DIR"] = str(tmpdir / "wandb_cache") # changed in order to save up memory
-os.environ["WANDB_CONFIG_DIR"] = str(tmpdir  / "wandb_config")
+os.environ["WANDB_CACHE_DIR"] = str(PROJECT_ROOT / ".cache" / "wandb_cache")
+os.environ["WANDB_CONFIG_DIR"] = str(PROJECT_ROOT / "wandb" / "wandb_config")
 
 from box import Box
 import yaml
