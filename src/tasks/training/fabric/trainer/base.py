@@ -244,7 +244,6 @@ class FabricTrainerBase(ABC):
                     progress_info = f" (step {global_iteration} in epoch {current_epoch})"
             
             self.cli_logger.info(f"Saving checkpoint to {checkpoint_name!r}{progress_info}")
-            self.cli_logger.info(f"Checkpoint state: {self.state}")
             fabric.save(output_checkpoint_path, self.state)
             self.cli_logger.info(f"Checkpoint saved successfully to {str(output_checkpoint_path)}")
             

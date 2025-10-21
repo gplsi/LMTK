@@ -10,7 +10,7 @@ dataset:
   format: "hf"
 
 # Output dir
-output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/salamadnra-2b-test_llama-bench"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/salamadnra-2b-test_llama-bench/ddp/"
 precision: "bf16-true"
 # Model
 model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"

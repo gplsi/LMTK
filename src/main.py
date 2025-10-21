@@ -14,7 +14,8 @@ os.environ["TRANSFORMERS_CACHE"] = str(PROJECT_ROOT / ".cache" / "transformers")
 os.environ["PYTORCH_TRANSFORMERS_CACHE"] = str(PROJECT_ROOT / ".cache" / "transformers")
 os.environ["WANDB_CACHE_DIR"] = str(PROJECT_ROOT / ".cache" / "wandb_cache")
 os.environ["WANDB_CONFIG_DIR"] = str(PROJECT_ROOT / "wandb" / "wandb_config")
-os.environ["TMPDIR"] = str(PROJECT_ROOT / ".cache" / "tmp")
+os.environ["TMPDIR"] = "/leonardo_scratch/large/userexternal/sgaliano/tmp"
+
 
 from box import Box
 import yaml
