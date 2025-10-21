@@ -247,6 +247,9 @@ srun "${SRUN_ARGS[@]}" "${TRAIN_CMD[@]}"
 # Capture exit code
 EXIT_CODE=$?
 
+#REMOVE TMP DIRECTORY MAPPED
+rm -R /leonardo_scratch/large/userexternal/sgaliano/tmp/*
+
 echo "===== Job Completion ====="
 echo "Container finished with exit code: $EXIT_CODE"
 echo "Job finished at: $(date)"
