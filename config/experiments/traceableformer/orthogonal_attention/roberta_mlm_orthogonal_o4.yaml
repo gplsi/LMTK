@@ -1,5 +1,5 @@
 task: "mlm_training"
-experiment_name: "wikitext103-roberta-mlm-ddp-attn-orthogonal-sparse-window256"
+experiment_name: "wikitext103-roberta-mlm-ddp-attn-orthogonal-o4"
 verbose_level: 3
 
 # Model configuration
@@ -22,13 +22,10 @@ roberta:
 
 modifications:
   replace_attention:
-    mode: "orthogonal_sparse"
-    cheb_order: 5
-    basis_name: "dct"
-    basis_rank: 512
-    sparsity: "window"
-    topk: 64
-    window: 256
+    mode: "orthogonal"
+    cheb_order: 4
+    basis_name: "legendre"
+    basis_rank: 32
 
 dataset:
   source: local
@@ -39,7 +36,7 @@ number_epochs: 5
 batch_size: 16
 num_workers: 6
 gradient_checkpointing: false
-output_dir: "/workspace/outputs/traceableformer/roberta_mlm_orthogonal_sparse_window256"
+output_dir: "/workspace/outputs/traceableformer/roberta_mlm_orthogonal_o5_r256"
 
 validate_after_epoch: true
 validate_on_end: true
