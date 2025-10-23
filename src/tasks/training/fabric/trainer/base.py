@@ -118,7 +118,6 @@ class FabricTrainerBase(ABC):
 
         This method configures the training strategy, sets up loggers, and then launches the training pipeline using Lightning Fabric.
         """
-        self.cli_logger.info("Setting up FSDP strategy.")
         torch.set_float32_matmul_precision("high")
         # Debug logging for configuration values that might cause type issues
         config_keys_to_check = ['gradient_accumulation_steps', 'validations_per_epoch', 'max_epochs', 'max_steps', 'batch_size', 'eval_batch_size']
