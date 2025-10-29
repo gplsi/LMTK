@@ -42,8 +42,10 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
-.cache
-.cache2
+.cache/
+.cache2/
+.cache/*/
+.cache2/*
 nosetests.xml
 coverage.xml
 *.cover
