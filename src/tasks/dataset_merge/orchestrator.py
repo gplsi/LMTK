@@ -85,14 +85,42 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
             
             # Step 3: Check compatibility
             self.logger.info("🔍 Checking dataset compatibility...")
-            compatibility_info = self.compatibility_checker.check_compatibility(datasets)
+            strict_compatibility = getattr(self.config, 'strict_compatibility', True)
+            required_features = list(getattr(self.config, 'required_features', []))
+            feature_length_constraints = getattr(self.config, 'feature_length_constraints', {}) or {}
+            feature_length_constraints = dict(feature_length_constraints)
+            
+            sequence_length = getattr(self.config, 'sequence_length', None)
+            if sequence_length is not None:
+                default_sequence_features = getattr(
+                    self.config,
+                    'sequence_length_features',
+                    ['input_ids', 'labels', 'attention_mask']
+                )
+                if isinstance(default_sequence_features, (list, tuple)):
+                    for feature_name in default_sequence_features:
+                        if feature_name:
+                            feature_length_constraints.setdefault(feature_name, sequence_length)
+                else:
+                    self.logger.warning(
+                        "sequence_length_features must be a list or tuple; skipping custom feature list"
+                    )
+                if 'input_ids' not in required_features:
+                    required_features.append('input_ids')
+            
+            compatibility_info = self.compatibility_checker.check_compatibility(
+                datasets,
+                strict=strict_compatibility,
+                required_features=required_features or None,
+                feature_length_constraints=feature_length_constraints or None,
+            )
             
             # Step 4: Sample datasets according to percentages
             self.logger.info("📊 Sampling datasets...")
             sampled_datasets = []
             shuffle_seed = getattr(self.config, 'shuffle_seed', 42)
             
-            total_input = sum(compatibility_info.get('total_examples', 0) for _ in datasets)
+            total_input = sum(self._get_dataset_size(dataset) for dataset in datasets)
             total_output = 0
             
             for i, (dataset, dataset_config) in enumerate(zip(datasets, self.config.datasets)):
@@ -102,7 +130,7 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
                 sampled = self.sampler.sample_dataset(dataset, percentage, shuffle_seed + i)
                 sampled_datasets.append(sampled)
                 
-                sampled_size = sampled.num_rows if hasattr(sampled, 'num_rows') else sum(len(split) for split in sampled.values())
+                sampled_size = self._get_dataset_size(sampled)
                 total_output += sampled_size
                 
                 self.logger.info(f"✓ {Path(path).name}: {sampled_size:,} examples ({percentage*100:.1f}%)")
@@ -118,7 +146,7 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
             dataset_handler.save_to_disk(merged_dataset, str(output_path))
             
             # Step 7: Final summary
-            final_size = merged_dataset.num_rows if hasattr(merged_dataset, 'num_rows') else sum(len(split) for split in merged_dataset.values())
+            final_size = self._get_dataset_size(merged_dataset)
             
             if isinstance(merged_dataset, DatasetDict):
                 split_info = {split: len(data) for split, data in merged_dataset.items()}
@@ -136,3 +164,12 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
             import traceback
             self.logger.error(f"Traceback:\n{traceback.format_exc()}")
             raise
+
+    @staticmethod
+    def _get_dataset_size(dataset: Union[Dataset, DatasetDict]) -> int:
+        """Return the total number of examples for a dataset or dataset dict."""
+        if isinstance(dataset, DatasetDict):
+            return sum(len(split) for split in dataset.values())
+        if hasattr(dataset, "num_rows"):
+            return dataset.num_rows
+        return len(dataset)

@@ -1,0 +1,34 @@
+# Simple Dataset Merge Configuration
+task: "dataset_merge"
+experiment_name: "simple_merged_dc4_dc5_dc6"
+verbose_level: 3
+
+# Fixed sequence length for all datasets
+sequence_length: 2048
+
+# Datasets to merge with their sampling percentages
+datasets:
+  - path: "data/tokenized/dc4"  # DC4
+    percentage: 1.0  # 100% of this dataset
+    name: "dc4"
+  
+  - path: "data/tokenized/dc5"  # Use DC5
+    percentage: 1  # 100% of this dataset
+    name: "dc5"
+
+  - path: "data/tokenized/dc6"  # Use DC6
+    percentage: 1  # 100% of this dataset
+    name: "dc6"
+
+# Output path for the merged dataset
+output_path: "data/tokenized/dc3_corrected"
+
+# Shuffling configuration
+shuffle_seed: 42
+final_shuffle_seed: 123
+
+# Validation options
+strict_compatibility: true
+
+# Seed for reproducibility
+seed: 42
