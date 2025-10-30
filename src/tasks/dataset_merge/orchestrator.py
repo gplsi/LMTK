@@ -37,8 +37,13 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
         ))
         
         # Initialize modular components
+        sampler_config = getattr(self.config, 'sampler', {}) or {}
         self.compatibility_checker = DatasetCompatibilityChecker(self.logger)
-        self.sampler = DatasetSampler(self.logger)
+        self.sampler = DatasetSampler(
+            self.logger,
+            shuffle_full_sample=sampler_config.get('shuffle_full_sample', True),
+            indices_cache_dir=sampler_config.get('indices_cache_dir'),
+        )
         self.merger = DatasetMerger(self.logger)
         
     def validate_config(self) -> None:
@@ -108,6 +113,8 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
                 if 'input_ids' not in required_features:
                     required_features.append('input_ids')
             
+            required_features = list(dict.fromkeys(required_features))
+            
             compatibility_info = self.compatibility_checker.check_compatibility(
                 datasets,
                 strict=strict_compatibility,
@@ -122,12 +129,20 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
             
             total_input = sum(self._get_dataset_size(dataset) for dataset in datasets)
             total_output = 0
+            bypass_sampler = self._should_bypass_sampler()
+            if bypass_sampler:
+                self.logger.info("⚡ All datasets use 100% sampling without forced shuffles – bypassing sampler step")
+            else:
+                self.logger.info("Sampling step engaged (percentages != 100%% or full-sample shuffle requested)")
             
             for i, (dataset, dataset_config) in enumerate(zip(datasets, self.config.datasets)):
                 percentage = dataset_config.percentage
                 path = dataset_config.path
                 
-                sampled = self.sampler.sample_dataset(dataset, percentage, shuffle_seed + i)
+                if bypass_sampler:
+                    sampled = dataset
+                else:
+                    sampled = self.sampler.sample_dataset(dataset, percentage, shuffle_seed + i)
                 sampled_datasets.append(sampled)
                 
                 sampled_size = self._get_dataset_size(sampled)
@@ -139,11 +154,19 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
             self.logger.info("🔗 Merging datasets...")
             final_shuffle_seed = getattr(self.config, 'final_shuffle_seed', shuffle_seed + 999)
             merged_dataset = self.merger.merge_datasets(sampled_datasets, final_shuffle_seed)
+            merged_dataset = self._flatten_indices_if_needed(merged_dataset)
             
             # Step 6: Save merged dataset
             output_path = Path(self.config.output_path)
             self.logger.info(f"💾 Saving merged dataset to {output_path}")
-            dataset_handler.save_to_disk(merged_dataset, str(output_path))
+            save_config = getattr(self.config, 'save', {}) or {}
+            dataset_handler.save_to_disk(
+                merged_dataset,
+                str(output_path),
+                max_shard_size=save_config.get('max_shard_size'),
+                num_shards=save_config.get('num_shards'),
+                num_proc=save_config.get('num_proc'),
+            )
             
             # Step 7: Final summary
             final_size = self._get_dataset_size(merged_dataset)
@@ -164,7 +187,7 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
             import traceback
             self.logger.error(f"Traceback:\n{traceback.format_exc()}")
             raise
-
+    
     @staticmethod
     def _get_dataset_size(dataset: Union[Dataset, DatasetDict]) -> int:
         """Return the total number of examples for a dataset or dataset dict."""
@@ -173,3 +196,56 @@ class DatasetMergeOrchestrator(BaseOrchestrator):
         if hasattr(dataset, "num_rows"):
             return dataset.num_rows
         return len(dataset)
+    
+    def _should_bypass_sampler(self) -> bool:
+        """
+        Determine whether sampling can be skipped entirely.
+        
+        We bypass the sampler when every dataset requests 100% sampling and the sampler
+        configuration does not force shuffling for full samples. This keeps the datasets
+        in their original contiguous form for faster downstream merging.
+        """
+        sampler_cfg = getattr(self.config, 'sampler', {}) or {}
+        if sampler_cfg.get('shuffle_full_sample', True):
+            self.logger.debug("Sampler bypass disabled: sampler.shuffle_full_sample=True")
+            return False
+        
+        for dataset_cfg in self.config.datasets:
+            percentage = getattr(dataset_cfg, 'percentage', None)
+            if not self._is_percentage_full(percentage):
+                dataset_name = getattr(dataset_cfg, 'name', str(dataset_cfg))
+                self.logger.debug(
+                    "Sampler bypass disabled: dataset '%s' uses percentage=%s",
+                    dataset_name,
+                    percentage,
+                )
+                return False
+        
+        return True
+
+    @staticmethod
+    def _is_percentage_full(percentage: Union[int, float]) -> bool:
+        """Return True if percentage corresponds to a full (100%) sample."""
+        try:
+            return abs(float(percentage) - 1.0) < 1e-9
+        except (TypeError, ValueError):
+            return False
+    
+    def _flatten_indices_if_needed(self, dataset: Union[Dataset, DatasetDict]) -> Union[Dataset, DatasetDict]:
+        """
+        Flatten dataset indices to avoid cascaded reference lookups when saving.
+        This trades a single contiguous materialisation for significantly faster disk writes.
+        """
+        if isinstance(dataset, DatasetDict):
+            flattened = {}
+            for split, split_data in dataset.items():
+                if hasattr(split_data, "flatten_indices"):
+                    self.logger.debug("Flattening indices for split '%s'", split)
+                    flattened[split] = split_data.flatten_indices()
+                else:
+                    flattened[split] = split_data
+            return DatasetDict(flattened)
+        if hasattr(dataset, "flatten_indices"):
+            self.logger.debug("Flattening indices for merged dataset")
+            return dataset.flatten_indices()
+        return dataset

@@ -29,6 +29,7 @@ from functools import partial
 from enum import IntEnum
 from src.utils.logging import VerboseLevel, get_logger
 from src.utils.dataset.utils import SUPPORTED_EXTENSIONS, scan_directory
+from src.utils import get_optimal_thread_count
 
 
 class DatasetStorage:
@@ -414,11 +415,20 @@ class DatasetStorage:
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.logger.info(f"Saving dataset to '{path}'")
+        effective_max_shard_size = max_shard_size or "2GB"
+        effective_num_proc = num_proc or max(1, get_optimal_thread_count())
+
+        self.logger.info(
+            "Saving dataset to '%s' (max_shard_size=%s, num_shards=%s, num_proc=%s)",
+            path,
+            effective_max_shard_size,
+            num_shards,
+            effective_num_proc,
+        )
         dataset.save_to_disk(
             str(path),
-            max_shard_size=max_shard_size,
+            max_shard_size=effective_max_shard_size,
             num_shards=num_shards,
-            num_proc=num_proc,
+            num_proc=effective_num_proc,
         )
         return path
