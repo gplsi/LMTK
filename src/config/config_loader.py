@@ -51,7 +51,7 @@ class ConfigValidator:
         for schema_path in self.schema_dir.rglob("*.schema.yaml"):
             with open(schema_path, 'r') as f:
                 schema = yaml.safe_load(f)
-                
+
                 # Store with full resolved path
                 schema_id = f"file://{schema_path.resolve()}"
                 self.schema_store[schema_id] = schema
@@ -60,7 +60,7 @@ class ConfigValidator:
                 relative_path = schema_path.relative_to(self.schema_dir)
                 relative_id = f"file://{self.schema_dir.resolve()}/{relative_path}"
                 self.schema_store[relative_id] = schema
-                
+
                 # Store with just the relative path for direct $ref resolution
                 self.schema_store[str(relative_path)] = schema
 

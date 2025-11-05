@@ -298,15 +298,29 @@ class DatasetStorage:
         if not os.path.isdir(files_path):
             raise ValueError(f"Invalid directory path: {files_path}.")
             
-        # Set text_key if specified in file_config
-        self.text_key = None  # Reset text_key
-        if file_config and "text_key" in file_config:
-            self.text_key = file_config.get("text_key")
-            self.logger.info(f"Using text_key: {self.text_key} for JSON/JSONL files")
-        else:
-            format_str = file_config.get("format") if file_config else None
+        # Track optional extraction hints defined in config
+        self.text_key = None  # Reset text_key for JSON/JSONL
+        text_column_hint = None
+        if file_config:
+            format_str = file_config.get("format")
+            text_key = file_config.get("text_key")
+            text_column_option = file_config.get("text_column")
+
             if format_str in ["json", "jsonl"]:
-                self.logger.info("No text_key specified for JSON/JSONL files, using entire JSON as content")
+                if text_key:
+                    self.text_key = text_key
+                    self.logger.info(f"Using text_key: {self.text_key} for JSON/JSONL files")
+                else:
+                    self.logger.info("No text_key specified for JSON/JSONL files, using entire JSON as content")
+            else:
+                # For non-JSON formats allow either explicit text_column or legacy text_key hint
+                text_column_hint = text_column_option or text_key
+
+            # If format is unspecified or explicitly "any", fall back to provided hints
+            if format_str in (None, "", "any"):
+                text_column_hint = text_column_hint or text_column_option or text_key
+        else:
+            format_str = None
 
         self.logger.info(
             f"Processing files from '{files_path}' and grouping by file extension."
@@ -330,7 +344,16 @@ class DatasetStorage:
 
             process_method = self.extension_to_method.get(extension)
             if process_method:
-                datasets.append(process_method(files))
+                processed_dataset = process_method(files)
+
+                column_hint = None
+                if text_column_hint and extension not in ["json", "jsonl"]:
+                    column_hint = text_column_hint
+
+                if column_hint:
+                    processed_dataset = self._ensure_text_column(processed_dataset, column_hint)
+
+                datasets.append(processed_dataset)
             else:
                 self.logger.error(
                     f"Could not find Extension processing method for: '{extension}'"
@@ -398,6 +421,60 @@ class DatasetStorage:
             raise ValueError(f"Invalid directory path: {path}.")
 
         return load_from_disk(path)
+
+    def _ensure_text_column(
+        self,
+        dataset: Union[HFDataset, DatasetDict],
+        text_column: Optional[str],
+        target_column: str = "text",
+    ) -> Union[HFDataset, DatasetDict]:
+        """Ensure the dataset exposes a canonical text column.
+
+        When non-JSON loaders return datasets they typically preserve the original column names.
+        This helper applies the ``text_column``/``text_key`` hints defined in configuration files
+        so downstream tokenizers can always rely on a ``text`` column being present.
+
+        Args:
+            dataset: Dataset or DatasetDict returned by HuggingFace ``load_dataset``.
+            text_column: Name of the column that contains the raw text. If ``None`` the dataset
+                is returned unchanged.
+            target_column: Canonical column name expected by the tokenization pipeline.
+
+        Returns:
+            The dataset with a guaranteed ``target_column`` column.
+
+        Raises:
+            ValueError: If ``text_column`` is not found or if renaming would overwrite an
+                existing ``target_column`` column.
+        """
+
+        if text_column is None:
+            return dataset
+
+        def _rename(ds: HFDataset) -> HFDataset:
+            if text_column == target_column:
+                if target_column not in ds.column_names:
+                    raise ValueError(
+                        f"Column '{text_column}' not found in dataset columns: {ds.column_names}"
+                    )
+                return ds
+
+            if text_column not in ds.column_names:
+                raise ValueError(
+                    f"Column '{text_column}' not found in dataset columns: {ds.column_names}"
+                )
+            if target_column in ds.column_names:
+                raise ValueError(
+                    f"Cannot rename column '{text_column}' to '{target_column}' because the target column already exists."
+                )
+            return ds.rename_column(text_column, target_column)
+
+        if isinstance(dataset, DatasetDict):
+            for split_name, split_dataset in dataset.items():
+                dataset[split_name] = _rename(split_dataset)
+            return dataset
+
+        return _rename(dataset)
 
     def load_from_hub(self, dataset_name: str, **kwargs) -> HFDataset:
         """

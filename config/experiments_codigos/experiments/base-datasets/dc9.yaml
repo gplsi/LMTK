@@ -10,7 +10,7 @@ tokenizer:
 
 dataset:
   source: "local"
-  nameOrPath: "/workspace/data/dc9"
+  nameOrPath: "/workspace/data/downloaded/dc9"
   format: "files"
   file_config:
     text_key: "content"

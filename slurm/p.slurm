@@ -234,7 +234,7 @@ echo "Command: ${TRAIN_CMD[*]}"
 echo "Running with srun to leverage SLURM allocation"
 echo "================================"
 
-cd ..
+cd "$HOST_PROJECT_ROOT"
 ${TRAIN_CMD[@]}
 # Capture exit code
 EXIT_CODE=$?
