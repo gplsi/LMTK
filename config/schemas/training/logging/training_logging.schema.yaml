@@ -23,6 +23,41 @@ allOf:
         default: none
         description: "Wandb run name for the experiment (optional, auto-generated if not provided)"
 
+      wandb_group:
+        type: string
+        description: "Optional WandB group for aggregating related runs"
+
+      wandb_job_type:
+        type: string
+        description: "Job type label shown in WandB UI"
+
+      wandb_tags:
+        anyOf:
+          - type: array
+            items:
+              type: string
+          - type: string
+        description: "List of tags (or a single tag) to attach to the run"
+
+      wandb_notes:
+        type: string
+        description: "Long-form notes to attach to the run"
+
+      wandb_mode:
+        type: string
+        enum: ["online", "offline", "disabled"]
+        description: "WandB logging mode"
+
+      wandb_id:
+        type: string
+        description: "Explicit WandB run ID (useful for resuming)"
+
+      wandb_resume:
+        type: string
+        enum: ["allow", "never", "must"]
+        default: "allow"
+        description: "Resume behavior when a run ID already exists"
+
       log_model:
         type: boolean
         default: false
