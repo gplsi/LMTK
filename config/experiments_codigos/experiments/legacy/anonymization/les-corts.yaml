@@ -1,0 +1,56 @@
+task: "anonymization"  # Task type: "anonymization"
+experiment_name: "les-corts-anonymization"  # Experiment name for identification.
+verbose_level: 4  # Verbosity level: 0 (silent) to 4 (debug).
+
+anonymization:
+  # Docker image to use for anonymization (default: "anonymization:latest").
+  docker-image: "anonymization:latest"
+
+  source:
+    # Path to load source dataset.
+    path: "data/les-corts"
+
+  output:
+    # Path to save anonymized dataset.
+    path: "output/les-corts-anonymized"
+
+  regexes:
+    # Path to load regexes for anonymization (leave empty if not used).
+    path: "~/anonymization/configs/regex_definition_new.csv"
+
+  truecaser:
+    # Path to load truecaser model (leave empty if not used).
+    path: ""
+
+  models_source:
+    # Path to load models configuration.
+    path: ""
+
+  # List of models to use for anonymization (e.g., [{"mtype": "huggingface", "mid": "model-name"}]).
+  models: []
+
+  # Format of the source dataset: "plain", "jsonl", "doccano".
+  format: "plain"
+
+  # Anonymization method: "label", "random", "intelligent", "none".
+  method: "intelligent"
+
+  labels:
+    # List of labels to anonymize: "CARD", "EMAIL", "FINANCIAL", "ID", "LOC", "MISC", "ORG", "PER", "TELEPHONE", "VEHICLE", "ZIP", "CODE", "DATE".
+    # Leave empty to anonymize all labels.
+    - "EMAIL"
+    - "FINANCIAL"
+    - "ID"
+    - "TELEPHONE"
+    - "VEHICLE"
+    - "ZIP"
+    - "CODE"
+
+  # Whether to store original text in the output: true/false.
+  store_original: true
+
+  # Whether to aggregate output into a single file: true/false.
+  aggregate_output: true
+  
+  # Whether to skip existing anonymized files: true/false.
+  skip_existing: true

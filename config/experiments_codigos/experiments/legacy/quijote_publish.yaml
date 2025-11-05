@@ -1,0 +1,17 @@
+# Publish experiment config for HuggingFace Hub
+# This configuration will publish the trained Quijote GPT-2 checkpoint to HuggingFace
+
+task: "publish"
+experiment_name: "quijote_gpt2_publish"
+verbose_level: 4
+
+publish:
+  format: "fsdp"                                 # Required by schema; default is 'fsdp'
+  host: "huggingface"                           # Required by schema; default is 'huggingface'
+  base_model: "openai-community/gpt2"           # Base model name (for tokenizer loading, etc.)
+  checkpoint_path: "output/epoch-001-final-ckpt.pth"  # Path to the trained checkpoint
+  repo_id: "gplsi/quijote-gpt2-clm"      # HuggingFace repo name (edit as needed)
+  commit_message: "Add Quijote GPT-2 CLM checkpoint"
+  max_shard_size: "5GB"
+  safe_serialization: true
+  create_pr: false

@@ -1,0 +1,10 @@
+task: "convert"   # pretraining, tokenization
+experiment_name: "c3dc1_convert"
+verbose_level: 3
+
+convert:
+  base_model: "BSC-LT/salamandra-2b"
+  checkpoint_path: "/workspace/output/aitana-s2b-c3dc1"
+  output_dir: "/workspace/output/aitana-s2b-c3dc1_hf"
+  initial_format: "fsdp"
+  final_format: "huggingface"

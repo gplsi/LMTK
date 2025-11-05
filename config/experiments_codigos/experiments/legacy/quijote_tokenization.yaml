@@ -1,0 +1,26 @@
+task: "tokenization"
+experiment_name: "quijote_gpt2_tokenization"
+verbose_level: 4
+
+tokenizer:
+  tokenizer_name: "openai-community/gpt2"
+  context_length: 1024
+  overlap: 256
+  task: "clm_training"
+  batch_size: 1024
+  num_proc: 2
+  show_progress: true
+
+dataset:
+  source: "local"
+  nameOrPath: "/workspace/data/testing"
+  format: "files"
+  use_txt_as_samples: true
+  file_config:
+    format: "txt"
+    encoding: "utf-8"
+
+output:
+  path: "data/tokenized/quijote"
+
+test_size: 0
