@@ -35,7 +35,6 @@ validate_on_end: true
 validate_after_epoch: false
 validate_after_k_steps: null
 
-
 # Saving checkpoints
 save_on_validate: true
 save_on_end: true
