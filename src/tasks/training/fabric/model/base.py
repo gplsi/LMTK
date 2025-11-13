@@ -4,7 +4,6 @@ import torch
 from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
 from utils.logging import VerboseLevel, get_logger
-from src.tasks.training.fabric.model.utils import AVAILABLE_MODELS
 import logging
 
 class BaseModel(L.LightningModule):
@@ -35,23 +34,6 @@ class BaseModel(L.LightningModule):
             if key not in batch:
                 raise ValueError(f"Missing required key '{key}' in batch for {step_type} step")
 
-    def _model_validation(self) -> None:
-        """
-        Validate model structure for validation step.
-
-        Args:
-            batch (Tuple[torch.Tensor, ...]): A batch containing required tensors.
-            *args: Additional arguments (if any).
-
-        Returns:
-            dict: Contains the computed 'loss' and model 'outputs'.
-        """
-        if self.model is None:
-            raise ValueError("The model class is not initialized")
-
-        if not isinstance(self.model, AVAILABLE_MODELS):
-            raise ValueError(f"The model class selected is not supported, currently supported models are: {AVAILABLE_MODELS}")
-    
     def on_train_start(self):
         """
         Log training start information.
@@ -89,7 +71,6 @@ class BaseModel(L.LightningModule):
 
         if self.cli_logger.getEffectiveLevel() == logging.DEBUG:
             self._batch_validation(batch, "train")
-            self._model_validation()
 
         # CONVERTS THE INPUTS TO THE APPROPRIATE TYPE 
         with self.fabric.autocast():
@@ -127,7 +108,6 @@ class BaseModel(L.LightningModule):
         # Validate batch and model (only on debug level)
         if self.cli_logger.getEffectiveLevel() == logging.DEBUG:
             self._batch_validation(batch, "validation")
-            self._model_validation()
 
         if self.torch_dtype in (torch.bfloat16, torch.float16):
             with torch.autocast(device_type="cuda", dtype=self.torch_dtype):
@@ -170,7 +150,6 @@ class BaseModel(L.LightningModule):
         # Validate batch and model (only on debug level)
         if self.cli_logger.getEffectiveLevel() == logging.DEBUG:
             self._batch_validation(batch, "test")
-            self._model_validation()
 
 
         if self.torch_dtype in (torch.bfloat16, torch.float16):
