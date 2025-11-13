@@ -33,8 +33,8 @@ batch_size: 2
 # Validation parameters
 validate_on_end: true
 validate_after_epoch: false
-validate_after_k_steps: null
-validations_per_epoch: 5
+validate_after_k_steps: 10
+# validations_per_epoch: 5
 
 # Saving checkpoints
 save_on_validate: true
