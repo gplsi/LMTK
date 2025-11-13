@@ -16,7 +16,7 @@ validation_split:
   shuffle: true
 
 # Output dir
-output_dir: "output/aitana-s2b-c0dc17"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17"
 seed: 42
 
 # Model
@@ -33,12 +33,12 @@ batch_size: 2
 # Validation parameters
 validate_on_end: true
 validate_after_epoch: false
-validate_after_k_steps: 10
-# validations_per_epoch: 5
+validations_per_epoch: 20
 
 # Saving checkpoints
-save_on_validate: true
+save_on_validate: false
 save_on_end: true
+checkpoints_per_epoch: 4
 
 # Gradient parameters
 gradient_accumulation: true
