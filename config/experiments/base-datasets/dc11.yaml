@@ -1,5 +1,5 @@
 task: "tokenization"
-experiment_name: "md_anonymized_salamandra_2b_tokenization_dc6"
+experiment_name: "tokenization_dc11"
 verbose_level: 3
 
 tokenizer:
@@ -10,14 +10,14 @@ tokenizer:
 
 dataset:
   source: "local"
-  nameOrPath: "/workspace/data/dc6"
+  nameOrPath: "data/downloaded/dc11"
   format: "files"
   file_config:
-    text_key: "text"
-    format: "txt"
+    text_key: "content"
+    format: "parquet"
     encoding: "utf-8"
 
 output:
-  path: "/workspace/data/tokenized/dc6"
+  path: "data/tokenized/dc11"
 
 test_size: 0

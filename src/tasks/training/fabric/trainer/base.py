@@ -19,13 +19,11 @@ from typing import Tuple, Union
 from box import Box
 from transformers import AutoTokenizer
 import lightning as L
-from pytorch_lightning.loggers import WandbLogger
-import wandb
 import os
 
 # Import custom utilities
 from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
-from src.tasks.training.fabric.logger import step_csv_logger
+from src.tasks.training.fabric.logger import step_csv_logger, create_wandb_logger
 from src.tasks.training.utils import *
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
@@ -159,36 +157,118 @@ class FabricTrainerBase(ABC):
             self.config.model_name, 
             flush_logs_every_n_steps=self.config.get("log_iter_interval", 100)
         )
-        
-        logging_config = self.config.get("logging_config", None)
-        raw_wandb_mode = getattr(self.config, "wandb_mode", None)
-        wandb_mode = "offline"
-        if raw_wandb_mode:
-            wandb_mode = str(raw_wandb_mode).strip().lower()
-            if wandb_mode not in {"offline", "online"}:
-                wandb_mode = "offline"
+        loggers = [logger]
 
-        if logging_config == "wandb":
-            # Use default values if WandB config is not provided
-            wandb_entity = getattr(self.config, 'wandb_entity', None)
-            wandb_project = getattr(self.config, 'wandb_project', 'continual-pretraining')
-            log_model = getattr(self.config, 'log_model', False)
-            
-            if wandb_mode == "offline":
-                os.environ["WANDB_MODE"] = "offline"
-                self.cli_logger.info("WandB logging set to offline mode; no API key required")
-            else:
-                if os.environ.get("WANDB_MODE") == "offline":
-                    os.environ.pop("WANDB_MODE", None)
-            
-            wandb_logger = WandbLogger(
-                entity=wandb_entity, 
-                project=wandb_project,
-                log_model=log_model,
-                offline=(wandb_mode == "offline")
+        if self.config.get("logging_config", None) == "wandb":
+            wandb_logger = create_wandb_logger(self.config, logger=self.cli_logger)
+            loggers.append(wandb_logger)
+
+        return loggers
+
+    def _ensure_validation_split(self, dataset: Union[DatasetDict, HFDataset]) -> DatasetDict:
+        """
+        Ensure the dataset provides a 'valid' split for validation.
+
+        If a 'valid' split already exists it is used as-is. If a 'validation' split
+        is present, it is re-keyed to 'valid'. Otherwise, a new validation split is
+        created from the training data when the configuration specifies
+        `validation_split`.
+
+        Args:
+            dataset (Union[DatasetDict, HFDataset]): The dataset to inspect.
+
+        Returns:
+            DatasetDict: Dataset dictionary guaranteed to contain a 'train' split and,
+                when configured, a 'valid' split.
+        """
+
+        if isinstance(dataset, HFDataset):
+            self.cli_logger.info("Single dataset provided, wrapping as training data only")
+            dataset = DatasetDict({"train": dataset})
+        else:
+            dataset = DatasetDict(dataset)
+
+        if "valid" in dataset:
+            return dataset
+
+        if "validation" in dataset:
+            self.cli_logger.info("Found 'validation' split; reusing it as 'valid'.")
+            validation_dataset = dataset["validation"]
+            del dataset["validation"]
+            dataset["valid"] = validation_dataset
+            return dataset
+
+        split_config = getattr(self.config, "validation_split", None)
+        if not split_config:
+            return dataset
+
+        if isinstance(split_config, Box):
+            split_config = split_config.to_dict()
+
+        shuffle = bool(split_config.get("shuffle", True))
+        seed = split_config.get("seed", getattr(self.config, "seed", None))
+
+        proportion = split_config.get("proportion")
+        count = split_config.get("count")
+
+        if proportion is None and count is None:
+            raise ValueError("validation_split configuration must include 'proportion' or 'count'.")
+
+        train_dataset = dataset.get("train")
+        if train_dataset is None:
+            raise ValueError("Training split 'train' is required to derive a validation split.")
+
+        total_examples = len(train_dataset)
+        if total_examples < 2:
+            raise ValueError("Not enough training examples to create a validation split (need at least 2).")
+
+        candidate_sizes: list[int] = []
+        if proportion is not None:
+            if not isinstance(proportion, (int, float)):
+                raise TypeError("validation_split.proportion must be a numeric value between 0 and 1.")
+            proportion_value = float(proportion)
+            if not 0 < proportion_value < 1:
+                raise ValueError("validation_split.proportion must be between 0 and 1.")
+            candidate_sizes.append(max(1, int(round(total_examples * proportion_value))))
+
+        if count is not None:
+            if not isinstance(count, int):
+                raise TypeError("validation_split.count must be an integer.")
+            if count <= 0:
+                raise ValueError("validation_split.count must be greater than 0.")
+            candidate_sizes.append(count)
+
+        if not candidate_sizes:
+            raise ValueError("Unable to determine validation split size from configuration.")
+
+        val_count = min(candidate_sizes)
+        if val_count >= total_examples:
+            adjusted_val_count = total_examples - 1
+            if adjusted_val_count <= 0:
+                raise ValueError(
+                    f"Requested validation size {val_count} is incompatible with training size {total_examples}."
+                )
+            self.cli_logger.warning(
+                f"Requested validation size {val_count} >= training size {total_examples}. "
+                f"Reducing validation size to {adjusted_val_count}."
             )
-            return [logger, wandb_logger]
-        return [logger]
+            val_count = adjusted_val_count
+
+        split = train_dataset.train_test_split(
+            test_size=val_count,
+            shuffle=shuffle,
+            seed=seed,
+        )
+
+        dataset["train"] = split["train"]
+        dataset["valid"] = split["test"]
+
+        self.cli_logger.info(
+            f"Created validation split with {len(dataset['valid'])} examples "
+            f"({len(dataset['valid']) / total_examples:.2%} of the original training data)."
+        )
+
+        return dataset
     
     def _save(self, fabric: L.Fabric, epochFinished: bool = False, trainingFinished: bool = False) -> None:
         """
@@ -225,15 +305,17 @@ class FabricTrainerBase(ABC):
             else:
                 # Calculate progress within epoch for intra-epoch saves
                 try:
-                    train_dataset = self.datasets['train']
-                    batch_size = self.config.batch_size
-                    world_size = fabric.world_size
+                    train_dataset = self.datasets["train"]
+                    batch_size = max(1, int(self.config.batch_size))
+                    world_size = max(1, int(fabric.world_size))
                     gradient_accumulation_steps = self.config.get("gradient_accumulation_steps", 1)
-                    if gradient_accumulation_steps <= 0:
+                    if gradient_accumulation_steps is None or int(gradient_accumulation_steps) <= 0:
                         gradient_accumulation_steps = 1
-                    
-                    batches_per_epoch = len(train_dataset) // (batch_size * world_size)
-                    steps_per_epoch = max(1, batches_per_epoch // gradient_accumulation_steps)
+                    else:
+                        gradient_accumulation_steps = int(gradient_accumulation_steps)
+
+                    total_batches = math.ceil(len(train_dataset) / (batch_size * world_size))
+                    steps_per_epoch = max(1, math.ceil(total_batches / gradient_accumulation_steps))
                     steps_in_previous_epochs = (current_epoch - 1) * steps_per_epoch
                     step_in_current_epoch = global_iteration - steps_in_previous_epochs
                     epoch_progress = (step_in_current_epoch / steps_per_epoch) * 100 if steps_per_epoch > 0 else 0
@@ -426,16 +508,11 @@ class FabricTrainerBase(ABC):
         """
         Determine whether to run validation based on configured conditions and perform validation/checkpointing if necessary.
 
-        This method implements a robust training-first approach that:
-        1. Saves checkpoints at configured intervals regardless of validation data availability
-        2. Runs validation only when validation data is available
-        3. Handles training-only datasets gracefully (common in pre-training scenarios)
-
-        Validation/checkpoint timing based on validations_per_epoch parameter:
-        - For validations_per_epoch=1: validates/saves only at epoch end
-        - For validations_per_epoch=2: validates/saves at 50% and 100% (end) of epoch
-        - For validations_per_epoch=3: validates/saves at 33%, 67%, and 100% (end) of epoch
-        - etc.
+        This method implements a training-first approach that:
+        1. Validates according to per-epoch scheduling and explicit end-of-epoch/end-of-training flags
+        2. Saves checkpoints based on dedicated cadence settings (including checkpoints_per_epoch)
+        3. Runs validation only when validation data is available
+        4. Handles training-only datasets gracefully (common in pre-training scenarios)
 
         Parameters:
         - fabric (L.Fabric): The Fabric instance.
@@ -443,94 +520,133 @@ class FabricTrainerBase(ABC):
         - trainingFinished (bool): Flag indicating if training has completed.
         """
         validations_per_epoch = self.config.get("validations_per_epoch", 1)
-        
+        checkpoints_per_epoch = self.config.get("checkpoints_per_epoch", None)
+        validate_after_epoch = self.config.get("validate_after_epoch", True)
+        validate_on_end = self.config.get("validate_on_end", True)
+        save_on_validate = self.config.get("save_on_validate", False)
+        save_on_end = self.config.get("save_on_end", False)
+
+        try:
+            validations_per_epoch = max(1, int(validations_per_epoch))
+        except (TypeError, ValueError):
+            self.cli_logger.warning(f"Invalid validations_per_epoch value {validations_per_epoch!r}; defaulting to 1")
+            validations_per_epoch = 1
+
+        parsed_checkpoints = None
+        if checkpoints_per_epoch is not None:
+            try:
+                parsed_checkpoints = max(1, int(checkpoints_per_epoch))
+            except (TypeError, ValueError):
+                self.cli_logger.warning(f"Invalid checkpoints_per_epoch value {checkpoints_per_epoch!r}; ignoring setting")
+                parsed_checkpoints = None
+        checkpoints_per_epoch = parsed_checkpoints
+
         should_validate = False
-        
-        # Validation logic for end of training
+        should_save = False
+        validation_steps = []
+        checkpoint_steps = []
+        step_in_current_epoch = None
+        steps_per_epoch = None
+
+        # Validation/save logic for end of training
         if trainingFinished:
-            should_validate = True
-        
-        # Validation logic for end of epoch
+            should_validate = bool(validate_on_end)
+            should_save = bool(save_on_end or (save_on_validate and should_validate))
+
+        # Validation/save logic for end of epoch
         elif epochFinished:
-            should_validate = True
-        
-        # Validation logic during epoch based on step count
-        elif not epochFinished and not trainingFinished:
+            should_validate = bool(validate_after_epoch)
+            if should_validate and save_on_validate:
+                should_save = True
+
+        # Validation/save logic during epoch based on step count
+        else:
             # Safety check: ensure we have the required data structures
-            if not hasattr(self, 'datasets') or not hasattr(self, 'dataloaders') or 'train' not in self.datasets:
-                self.cli_logger.warning("Cannot perform intra-epoch validation: missing dataset or dataloader structure")
+            if not hasattr(self, "datasets") or not hasattr(self, "dataloaders") or "train" not in self.datasets:
+                self.cli_logger.warning("Cannot perform intra-epoch validation/checkpoint scheduling: missing dataset or dataloader structure")
                 return
-            
-            # Calculate validation checkpoints for the current epoch
+
             current_epoch = self.state.get("current_epoch", 1)
-            
-            # Get total optimizer steps per epoch (same calculation as in scheduler)
-            train_dataset = self.datasets['train']
-            batch_size = self.config.batch_size
-            world_size = fabric.world_size
+            train_dataset = self.datasets["train"]
+            batch_size = max(1, int(self.config.batch_size))
+            world_size = max(1, int(fabric.world_size))
             gradient_accumulation_steps = self.config.get("gradient_accumulation_steps", 1)
-            
-            # Safety check for gradient accumulation steps
-            if gradient_accumulation_steps <= 0:
+
+            if gradient_accumulation_steps is None or int(gradient_accumulation_steps) <= 0:
                 gradient_accumulation_steps = 1
-            
-            # Calculate steps per epoch (optimizer steps, not batch iterations)
-            batches_per_epoch = len(train_dataset) // (batch_size * world_size)
-            steps_per_epoch = max(1, batches_per_epoch // gradient_accumulation_steps)
-            
-            # Safety check: if steps_per_epoch is 0, we can't do intra-epoch validation
-            if steps_per_epoch <= 0:
-                return
-            
-            # Calculate optimizer steps at which to validate within this epoch
-            validation_steps = []
-            for i in range(1, validations_per_epoch + 1):
-                step_in_epoch = max(1, int((i / validations_per_epoch) * steps_per_epoch))
-                validation_steps.append(step_in_epoch)
-            
-            # Remove duplicates and sort (can happen with very small steps_per_epoch)
-            validation_steps = sorted(set(validation_steps))
-            
-            # Calculate the optimizer step within the current epoch
+            else:
+                gradient_accumulation_steps = int(gradient_accumulation_steps)
+
+            total_batches = math.ceil(len(train_dataset) / (batch_size * world_size))
+            steps_per_epoch = max(1, math.ceil(total_batches / gradient_accumulation_steps))
+
+            def _build_epoch_schedule(events_per_epoch: int, total_steps: int) -> list[int]:
+                schedule = []
+                for i in range(1, events_per_epoch + 1):
+                    step_in_epoch = max(1, int((i / events_per_epoch) * total_steps))
+                    schedule.append(step_in_epoch)
+                return sorted(set(schedule))
+
+            validation_steps = _build_epoch_schedule(validations_per_epoch, steps_per_epoch)
+
+            checkpoint_steps = []
+            if checkpoints_per_epoch is not None:
+                checkpoint_steps = _build_epoch_schedule(checkpoints_per_epoch, steps_per_epoch)
+
             total_steps_completed = self.state["step_count"]
             steps_in_previous_epochs = (current_epoch - 1) * steps_per_epoch
             step_in_current_epoch = total_steps_completed - steps_in_previous_epochs
-            
-            # Check if current step matches any validation checkpoint
+
             if step_in_current_epoch in validation_steps:
                 should_validate = True
-                self.cli_logger.debug(f"Validation triggered at optimizer step {step_in_current_epoch}/{steps_per_epoch} in epoch {current_epoch} (validations_per_epoch={validations_per_epoch}, checkpoints={validation_steps})")
-        
-        # Perform validation and saving if needed
+                self.cli_logger.debug(
+                    f"Validation triggered at optimizer step {step_in_current_epoch}/{steps_per_epoch} in epoch {current_epoch} "
+                    f"(validations_per_epoch={validations_per_epoch}, checkpoints={validation_steps})"
+                )
+
+            if checkpoints_per_epoch is not None and step_in_current_epoch in checkpoint_steps:
+                should_save = True
+                self.cli_logger.debug(
+                    f"Checkpoint scheduled at optimizer step {step_in_current_epoch}/{steps_per_epoch} in epoch {current_epoch} "
+                    f"(checkpoints_per_epoch={checkpoints_per_epoch}, schedule={checkpoint_steps})"
+                )
+
+            if should_validate and save_on_validate:
+                should_save = True
+
+        validation_completed = False
+        attempted_validation = should_validate
+
         if should_validate:
-            # Clear cache before operations
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                
+
             fabric.barrier()
-            
-            # Run validation only if validation data is available
-            validation_completed = False
-            if 'valid' in self.dataloaders.keys():
+
+            if "valid" in getattr(self, "dataloaders", {}):
                 try:
                     self._validate(fabric)
                     validation_completed = True
                     self.cli_logger.debug("Validation completed successfully")
                 except Exception as e:
                     self.cli_logger.warning(f"Validation failed: {str(e)}")
-                    validation_completed = False
             else:
                 self.cli_logger.debug("No validation data available, skipping validation step")
-                
-            # Clear cache after validation
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                
-            # Always save checkpoint when validation is triggered (regardless of validation data availability)
-            # This ensures checkpoints are saved at the configured intervals even for training-only datasets
+
+        if should_save:
+            if not should_validate:
+                fabric.barrier()
             try:
                 self._save(fabric, epochFinished, trainingFinished)
-                validation_status = "with validation" if validation_completed else "without validation"
+                if validation_completed:
+                    validation_status = "with validation"
+                elif attempted_validation:
+                    validation_status = "with failed validation"
+                else:
+                    validation_status = "without validation"
                 self.cli_logger.info(f"Checkpoint saved successfully ({validation_status})")
             except Exception as e:
                 self.cli_logger.error(f"Failed to save checkpoint: {str(e)}")
@@ -694,17 +810,15 @@ class FabricTrainerBase(ABC):
         - RuntimeError: If setting the format or creating a DataLoader fails.
         """        
         
-        if not isinstance(dataset, Union[DatasetDict, HFDataset]):
+        if not isinstance(dataset, (DatasetDict, HFDataset)):
             raise TypeError("Expected dataset to be a DatasetDict or Dataset")
         if not hasattr(config, 'batch_size') or not isinstance(config.batch_size, int) or config.batch_size <= 0:
             raise ValueError("config.batch_size must be a positive integer")
         if not hasattr(config, 'num_workers') or not isinstance(config.num_workers, int) or config.num_workers < 0:
             raise ValueError("config.num_workers must be a non-negative integer")
         
-        # TODO: reformat this logic to be more maintainable
-        if isinstance(dataset, HFDataset):
-            dataset = DatasetDict({"train": dataset})
-            self.cli_logger.info("Single dataset provided, wrapping as training data only")
+        dataset = self._ensure_validation_split(dataset)
+
         if not dataset.keys():
             raise ValueError("Dataset is empty, no splits found")
         
@@ -712,8 +826,8 @@ class FabricTrainerBase(ABC):
         available_splits = list(dataset.keys())
         self.cli_logger.info(f"Available dataset splits: {available_splits}")
         
-        if 'valid' not in available_splits and 'validation' not in available_splits:
-            self.cli_logger.info("No validation split found. Training will proceed with checkpoint saving but no validation.")
+        if 'valid' not in available_splits:
+            self.cli_logger.info("No validation split available. Training will proceed without validation steps.")
         
         # Apply train_data_ratio if specified and less than 1.0
         train_data_ratio = getattr(config, 'train_data_ratio', 1.0)
