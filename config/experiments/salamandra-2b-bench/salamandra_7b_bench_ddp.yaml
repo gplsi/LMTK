@@ -1,19 +1,19 @@
 task: "clm_training"
-experiment_name: "llama3.2-3b-bench-continual"
+experiment_name: "salamandra2b-bench-continual"
 verbose_level: 3
 
 # Training data
 dataset:
   source: "local"
-  nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc6-llama-3b"
+  nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc6-salamandra-2b"
   #nameOrPath: "/workspace/data/tokenized/anonymized-va-bench"
   format: "hf"
 
 # Output dir
-output_dir: "output/llama3_2-3b-bench/"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/salamadnra-7b-test_llama-bench/ddp/"
 precision: "bf16-true"
 # Model
-model_name: "/leonardo_work/EUHPC_D22_034/models/Llama-3.2-3B"
+model_name: "/leonardo_work/EUHPC_D22_034/models/Salamandra7B"
 #"meta-llama/Llama-3.2-3B"
 
 # Model precision
@@ -21,7 +21,7 @@ static_graph: false
 
 # Training parameters
 number_epochs: 1
-batch_size: 6
+batch_size: 1
 gradient_accumulation: true
 gradient_accumulation_steps: 4
 grad_clip: 1.0
@@ -47,16 +47,9 @@ save_on_validate: false
 
 
 # Distributed_strategy
-parallelization_strategy: "fsdp"
+parallelization_strategy: "ddp"
 
-# FSDP specific parameters
-auto_wrap_policy: "llama"
-sharding_strategy: "FULL_SHARD"
-state_dict_type: "sharded"
-limit_all_gathers: true
-cpu_offload: false
 num_workers: 4
-gradient_checkpointing: true
 
 #logging specific parameters
 logging_config: none
