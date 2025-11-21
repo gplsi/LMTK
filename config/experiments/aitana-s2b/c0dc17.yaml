@@ -2,7 +2,7 @@
 
 task: "clm_training"
 experiment_name: "aitana-s2b-c0dc17"
-verbose_level: 4
+verbose_level: 3
 
 # Training data
 dataset:
