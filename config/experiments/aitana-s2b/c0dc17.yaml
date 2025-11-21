@@ -15,8 +15,11 @@ validation_split:
   seed: 42
   shuffle: true
 
+# Resuming Training from Checkpoint
+checkpoint: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17/e-001-gs-037751.pth"
+
 # Output dir
-output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17-epoch-2"
 seed: 42
 
 # Model
@@ -27,7 +30,7 @@ precision: "bf16-true"
 static_graph: false
 
 # Training parameters
-number_epochs: 1
+number_epochs: 2
 batch_size: 2
 
 # Validation parameters
