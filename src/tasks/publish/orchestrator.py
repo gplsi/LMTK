@@ -74,6 +74,7 @@ class PublishOrchestrator(BaseOrchestrator):
         max_shard_size = self.config.publish.get('max_shard_size', "5GB")
         safe_serialization = self.config.publish.get('safe_serialization', True)
         create_pr = self.config.publish.get('create_pr', False)
+        validate_upload = self.config.publish.get('validate_upload', False)
         
         self.logger.info(f"Uploading model to {self.config.publish.get('repo_id')} with shard size {max_shard_size}")
         
@@ -81,7 +82,8 @@ class PublishOrchestrator(BaseOrchestrator):
             message=message,
             max_shard_size=max_shard_size,
             safe_serialization=safe_serialization,
-            create_pr=create_pr
+            create_pr=create_pr,
+            validate=validate_upload,
         )
     
     def execute(self):
