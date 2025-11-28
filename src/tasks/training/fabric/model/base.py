@@ -89,7 +89,6 @@ class BaseModel(L.LightningModule):
 
         if self.cli_logger.getEffectiveLevel() == logging.DEBUG:
             self._batch_validation(batch, "train")
-            self._model_validation()
 
         # CONVERTS THE INPUTS TO THE APPROPRIATE TYPE 
         with self.fabric.autocast():
@@ -127,7 +126,6 @@ class BaseModel(L.LightningModule):
         # Validate batch and model (only on debug level)
         if self.cli_logger.getEffectiveLevel() == logging.DEBUG:
             self._batch_validation(batch, "validation")
-            self._model_validation()
 
         if self.torch_dtype in (torch.bfloat16, torch.float16):
             with torch.autocast(device_type="cuda", dtype=self.torch_dtype):
