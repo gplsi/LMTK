@@ -55,7 +55,7 @@ beta2: 0.999
 
 # Scheduler parameters
 lr_scheduler: "warmup_linear"
-warmup_proportion: 0.06   
+warmup_proportion: 0.01   
 
 # Logging
 logging_config: "wandb"
