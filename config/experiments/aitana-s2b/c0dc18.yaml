@@ -1,13 +1,13 @@
-# Mirroring c0dc1 settings to train salamandra-2b on dataset dc7
+# Mirroring c0dc1 settings to train salamandra-2b on dataset dc18
 
 task: "clm_training"
-experiment_name: "aitana-s2b-c4dc7"
+experiment_name: "aitana-s2b-c0dc18"
 verbose_level: 4
 
 # Training data
 dataset:
   source: "local"  # huggingface, local
-  nameOrPath: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc7"
+  nameOrPath: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc18"
   format: "hf"
 
 validation_split:
@@ -16,7 +16,7 @@ validation_split:
   shuffle: true
 
 # Output dir
-output_dir: "output/aitana-s2b-c4dc7"
+output_dir: "output/aitana-s2b-c0dc18"
 seed: 42
 
 # Model
@@ -34,7 +34,6 @@ batch_size: 2
 validations_per_epoch: 4
 validate_after_epoch: false
 validate_after_k_steps: null
-
 
 # Saving checkpoints
 save_on_validate: true
@@ -54,7 +53,7 @@ beta2: 0.999
 
 # Scheduler parameters
 lr_scheduler: "warmup_linear"
-warmup_proportion: 0.1   
+warmup_proportion: 0.06   
 
 # Logging
 logging_config: "wandb"
@@ -62,15 +61,15 @@ logging_config: "wandb"
 # Wandb logging specific parameters
 wandb_project: "salamandra-2b_fsdp__allen-md-anonymized"
 wandb_entity: "gplsi_continual"
-wandb_run_name: "aitana-s2b-c4dc7"
+wandb_run_name: "aitana-s2b-c0dc18"
 wandb_group: "aitana-s2b"
 wandb_job_type: "train"
 wandb_tags:
-  - "dc7"
+  - "dc18"
   - "fsdp"
   - "bf16"
   - "continual"
-wandb_notes: "Salamandra-2B CLM training on dc7 with fixed validation slice"
+wandb_notes: "Continual CLM training on dc18 with Salamandra-2B"
 wandb_resume: "allow"
 wandb_mode: "online"
 log_model: false

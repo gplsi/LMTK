@@ -7,7 +7,7 @@ verbose_level: 4
 # Training data
 dataset:
   source: "local"  # huggingface, local
-  nameOrPath: "/home/gplsi/GPLSI/codigos/LMTK/data/tokenized/dc7"
+  nameOrPath: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc7"
   format: "hf"
 
 validation_split:
@@ -31,7 +31,7 @@ number_epochs: 1
 batch_size: 2
 
 # Validation parameters
-validate_on_end: true
+validations_per_epoch: 4
 validate_after_epoch: false
 validate_after_k_steps: null
 
