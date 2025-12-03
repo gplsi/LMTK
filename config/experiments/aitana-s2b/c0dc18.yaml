@@ -34,6 +34,7 @@ batch_size: 2
 validations_per_epoch: 4
 validate_after_epoch: false
 validate_after_k_steps: null
+validate_on_end: true
 
 # Saving checkpoints
 save_on_validate: true

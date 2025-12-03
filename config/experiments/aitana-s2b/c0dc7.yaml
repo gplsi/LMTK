@@ -15,6 +15,9 @@ validation_split:
   seed: 42
   shuffle: true
 
+# Resume from previous continual checkpoint
+checkpoint: "/home/gplsi/GPLSI/ALIA/modelos/Continual/Aitana_s2b-c0dc17/e-002-gs-075502.pth"
+
 # Output dir
 output_dir: "output/aitana-s2b-c0dc7"
 seed: 42
@@ -34,13 +37,11 @@ batch_size: 2
 validations_per_epoch: 4
 validate_after_epoch: false
 validate_after_k_steps: null
-
+validate_on_end: true
 
 # Saving checkpoints
 save_on_validate: true
 save_on_end: true
-
-
 
 # Gradient parameters
 gradient_accumulation: true
