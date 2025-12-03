@@ -19,8 +19,8 @@ validation_split:
 output_dir: "output/aitana-s2b-c0dc7"
 seed: 42
 
-# Model
-model_name: "BSC-LT/salamandra-2b"
+# Model (resume from converted checkpoint instead of downloading Salamandra)
+model_name: "/home/gplsi/GPLSI/ALIA/modelos/Continual/Aitana_s2b-c0dc17/hf_models/e-002-gs-075502"
 
 # Model precision
 precision: "bf16-true"
@@ -31,16 +31,15 @@ number_epochs: 1
 batch_size: 2
 
 # Validation parameters
-validate_on_end: true
+validate_on_end: false
 validate_after_epoch: false
 validate_after_k_steps: null
-
+validations_per_epoch: 8
 
 # Saving checkpoints
-save_on_validate: true
+save_on_validate: false
 save_on_end: true
-
-
+checkpoints_per_epoch: 2
 
 # Gradient parameters
 gradient_accumulation: true
@@ -48,7 +47,7 @@ gradient_accumulation_steps: 8
 grad_clip: 1.0
 
 # Optimizer parameters
-lr: 0.00002      
+lr: 0.00002
 lr_decay: true
 weight_decay: 0.01
 beta1: 0.9
@@ -62,7 +61,7 @@ warmup_proportion: 0.06
 logging_config: "wandb"
 
 # Wandb logging specific parameters
-wandb_project: "salamandra-2b_fsdp__allen-md-anonymized"
+wandb_project: "aitana-s2b-c0dc7"
 wandb_entity: "gplsi_continual"
 wandb_run_name: "aitana-s2b-c0dc7"
 wandb_group: "aitana-s2b"
@@ -74,7 +73,7 @@ wandb_tags:
   - "continual"
 wandb_notes: "Continual CLM training on dc7 with Salamandra-2B"
 wandb_resume: "allow"
-wandb_mode: "online"
+wandb_mode: "offline"
 log_model: false
 log_iter_interval: 10
 

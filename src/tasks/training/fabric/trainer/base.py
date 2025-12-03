@@ -434,7 +434,7 @@ class FabricTrainerBase(ABC):
         """
         Log training metrics for monitoring.
         """
-        
+
         self.cli_logger.debug(
             f"iter {self.state['iter_num']} step {self.state['step_count']}: loss {loss.item():.4f}, iter time:"
             f" {(self.train_t1 - self.train_iter_t0) * 1000:.2f}ms remaining time: "
@@ -448,6 +448,31 @@ class FabricTrainerBase(ABC):
             lengths=self.total_lengths,
             train_loss=loss.item()
         )
+
+    def _log_learning_rates(self, fabric: L.Fabric) -> None:
+        """Log current learning rates for each optimizer param group."""
+        optimizer = self.state.get("optimizer")
+        if optimizer is None:
+            return
+
+        lr_metrics = {}
+        primary_lr = None
+        for idx, group in enumerate(optimizer.param_groups):
+            lr = group.get("lr")
+            if lr is None:
+                continue
+            lr_value = float(lr)
+            lr_metrics[f"lr/group_{idx}"] = lr_value
+            if primary_lr is None:
+                primary_lr = lr_value
+
+        if not lr_metrics:
+            return
+
+        if primary_lr is not None:
+            lr_metrics.setdefault("lr", primary_lr)
+
+        fabric.log_dict(lr_metrics, self.state["step_count"])
     
     def _gradient_clipping(self, fabric: L.Fabric, model: L.LightningModule, optimizer: torch.optim.Optimizer) -> None:
         """
@@ -500,6 +525,7 @@ class FabricTrainerBase(ABC):
             scheduler.step()
             optimizer.zero_grad()
             self.state["step_count"] += 1
+            self._log_learning_rates(fabric)
             self._try_validate(fabric)
         self.state["iter_num"] += 1
         return outputs, loss
@@ -706,7 +732,8 @@ class FabricTrainerBase(ABC):
             scheduler.step()
             optimizer.zero_grad()
             self.state["step_count"] += 1
-            
+
+            self._log_learning_rates(fabric)
             self._try_validate(fabric)
             self.state["iter_num"] += 1
             return outputs, loss

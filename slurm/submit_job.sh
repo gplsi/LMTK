@@ -246,6 +246,27 @@ if [[ ! -f "$FULL_CONFIG_PATH" ]]; then
     exit 1
 fi
 
+# Validate configuration before submission to avoid wasting SLURM time
+echo "===== Configuration Validation ====="
+pushd "$PROJECT_ROOT" > /dev/null
+if source scripts/set_environment.sh; then
+    if python src/main.py --config "$FULL_CONFIG_PATH" --validate; then
+        echo "✅ Configuration validated successfully."
+    else
+        echo "❌ Configuration validation failed. Aborting job submission."
+        conda deactivate > /dev/null 2>&1 || true
+        popd > /dev/null
+        exit 1
+    fi
+    conda deactivate > /dev/null 2>&1 || true
+else
+    echo "❌ Failed to initialize training environment for validation."
+    popd > /dev/null
+    exit 1
+fi
+popd > /dev/null
+echo "====================================="
+
 # Extract logging configuration details from the experiment file
 CONFIG_PYTHON="${PYTHON_COMMAND:-}"
 if [[ -z "$CONFIG_PYTHON" ]]; then
