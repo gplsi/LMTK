@@ -19,9 +19,10 @@ You are a senior developer and researcher in AI and LLM development, with deep e
 - Provide enough background that any reader can ramp up quickly: link to relevant files, record investigation findings, and list objectives alongside an initial plan or milestones.
 - While implementing a card, treat it as living documentation: keep the status up to date, document decisions and reasoning, and cross-reference other issues when they inform the work.
 - Double-check related cards for conflicting requirements, and ensure the final notes explain trade-offs so future contributors can audit or revisit the choice.
+- Issue cards live under `issues/` (with completed work archived under `issues/closed/`).
 
 ## ExecPlans
-When writing complex features or significant refactors, use an ExecPlan (as described in `PLANS.md` at the repo root) from design to implementation.
+When writing complex features or significant refactors, use an ExecPlan (as described in `PLANS.md` at the repo root) from design to implementation. ExecPlans must be self-contained; use the issue card to reference related work and restate any required context in the plan itself.
 
 ## Big Picture
 - **Purpose**: LMTK is a modular toolkit for tokenizing data, (continual) language model training, and publishing models/datasets.
@@ -29,10 +30,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
   - loads a YAML config,
   - validates it via `src.config.config_loader.ConfigValidator`,
   - dispatches to a task module in `src/tasks` based on `config.task`.
-- **Primary tasks** (YAML `task` values → modules):
-  - `tokenization` → `src/tasks/tokenization/`
-  - `clm_training`, `mlm_training`, `instruction` → `src/tasks/training/`
-  - `publish` → `src/tasks/publish/`
+- **Tasks (authoritative list)**: Allowed `task` values are defined by `config/schemas/base.schema.yaml` (the `task` enum). Keep `src/main.py` dispatch and `src/tasks/` modules in sync with that list.
+- **Dispatch**: `src/main.py` uses `task_module_map` for grouped tasks (e.g., `clm_training`, `mlm_training`, `instruction` → `src/tasks/training/`) and otherwise imports `src/tasks/<task>` by name.
+- **Other task modules**: `convert`, `dataset_merge`, and `anonymization` are implemented under `src/tasks/`.
 - **Configs**: YAML files live under `config/`, `config/examples/`, `config/experiments/`, and `tutorials/configs/`; schemas are defined in `src/config/`.
 - **Job model**: Each YAML configuration denotes a single job that resolves to one task. Configs are intended to be reviewed before submission to the SLURM queue, so do not auto-submit or bypass validation.
 
@@ -50,6 +50,17 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
   - `python -m src.main --config tutorials/configs/clm_training_tutorial.yaml`
   - `python -m src.main --config tutorials/configs/publish_tutorial.yaml`
 - **SLURM**: For cluster execution, use `slurm/submit_job.sh` (see `slurm/README.md`). Do not reimplement job submission logic in Python; respect the existing shell / env conventions.
+
+## Testing and Verification (SLURM-aware)
+- Local tests can be incomplete because key dependencies live inside the SLURM container runtime and queues.
+- Prefer running tests through the SLURM test runner when available (configured via `slurm/tests/slurm_test.env` and launched via `slurm/tests/run_tests.sh`).
+- The test runner defaults target the `postiguet1` partition with 1x RTX 4090; override only when a test requires different hardware.
+- `slurm/tests/run_tests.sh` must enforce an allowed submitter list so only approved users can submit jobs to the queue.
+- Store test secrets in `slurm/tests/test_secrets.env` (gitignored); never commit API keys.
+- Use small Llama-family models for test runs; define defaults in `config/tests/defaults.yaml` and reuse them across unit and integration tests.
+- End-to-end integration tests should be driven by YAML configs under `config/tests/` and run only when relevant to the change.
+- Always record the SLURM job ID, log paths, and exact test command in the issue card or ExecPlan so results are auditable.
+- If tests cannot be run, document why and provide a concrete manual verification path.
 
 ## Architectural Patterns
 - **Task abstraction**:
@@ -75,6 +86,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Project-Specific Conventions
 - **Paths & caches**:
   - `src/main.py` sets HF and WandB cache dirs under project-local `.cache2/` and `tmp/`; new code should reuse these env vars instead of hardcoding cache locations.
+- **Test configs**:
+  - Integration test configs live under `config/tests/` and should use the small Llama defaults in `config/tests/defaults.yaml`.
 - **Config objects**:
   - Runtime configs are often `Box` instances (from `box` library) allowing attribute access (`config.foo`) and dot paths.
   - When passing configs into models, convert to dict as needed (e.g., `dict(config)` in `FabricTrainerBase._instantiate_model`).
@@ -95,9 +108,11 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - **Tests**:
   - Place task-specific tests inside the task directory (for example, under `src/tasks/<task>/`), so ownership and scope are clear.
   - Follow patterns in `tests/` and `src/main_test.py` for cross-cutting or integration checks. For config-heavy features, add validation tests similar to those described in `README.md`.
+  - When local testing is impractical, run the tests on SLURM using the test runner or document a manual verification path that can be executed on the cluster.
+  - For behavior changes, add unit tests and consider a targeted end-to-end config under `config/tests/` when the feature spans multiple modules.
 
 ## Documentation
 - Documentation is Sphinx-based under `docs/` with a PyData theme.
 - Keep public APIs and major workflows documented in `docs/source/guides/` and `docs/source/api/` when adding or changing top-level behavior.
 
-If any of these conventions are unclear or you’re implementing a new pattern, ask the maintainers (or the user) which existing module to mirror before creating a new one.
+If any of these conventions are unclear or you’re implementing a new pattern, check the issue card and nearby modules first; if uncertainty remains, ask the maintainers (or the user) and record the clarification in the issue card before creating a new module.

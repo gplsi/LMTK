@@ -215,6 +215,20 @@ python src/main.py --config tutorials/configs/publish_tutorial.yaml
 
 **Note:** For publish tasks, authenticate with Hugging Face via `huggingface-cli login` or set the `HUGGINGFACE_HUB_TOKEN` environment variable.
 
+## ✅ Testing
+
+Local tests can be run when dependencies are available:
+
+```bash
+python -m pytest -q
+```
+
+Some tests require the SLURM container runtime. In that case, prefer a SLURM-based test run and record the job ID and log paths in the issue card or ExecPlan. When available, use `slurm/tests/slurm_test.env` and `slurm/tests/run_tests.sh` to submit tests to the configured partition.
+
+Test organization:
+- Task-specific tests live under `src/tasks/<task>/`.
+- Cross-cutting or integration tests live under `tests/`.
+
 ## 🖥️ SLURM Cluster Execution
 
 For running on SLURM clusters, we provide a comprehensive set of configurable job scripts in the `slurm/` directory:

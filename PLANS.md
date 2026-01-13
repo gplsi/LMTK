@@ -5,6 +5,8 @@ This document describes the requirements for an execution plan ("ExecPlan"), a d
 ## How to use ExecPlans and PLANS.md
  
 When authoring an executable specification (ExecPlan), follow PLANS.md _to the letter_. If it is not in your context, refresh your memory by reading the entire PLANS.md file. Be thorough in reading (and re-reading) source material to produce an accurate specification. When creating a spec, start from the skeleton and flesh it out as you do your research.
+
+ExecPlans are intentionally junior-proof and fully self-contained. Use the issue card to capture cross-references, links, or related plans; the ExecPlan must restate all required context and instructions in its own text.
  
 When implementing an executable specification (ExecPlan), do not prompt the user for "next steps"; simply proceed to the next milestone. Keep all sections up to date, add or split entries in the list at every stopping point to affirmatively state the progress made and next steps. Resolve ambiguities autonomously, and record progress frequently in the plan.
  
@@ -23,9 +25,11 @@ NON-NEGOTIABLE REQUIREMENTS:
 * Every ExecPlan must define every term of art in plain language or do not use it.
 * The agent must never commit to git, open pull requests, or push deployments; those actions are reserved for the user.
  
+Related work, cross-references, and external links belong in the issue card. The ExecPlan must still restate all required context and steps so it stands alone.
+
 Purpose and intent come first. Begin by explaining, in a few sentences, why the work matters from a user's perspective: what someone can do after this change that they could not do before, and how to see it working. Then guide the reader through the exact steps to achieve that outcome, including what to edit, what to run, and what they should observe.
  
-The agent executing your plan can list files, read files, search, run the project, and run tests. It does not know any prior context and cannot infer what you meant from earlier milestones. Repeat any assumption you rely on. Avoid relying on external blogs or docs for required knowledge. You may cite official docs or primary sources for traceability, but the plan must embed the needed guidance in your own words so it is self-contained. If an ExecPlan builds upon a prior ExecPlan and that file is checked in, incorporate it by reference. If it is not, you must include all relevant context from that plan.
+The agent executing your plan can list files, read files, search, run the project, and run tests. It does not know any prior context and cannot infer what you meant from earlier milestones. Repeat any assumption you rely on. Avoid relying on external blogs or docs for required knowledge. You may cite official docs or primary sources for traceability, but the plan must embed the needed guidance in your own words so it is self-contained. If an ExecPlan builds upon a prior ExecPlan, restate the relevant context and decisions in the new plan so it stands alone; do not rely on references to other plans for required instructions.
  
 ## Formatting
  
@@ -62,6 +66,10 @@ Prefer a test-first loop for behavioral changes. When a change affects behavior,
 Tests should be organized so discovery and ownership are obvious. Place new tests in the module-appropriate test project and structure them to mirror the production surface area. When test setup becomes noisy or is repeated across tests, consolidate it into reusable test data builders and fixtures (for example, under `Tests/<Project>.Tests/TestData` for code builders and `Tests/<Project>.Tests/Fixtures` for file fixtures). Keep helpers small and intention-revealing; do not build a test framework that hides important differences between cases.
 
 For this repository, task-specific tests belong inside the task directory (for example, `src/tasks/<task>/`), while cross-cutting or integration checks can live under `tests/`. An ExecPlan must state exactly where each new test file will be created and why it belongs there.
+
+When local test execution is blocked by SLURM-only dependencies, the ExecPlan must include a SLURM test run. Specify the exact submission command, the test runner config path (`slurm/tests/slurm_test.env` and optional `slurm/tests/test_secrets.env`), the partition and resources (default `postiguet1` with 1x RTX 4090), and the log locations to verify outcomes. The plan must also note the allowed submitter guard and how to update it. If the test runner is not available yet, provide a manual sbatch command and document how to retrieve logs and exit codes.
+
+Integration tests are defined by YAML configs under `config/tests/`. ExecPlans must name the specific configs to run and explain why those runs are necessary. Do not require running all integration tests for every change; only run those that validate the behavior being introduced or fixed.
 
 Coverage should be deliberate. Prefer a small set of high-signal cases: a happy path, boundary conditions, invalid inputs, and a few domain-specific “weird/absurd” cases when they validate explicit guardrails or contracts (especially if similar cases have regressed before). Avoid combinatorial explosions that slow the suite without increasing confidence.
 
@@ -136,6 +144,10 @@ Summarize outcomes, gaps, and lessons learned at major milestones or at completi
 ## Context and Orientation
  
 Describe the current state relevant to this task as if the reader knows nothing. Name the key files and modules by full path. Define any non-obvious term you will use. Do not refer to prior plans.
+
+## Milestones
+
+Describe each milestone in narrative form. For each, state the scope, what will exist at the end, the commands to run, and the acceptance you expect to observe.
  
 ## Plan of Work
  
@@ -158,14 +170,18 @@ If steps can be repeated safely, say so. If a step is risky, provide a safe retr
 Include the most important transcripts, diffs, or snippets as indented examples. Keep them concise and focused on what proves success.
  
 ## Interfaces and Dependencies
+
+Be prescriptive. Name the libraries, modules, and services to use and why. Specify the types/interfaces and function signatures that must exist at the end of the milestone. Prefer stable names and paths such as `package.submodule.Interface` or `src/module.py:ClassName`. For example:
  
-Be prescriptive. Name the libraries, modules, and services to use and why. Specify the types, traits/interfaces, and function signatures that must exist at the end of the milestone. Prefer stable names and paths such as `crate::module::function` or `package.submodule.Interface`. E.g.:
+In src/planner.py, define:
  
-In crates/foo/planner.rs, define:
- 
-    pub trait Planner {
-        fn plan(&self, observed: &Observed) -> Vec<Action>;
-    }
+    class Planner:
+        def plan(self, observed: Observed) -> list[Action]:
+            ...
+
+## LMTK Project Patterns to Embed in ExecPlans
+
+LMTK workflows are YAML-driven. Each YAML configuration denotes a single job and maps to exactly one task module under `src/tasks/`. ExecPlans must restate this mapping in their `Context and Orientation` section and call out any new tasks, configs, or schema updates explicitly. Configs should be reviewed before SLURM submission and never auto-submitted by the plan. Tests for a task should live inside that task directory unless the test is cross-cutting, in which case `tests/` is acceptable. Integration tests should be driven by YAML configs under `config/tests/`, with shared defaults (including the small Llama test model) defined in `config/tests/defaults.yaml`. SLURM test runs should use `slurm/tests/slurm_test.env` (and `slurm/tests/test_secrets.env` when needed), with an explicit allowed submitter list.
 ```
  
 If you follow the guidance above, a single, stateless agent -- or a human novice -- can read your ExecPlan from top to bottom and produce a working, observable result. That is the bar: SELF-CONTAINED, SELF-SUFFICIENT, NOVICE-GUIDING, OUTCOME-FOCUSED.
