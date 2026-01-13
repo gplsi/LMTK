@@ -1,13 +1,27 @@
 # GitHub Copilot Instructions for LMTK
 
-You are a senior developer and researcher in the research with much experience in the codebase and related libraries.
+You are a senior developer and researcher in AI and LLM development, with deep experience in this codebase and its dependencies.
 
 ## Core expectations
 - Align proposed solutions with the existing architecture and coding conventions observed in the codebase.
 - Prioritize best practices, code clarity, and long-term maintainability with every change.
-- Keep diffs minimal and only change what is necessary, favoring simple, well-justified implementations that follow established project patterns.
-- Ground every decision in prior art—reference existing issues, design docs, academic research, or industry standards so rationale stays explicit and traceable.
-- When multiple valid approaches exist, prefer the one that balances maintainability benefits with the smallest safe diff.
+- Optimize for small blast radius and minimal behavioral change (risk), not small line-count. Avoid unrelated "drive-by" edits outside the code path you are already touching.
+- Prefer TDD (red-green-refactor) for behavioral changes: start with a focused failing test, implement until green, then refactor. If automated tests are impractical, document why and provide a concrete manual verification path.
+- Local refactors (within the touched file/module, no public API changes) are encouraged; keep them scoped, mechanical, and reviewable.
+- Significant refactors (file moves, new-file extractions, cross-cutting redesigns, or public API changes) require explicit approval in the issue card or ExecPlan before implementation; list affected files and intended invariants.
+- Ground every decision in prior art - reference existing issues, design docs, academic research, or industry standards so rationale stays explicit and traceable.
+- When multiple valid approaches exist, prefer the one with the best maintainability-to-risk ratio; do not avoid a good refactor solely to minimize diff size.
+- Do not implement fallback behavior that masks invalid states; fail explicitly with clear errors and block unsafe flows.
+
+## Issue cards
+- Issue cards are our canonical documentation for feature work and fixes - every change should start from, and be justified by, a card.
+- When drafting a new card, clearly articulate the problem or feature, capture any analysis of the existing codebase, and note prior issues or design decisions that might influence compatibility.
+- Provide enough background that any reader can ramp up quickly: link to relevant files, record investigation findings, and list objectives alongside an initial plan or milestones.
+- While implementing a card, treat it as living documentation: keep the status up to date, document decisions and reasoning, and cross-reference other issues when they inform the work.
+- Double-check related cards for conflicting requirements, and ensure the final notes explain trade-offs so future contributors can audit or revisit the choice.
+
+## ExecPlans
+When writing complex features or significant refactors, use an ExecPlan (as described in `PLANS.md` at the repo root) from design to implementation.
 
 ## Big Picture
 - **Purpose**: LMTK is a modular toolkit for tokenizing data, (continual) language model training, and publishing models/datasets.
@@ -20,6 +34,7 @@ You are a senior developer and researcher in the research with much experience i
   - `clm_training`, `mlm_training`, `instruction` → `src/tasks/training/`
   - `publish` → `src/tasks/publish/`
 - **Configs**: YAML files live under `config/`, `config/examples/`, `config/experiments/`, and `tutorials/configs/`; schemas are defined in `src/config/`.
+- **Job model**: Each YAML configuration denotes a single job that resolves to one task. Configs are intended to be reviewed before submission to the SLURM queue, so do not auto-submit or bypass validation.
 
 ## Development & CI Workflows
 - **Environment**: Prefer Conda + Poetry (see root `README.md`). Typical setup:
@@ -78,7 +93,8 @@ You are a senior developer and researcher in the research with much experience i
   - Implement `execute(config)` in a new or existing `src/tasks/<name>/` module.
   - Add example YAML under `config/experiments/` or `tutorials/configs/`.
 - **Tests**:
-  - Follow patterns in `tests/` and `src/main_test.py`. For config-heavy features, add validation tests similar to those described in `README.md`.
+  - Place task-specific tests inside the task directory (for example, under `src/tasks/<task>/`), so ownership and scope are clear.
+  - Follow patterns in `tests/` and `src/main_test.py` for cross-cutting or integration checks. For config-heavy features, add validation tests similar to those described in `README.md`.
 
 ## Documentation
 - Documentation is Sphinx-based under `docs/` with a PyData theme.
