@@ -49,4 +49,3 @@ Currently, continual pretraining workflows are limited to single-node setups, wh
 *   Faster pretraining cycles for large-scale models.
 *   Improved resource utilization in multi-GPU/multi-node environments.
 *   Enables research and production teams to scale experiments seamlessly.
-

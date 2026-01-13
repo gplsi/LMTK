@@ -3,9 +3,6 @@ number: 38
 title: "Add SLURM-based test runner and test configs"
 state: open
 labels:
-- enhancement
-- testing
-- infra
 ---
 
 ### Description
