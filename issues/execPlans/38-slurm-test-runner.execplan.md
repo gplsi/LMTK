@@ -10,16 +10,14 @@ LMTK depends on SLURM-only GPU runtimes and containers, so local tests are often
 
 ## Progress
 
-- [x] (2026-01-13 10:16Z) Updated `AGENTS.md` and `PLANS.md` to codify SLURM test runner usage, test configs, and integration test policy.
-- [x] (2026-01-13 10:16Z) Created issue card `issues/38-slurm-test-runner.md`.
-- [x] (2026-01-13 10:22Z) Updated docs to place test tooling under `slurm/tests/` and align README references.
-- [ ] Add SLURM test defaults (`slurm/tests/slurm_test.env`) and secrets template (`slurm/tests/test_secrets.env.example`) and update `.gitignore`.
-- [ ] Implement `slurm/tests/run_tests.sh` with submitter guard, config parsing, and SLURM submission.
-- [ ] Extend `slurm/p.slurm` to support `RUN_MODE=test` and a `RUN_COMMAND` path.
-- [ ] Add `config/tests/defaults.yaml` and minimal task configs under `config/tests/`.
-- [ ] Add unit tests that validate test configs use the shared defaults.
-- [ ] Update `README.md` and `slurm/README.md` with the testing workflow.
-- [ ] Validate a unit test run and a targeted integration test on SLURM, capturing job ID and logs.
+- [ ] (2026-01-13 11:59Z) Confirm whether `AGENTS.md` and `PLANS.md` already reflect the SLURM test runner policy; if not, update them.
+- [ ] (2026-01-13 11:59Z) Add `slurm/tests/slurm_test.env` and `slurm/tests/test_secrets.env.example`, update `.gitignore` for `slurm/tests/test_secrets.env`.
+- [ ] (2026-01-13 11:59Z) Implement `slurm/tests/run_tests.sh` with the submitter guard, CLI overrides, and `RUN_MODE=test`.
+- [ ] (2026-01-13 11:59Z) Extend `slurm/p.slurm` for `RUN_MODE=test` while leaving the production path unchanged.
+- [ ] (2026-01-13 11:59Z) Add `config/tests/defaults.yaml` and smoke configs under `config/tests/`.
+- [ ] (2026-01-13 11:59Z) Add `tests/unit/config/test_test_configs_defaults.py` to enforce defaults alignment.
+- [ ] (2026-01-13 11:59Z) Update `README.md` and `slurm/README.md` with the test runner workflow.
+- [ ] (2026-01-13 11:59Z) Run a SLURM unit test job and a tokenization+training integration job; record job IDs and logs here.
 
 ## Surprises & Discoveries
 
@@ -39,6 +37,12 @@ None yet.
 - Decision: Move all SLURM test artifacts under `slurm/tests/`.
   Rationale: Keeps test tooling separate from production SLURM scripts and improves organization.
   Date/Author: 2026-01-13 / Codex
+- Decision: Keep `config/tests/defaults.yaml` as the canonical source of model/tokenizer defaults and enforce alignment via a unit test.
+  Rationale: The current config loader uses plain PyYAML with no cross-file includes, so a test is the lowest-risk way to keep defaults aligned.
+  Date/Author: 2026-01-13 / Codex
+- Decision: Run integration configs in a fixed order (tokenization then training) when both are requested.
+  Rationale: Training depends on the tokenized dataset path produced by tokenization.
+  Date/Author: 2026-01-13 / Codex
 
 ## Outcomes & Retrospective
 
@@ -47,10 +51,19 @@ Not started.
 ## Context and Orientation
 
 LMTK is a YAML-driven toolkit. Each YAML configuration denotes a single job that maps to exactly one task module under `src/tasks/`. Jobs are normally submitted to SLURM using `slurm/submit_job.sh`, which runs `slurm/p.slurm` and eventually calls `src/main.py --config <yaml>`. A SLURM partition is a named queue that specifies what hardware a job can run on. In this environment, tests should target the `postiguet1` partition with one RTX 4090 GPU. Unit tests live alongside task code under `src/tasks/<task>/` when they are task-specific, while cross-cutting tests live under `tests/`. Integration tests should be represented as YAML configs under `config/tests/`, and run only when the change touches the relevant behavior. The SLURM test runner introduced in this plan is a small shell wrapper that submits a job with a `RUN_COMMAND` rather than a task config, so unit tests can run inside the same environment as production jobs.
+`sacct` is the SLURM accounting command used to query job state and exit codes; this plan uses it to verify test runs completed successfully.
+
+## Milestones
+
+Milestone 1 establishes the SLURM test runner plumbing. By the end, `slurm/tests/slurm_test.env`, `slurm/tests/test_secrets.env.example`, `slurm/tests/run_tests.sh`, and a `RUN_MODE=test` path in `slurm/p.slurm` exist. Run `./slurm/tests/run_tests.sh --dry-run` from the repo root and expect a printed `sbatch` command that includes `RUN_MODE=test`, a resolved `RUN_COMMAND`, and output/error paths under `slurm/tests/logs/`. The script must refuse submission if the current user is not in `ALLOWED_SUBMITTERS`.
+
+Milestone 2 adds test defaults and smoke configs plus a unit test that enforces defaults alignment. Validate configs with `python -m src.main --validate --config config/tests/tokenization_smoke.yaml` and `python -m src.main --validate --config config/tests/clm_training_smoke.yaml`. Run `python -m pytest -q tests/unit/config/test_test_configs_defaults.py` and expect a passing test.
+
+Milestone 3 documents the workflow and validates it on SLURM. Update `README.md` and `slurm/README.md` with the unit vs integration test policy. Submit a unit test run with `./slurm/tests/run_tests.sh` and an integration run with `./slurm/tests/run_tests.sh --integration tokenization_smoke,clm_training_smoke`. Capture job IDs and logs in this plan.
 
 ## Plan of Work
 
-Create a dedicated SLURM test defaults file and secrets template under `slurm/tests/`, and update `.gitignore` so secrets are never committed. Implement `slurm/tests/run_tests.sh` to load the test defaults, load secrets if present, verify the submitter is allowed, and submit a job with a test command. Extend `slurm/p.slurm` to recognize `RUN_MODE=test` and execute `RUN_COMMAND` without requiring `CONFIG_FILE`, while still reusing the existing environment setup. Define a small Llama-family model in `config/tests/defaults.yaml` and add minimal YAML configs under `config/tests/` for tokenization and CLM training that run quickly. Add a unit test that asserts the integration configs are aligned with `config/tests/defaults.yaml` so test defaults stay consistent. Update README and SLURM docs to explain the new workflow. Finally, validate by submitting a unit test run and a targeted integration test run on SLURM, recording job IDs and log paths.
+Create a dedicated SLURM test defaults file and secrets template under `slurm/tests/`, and update `.gitignore` so secrets are never committed. Implement `slurm/tests/run_tests.sh` to load the test defaults, load secrets if present, verify the submitter is allowed, and submit a job with a test command. Extend `slurm/p.slurm` to recognize `RUN_MODE=test` and execute `RUN_COMMAND` without requiring `CONFIG_FILE`, while still reusing the existing environment setup. Define a small Llama-family model in `config/tests/defaults.yaml` and add minimal YAML configs under `config/tests/` for tokenization and CLM training that run quickly. Add a unit test in `tests/unit/config/test_test_configs_defaults.py` that asserts the integration configs are aligned with `config/tests/defaults.yaml` so test defaults stay consistent. Update README and SLURM docs to explain the new workflow. Finally, validate by submitting a unit test run and a targeted integration test run on SLURM, recording job IDs and log paths.
 
 ## Concrete Steps
 
@@ -90,7 +103,7 @@ Add test defaults and configs:
     (content from Artifacts and Notes)
     Ctrl-D
 
-Add a unit test under `tests/` that loads `config/tests/defaults.yaml` and validates that the integration configs use the same model and tokenizer defaults.
+Add a unit test at `tests/unit/config/test_test_configs_defaults.py` that loads `config/tests/defaults.yaml` and validates that the integration configs use the same model, tokenizer, and seed defaults.
 
 Update documentation in `README.md` and `slurm/README.md` to describe the new test runner, the test env files, and the integration test policy.
 
@@ -102,13 +115,13 @@ Then submit an actual unit test run, and record the job ID and log paths:
 
     ./slurm/tests/run_tests.sh
 
-Finally, submit a targeted integration test run when relevant:
+Finally, submit a targeted integration test run when relevant (tokenization before training):
 
-    ./slurm/tests/run_tests.sh --integration tokenization_smoke
+    ./slurm/tests/run_tests.sh --integration tokenization_smoke,clm_training_smoke
 
 ## Validation and Acceptance
 
-Validation requires a SLURM submission that runs unit tests in the cluster environment and reports a passing pytest summary in logs. A targeted integration run must complete successfully using the small Llama defaults and the specified test config. Acceptance is reached when `slurm/tests/run_tests.sh` prints a job ID, logs exist at the configured path, and `sacct` shows an exit code of `0:0` for the job. Evidence should include the job ID, the exact command, and the log excerpts showing the test summary or completion messages.
+Run `./slurm/tests/run_tests.sh --dry-run` from the repo root and confirm the output prints a full `sbatch` command that includes `--export=RUN_MODE=test,RUN_COMMAND=...` plus `--output=slurm/tests/logs/tests-<jobid>.out` and `--error=slurm/tests/logs/tests-<jobid>.err`. Submit unit tests with `./slurm/tests/run_tests.sh`. Capture the job ID from stdout. Verify completion with `sacct -j <job_id> --format=JobID,State,ExitCode -P`; expect `COMPLETED|0:0`. Confirm the log file in `slurm/tests/logs/tests-<jobid>.out` contains a pytest summary like `X passed`. Run integration tests in order with `./slurm/tests/run_tests.sh --integration tokenization_smoke,clm_training_smoke`. Confirm the tokenization log line "Tokenization workflow completed successfully" appears before training starts, and that `output/tests/tokenized` exists. Confirm training finishes and the CSV metrics file exists at `output/tests/<model_name>/version_0/metrics.csv` with a numeric `loss` column. If SLURM submission is unavailable, run `python -m src.main --validate --config config/tests/tokenization_smoke.yaml` and `python -m src.main --validate --config config/tests/clm_training_smoke.yaml`, then `python -m pytest -q tests/unit/config/test_test_configs_defaults.py`, and record why SLURM validation was skipped.
 
 ## Idempotence and Recovery
 
@@ -130,6 +143,7 @@ Example `slurm/tests/slurm_test.env` defaults (edit as needed for your cluster):
     export ERROR_FILE_PATTERN="slurm/tests/logs/tests-%j.err"
     export ALLOWED_SUBMITTERS="estevanell"
     export TEST_COMMAND="python -m pytest -q tests src/tasks"
+    export TEST_CONFIG_DIR="config/tests"
     export TEST_INTEGRATION_CONFIGS="config/tests/tokenization_smoke.yaml,config/tests/clm_training_smoke.yaml"
 
 Example `slurm/tests/test_secrets.env.example`:
@@ -141,59 +155,87 @@ Example `config/tests/defaults.yaml`:
 
     model_name: hf-internal-testing/tiny-random-LlamaForCausalLM
     tokenizer_name: hf-internal-testing/llama-tokenizer
+    precision: bf16-true
+    context_length: 128
+    overlap: 16
     seed: 42
-    max_steps: 5
-    batch_size: 1
 
 Example `config/tests/tokenization_smoke.yaml`:
 
     task: tokenization
     experiment_name: test_tokenization_smoke
     verbose_level: 1
+    seed: 42
+
     tokenizer:
       tokenizer_name: hf-internal-testing/llama-tokenizer
-      use_fast: true
-      task_type: clm_training
+      task: clm_training
       context_length: 128
       overlap: 16
       batch_size: 64
       num_proc: 2
       show_progress: false
+
     dataset:
       source: local
       nameOrPath: tutorials/data/raw_text_data
       format: files
+
     output:
       path: output/tests/tokenized
       format: hf
       split: true
       shuffle: true
       seed: 42
+
     test_size: 0
 
 Example `config/tests/clm_training_smoke.yaml`:
 
     task: clm_training
     experiment_name: test_clm_training_smoke
+    verbose_level: 1
     model_name: hf-internal-testing/tiny-random-LlamaForCausalLM
+    precision: bf16-true
+    seed: 42
+
     dataset:
       source: local
       format: hf
       nameOrPath: output/tests/tokenized
-    batch_size: 1
+
+    validation_split:
+      proportion: 0.1
+      shuffle: true
+      seed: 42
+
     number_epochs: 1
+    batch_size: 1
+    num_workers: 0
+    validate_after_epoch: true
+    validate_on_end: true
+    validations_per_epoch: 1
+    save_on_validate: false
+    save_on_end: false
+    output_dir: output/tests
+
     gradient_accumulation: false
     gradient_accumulation_steps: 1
-    log_iter_interval: 1
-    validations_per_epoch: 0
-    lr: 2.0e-5
+    grad_clip: 1.0
+    lr: 2.0e-05
+    lr_decay: false
     weight_decay: 0.0
-    output_dir: output/tests
-    task: clm_training
-    verbose_level: 1
+    beta1: 0.9
+    beta2: 0.95
+    lr_scheduler: fixed
+    warmup_proportion: 0.0
+
+    log_iter_interval: 1
+    logging_config: none
+    parallelization_strategy: none
 
 ## Interfaces and Dependencies
 
-`slurm/tests/run_tests.sh` is a bash script that reads `slurm/tests/slurm_test.env` for defaults and optionally `slurm/tests/test_secrets.env` for credentials. It must validate that `whoami` appears in `ALLOWED_SUBMITTERS`, then submit `slurm/p.slurm` with `RUN_MODE=test` and `RUN_COMMAND` derived from `TEST_COMMAND` and any requested integration configs. It should accept flags to override partition, GPU count, and to enable integration configs by name. `slurm/p.slurm` must treat `RUN_MODE=test` as a separate execution path that runs `RUN_COMMAND` with the same environment setup as production jobs, and it must fail fast with a clear error message if `RUN_COMMAND` is missing.
+`slurm/tests/run_tests.sh` is a bash script that sources `slurm/tests/slurm_test.env` and optionally `slurm/tests/test_secrets.env`. It must refuse to run if `whoami` is not listed in the comma-separated `ALLOWED_SUBMITTERS` value. It should accept `--dry-run`, `--integration <names|all>`, and resource override flags (`--partition`, `--gpus`, `--time`, `--memory`, `--cpus`, `--job-name`, `--nodelist`). When `--integration` is provided, it should map names like `tokenization_smoke` to `config/tests/tokenization_smoke.yaml` using `TEST_CONFIG_DIR` (defaulting to `config/tests` if unset) and `TEST_INTEGRATION_CONFIGS` from the env file, then build a `RUN_COMMAND` that runs them in order with `python -m src.main --config <config>`. It must fail with a clear error if an integration name is unknown or if `RUN_COMMAND` is empty. `slurm/p.slurm` must treat `RUN_MODE=test` as a separate execution path that skips `CONFIG_FILE` validation and runs `RUN_COMMAND` after environment setup, while leaving the production `CONFIG_FILE` path untouched when `RUN_MODE` is not `test`.
 
-Plan revision note: Updated all SLURM test artifacts to live under `slurm/tests/` to match the agreed organization and keep test tooling separate from production SLURM files.
+Plan revision note: Added milestones, corrected progress, clarified validation and runner interfaces, and replaced schema-invalid config examples with validated smoke configs to make the plan junior-proof.
