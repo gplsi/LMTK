@@ -54,6 +54,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Testing and Verification (SLURM-aware)
 - Local tests can be incomplete because key dependencies live inside the SLURM container runtime and queues.
 - Prefer running tests through the SLURM test runner when available (configured via `slurm/tests/slurm_test.env` and launched via `slurm/tests/run_tests.sh`).
+- SLURM test runs use `task: testing` configs under `config/tests/` and are submitted through the existing `slurm/submit_job.sh` workflow.
 - The test runner defaults target the `postiguet1` partition with 1x RTX 4090; override only when a test requires different hardware.
 - `slurm/tests/run_tests.sh` must enforce an allowed submitter list so only approved users can submit jobs to the queue.
 - Store test secrets in `slurm/tests/test_secrets.env` (gitignored); never commit API keys.

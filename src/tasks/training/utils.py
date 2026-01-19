@@ -91,9 +91,16 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
         return warmup_steps, total_steps
 
     if lr_scheduler == 'fixed':
-        scheduler = get_constant_schedule(optimizer)
-        
-    warmup_steps, total_steps = calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps)
+        return get_constant_schedule(optimizer)
+
+    warmup_steps, total_steps = calculate_warmup_steps(
+        number_epochs,
+        world_size,
+        batch_size,
+        warmup_proportion,
+        train_dataset,
+        gradient_accumulation_steps,
+    )
         
     if lr_scheduler == 'cosine':
         # Pure cosine decay without any warmup phase

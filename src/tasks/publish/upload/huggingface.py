@@ -54,7 +54,7 @@ class UploadHuggingface:
         
         return True
 
-    def execute(self, message: str="Add model and tokenizer", max_shard_size:str ="5GB", safe_serialization:bool =True, create_pr:bool =False, validate: bool = False):
+    def execute(self, message: str="Add model and tokenizer", max_shard_size:str ="5GB", safe_serialization:bool =True, create_pr:bool =False, validate: bool = True):
         self._upload_model(
             message=message,
             max_shard_size=max_shard_size,

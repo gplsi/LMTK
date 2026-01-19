@@ -33,6 +33,35 @@ tail -f JOBID_lmtk.out
 
 ---
 
+## 🧪 SLURM Test Runner
+
+Use the SLURM test runner to submit `task: testing` configs (unit or integration) through the standard `submit_job.sh` path.
+
+**Key files:**
+- `slurm/tests/run_tests.sh` (wrapper that enforces allowed submitters)
+- `slurm/tests/slurm_test.env` (defaults for partition/resources and test configs)
+- `slurm/tests/test_secrets.env` (optional; copy from `slurm/tests/test_secrets.env.example`)
+- `config/tests/` (unit/integration configs and smoke tests)
+
+**Examples:**
+```bash
+# Submit unit tests
+./slurm/tests/run_tests.sh --unit
+
+# Submit integration smoke tests
+./slurm/tests/run_tests.sh --integration
+
+# Run a specific config directly
+./slurm/tests/run_tests.sh --config config/tests/tokenization_smoke.yaml
+
+# Preview the exact sbatch command
+./slurm/tests/run_tests.sh --dry-run
+```
+
+Logs are written to `slurm/tests/logs/` (see the job ID printed by the runner).
+
+---
+
 ## 📖 Table of Contents
 
 1. [🚀 Getting Started](#-getting-started)

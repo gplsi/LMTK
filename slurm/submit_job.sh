@@ -29,9 +29,12 @@ NODES=""
 NTASKS_PER_NODE=""
 NODELIST=""
 OUTPUT_DIR=""
-OUTPUT_FILE_PATTERN=""
-ERROR_FILE_PATTERN=""
+OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-}"
+ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-}"
 DRY_RUN=false
+
+ENV_OUTPUT_FILE_PATTERN="$OUTPUT_FILE_PATTERN"
+ENV_ERROR_FILE_PATTERN="$ERROR_FILE_PATTERN"
 
 # Load configuration file defaults if it exists
 SLURM_CONFIG_FILE="$SCRIPT_DIR/slurm_config.env"
@@ -40,6 +43,13 @@ if [[ -f "$SLURM_CONFIG_FILE" ]]; then
     # Source the configuration file to load defaults
     source "$SLURM_CONFIG_FILE"
     CONFIG_LOADED=true
+fi
+
+if [[ -n "$ENV_OUTPUT_FILE_PATTERN" ]]; then
+    OUTPUT_FILE_PATTERN="$ENV_OUTPUT_FILE_PATTERN"
+fi
+if [[ -n "$ENV_ERROR_FILE_PATTERN" ]]; then
+    ERROR_FILE_PATTERN="$ENV_ERROR_FILE_PATTERN"
 fi
 
 # Set final defaults for any unset variables

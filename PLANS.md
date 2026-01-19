@@ -182,6 +182,7 @@ In src/planner.py, define:
 ## LMTK Project Patterns to Embed in ExecPlans
 
 LMTK workflows are YAML-driven. Each YAML configuration denotes a single job and maps to exactly one task module under `src/tasks/`. ExecPlans must restate this mapping in their `Context and Orientation` section and call out any new tasks, configs, or schema updates explicitly. Configs should be reviewed before SLURM submission and never auto-submitted by the plan. Tests for a task should live inside that task directory unless the test is cross-cutting, in which case `tests/` is acceptable. Integration tests should be driven by YAML configs under `config/tests/`, with shared defaults (including the small Llama test model) defined in `config/tests/defaults.yaml`. SLURM test runs should use `slurm/tests/slurm_test.env` (and `slurm/tests/test_secrets.env` when needed), with an explicit allowed submitter list.
+For testing, prefer the `task: testing` configs under `config/tests/` and submit them via `slurm/tests/run_tests.sh`, which wraps `slurm/submit_job.sh`.
 ```
  
 If you follow the guidance above, a single, stateless agent -- or a human novice -- can read your ExecPlan from top to bottom and produce a working, observable result. That is the bar: SELF-CONTAINED, SELF-SUFFICIENT, NOVICE-GUIDING, OUTCOME-FOCUSED.

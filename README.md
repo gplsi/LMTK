@@ -223,7 +223,9 @@ Local tests can be run when dependencies are available:
 python -m pytest -q
 ```
 
-Some tests require the SLURM container runtime. In that case, prefer a SLURM-based test run and record the job ID and log paths in the issue card or ExecPlan. When available, use `slurm/tests/slurm_test.env` and `slurm/tests/run_tests.sh` to submit tests to the configured partition.
+Some tests require the SLURM container runtime. In that case, prefer a SLURM-based test run and record the job ID and log paths in the issue card or ExecPlan. Unit and integration runs are defined as `task: testing` configs under `config/tests/` (for example, `config/tests/unit_tests.yaml` and `config/tests/integration_smoke.yaml`). Use `slurm/tests/run_tests.sh` (with defaults from `slurm/tests/slurm_test.env` and optional secrets in `slurm/tests/test_secrets.env`) to submit tests through `slurm/submit_job.sh`.
+
+Integration smoke configs live under `config/tests/` and share defaults in `config/tests/defaults.yaml` so model/tokenizer values stay aligned.
 
 Test organization:
 - Task-specific tests live under `src/tasks/<task>/`.
