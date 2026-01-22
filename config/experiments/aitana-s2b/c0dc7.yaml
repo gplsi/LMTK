@@ -2,7 +2,7 @@
 
 task: "clm_training"
 experiment_name: "aitana-s2b-c0dc7"
-verbose_level: 4
+verbose_level: 3
 
 # Training data
 dataset:
@@ -15,19 +15,22 @@ validation_split:
   seed: 42
   shuffle: true
 
+#Resume Training from Checkpoint
+checkpoint: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2b-c0dc7/e-001-gs-004233.pth"
+
 # Output dir
-output_dir: "output/aitana-s2b-c0dc7"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2b-c0dc7"
 seed: 42
 
 # Model (resume from converted checkpoint instead of downloading Salamandra)
-model_name: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17-epoch-2/e-002-gs-075502.pth"
+model_name: "/leonardo_scratch/large/userexternal/sgaliano/output/Aitana-2b-c0dc17/e-002-gs-075502"
 
 # Model precision
 precision: "bf16-true"
 static_graph: false
 
 # Training parameters
-number_epochs: 1
+number_epochs: 2
 batch_size: 2
 
 # Validation parameters
