@@ -126,6 +126,9 @@ echo "Project Root: $HOST_PROJECT_ROOT"
 echo "Config File: $CONFIG_FILE"
 echo "Config Path: $CONFIG_PATH"
 echo "Output Directory: $LOG_DIR"
+echo "Partition: $PARTITION"
+echo "Nodes: $NODES"
+echo "Tasks per Node: $NTASKS_PER_NODE"
 if [[ -n "$NODELIST" ]]; then
 echo "Nodelist: $NODELIST"
 fi
@@ -204,6 +207,20 @@ echo "Conda environment: ${CONDA_DEFAULT_ENV:-unknown}"
 echo "PYTHONPATH: ${PYTHONPATH:-not set}"
 echo "================================"
 
+echo "===== Environment Versions ====="
+$PYTHON_COMMAND - <<'PY'
+import sys
+import torch
+import lightning
+
+print(f"ENV python={sys.version.split()[0]}")
+print(f"ENV torch={torch.__version__}")
+print(f"ENV lightning={lightning.__version__}")
+print(f"ENV cuda={torch.version.cuda}")
+print(f"ENV nccl={torch.distributed.is_nccl_available()}")
+PY
+echo "==============================="
+
 # Ensure cache directories mirror container defaults
 export HF_DATASETS_CACHE="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/datasets"
 export HF_HOME="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface"
@@ -231,11 +248,47 @@ TRAIN_CMD=("$PYTHON_COMMAND" "$MAIN_SCRIPT" "--config" "$CONFIG_PATH")
 
 echo "===== Launching Training ====="
 echo "Command: ${TRAIN_CMD[*]}"
-echo "Running with srun to leverage SLURM allocation"
+USE_SRUN=false
+if [[ "$NODES" -gt 1 || "$NTASKS_PER_NODE" -gt 1 ]]; then
+    USE_SRUN=true
+fi
+
+if [[ "$USE_SRUN" == "true" ]]; then
+    if ! command -v srun >/dev/null 2>&1; then
+        echo "❌ ERROR: srun is required for multi-node or multi-process runs but was not found."
+        exit 1
+    fi
+
+    if [[ -z "${MASTER_ADDR:-}" ]]; then
+        if command -v scontrol >/dev/null 2>&1; then
+            MASTER_ADDR=$(scontrol show hostnames "$SLURM_NODELIST" | head -n 1)
+            export MASTER_ADDR
+        else
+            echo "⚠️  WARNING: scontrol not found; leaving MASTER_ADDR unset."
+        fi
+    fi
+
+    if [[ -z "${MASTER_PORT:-}" ]]; then
+        if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+            MASTER_PORT=$((15000 + (${SLURM_JOB_ID} % 10000)))
+        else
+            MASTER_PORT=12910
+        fi
+        export MASTER_PORT
+    fi
+
+    echo "Running with srun to leverage SLURM allocation"
+else
+    echo "Running without srun (single-node/single-process)"
+fi
 echo "================================"
 
 cd "$HOST_PROJECT_ROOT"
-${TRAIN_CMD[@]}
+if [[ "$USE_SRUN" == "true" ]]; then
+    srun --nodes "$NODES" --ntasks-per-node "$NTASKS_PER_NODE" "${TRAIN_CMD[@]}"
+else
+    "${TRAIN_CMD[@]}"
+fi
 # Capture exit code
 EXIT_CODE=$?
 

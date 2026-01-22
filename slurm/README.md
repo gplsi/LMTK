@@ -15,6 +15,9 @@ This directory contains production-ready SLURM scripts for running LMTK framewor
 # Custom resources
 ./submit_job.sh -c config.yaml -g 4 -m 128G -t 72:00:00 -k your_key
 
+# Multi-node (tasks per node must match GPUs per node)
+./submit_job.sh -c config.yaml --nodes 2 --ntasks-per-node 4 -g 4 -p postiguet1
+
 # Check job status
 squeue -u $(whoami)
 
@@ -30,6 +33,10 @@ tail -f JOBID_lmtk.out
 - `-t`: Time limit (default: 48:00:00)
 - `-j`: Job name (optional)
 - `-p`: Partition (default: postiguet1)
+- `--nodes`: Node count (default: 1)
+- `--ntasks-per-node`: Tasks per node (default: 1)
+
+For a step-by-step multi-node walkthrough, see `slurm/MULTINODE_TUTORIAL.md`.
 
 ---
 

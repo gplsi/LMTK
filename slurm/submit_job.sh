@@ -90,6 +90,7 @@ OPTIONAL:
     -j, --job-name JOB_NAME      Job name (default: lmtk)
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
+    --ntasks-per-node COUNT      Tasks per node (default: 1)
     --nodelist NODELIST          Specific nodes to use (optional, e.g., lovelace.iuii.ua.es)
     -o, --output OUTPUT_DIR      Output directory name (optional)
     -d, --dry-run                Show the command that would be executed without running it
@@ -110,6 +111,9 @@ EXAMPLES:
 
     # Different partition
     $0 -c config/experiments/my_experiment.yaml -p gpu -g 8 -m 400G
+
+    # Multi-node run (tasks per node must match GPUs per node)
+    $0 -c config/experiments/my_experiment.yaml --nodes 2 --ntasks-per-node 4 -g 4
 
     # Specific node
     $0 -c config/experiments/my_experiment.yaml --nodelist=lovelace.iuii.ua.es
@@ -172,6 +176,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --nodes)
             NODES="$2"
+            shift 2
+            ;;
+        --ntasks-per-node)
+            NTASKS_PER_NODE="$2"
             shift 2
             ;;
         --nodelist)
@@ -338,6 +346,7 @@ echo "GPU Count: $GPU_COUNT"
 echo "Memory: $MEMORY"
 echo "Time Limit: $TIME_LIMIT"
 echo "CPUs per Task: $CPUS_PER_TASK"
+echo "Tasks per Node: $NTASKS_PER_NODE"
 echo "Nodes: $NODES"
 if [[ -n "$NODELIST" ]]; then
     echo "Nodelist: $NODELIST"

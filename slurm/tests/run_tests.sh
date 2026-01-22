@@ -27,6 +27,7 @@ Options:
     --job-name NAME            Override job name
     --nodelist HOSTS           Override nodelist
     --nodes COUNT              Override node count
+    --ntasks-per-node COUNT    Override tasks per node
     -h, --help                 Show this help message
 
 Examples:
@@ -72,6 +73,7 @@ CPUS_OVERRIDE=""
 JOB_NAME_OVERRIDE=""
 NODELIST_OVERRIDE=""
 NODES_OVERRIDE=""
+NTASKS_PER_NODE_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -121,6 +123,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --nodes)
             NODES_OVERRIDE="$2"
+            shift 2
+            ;;
+        --ntasks-per-node)
+            NTASKS_PER_NODE_OVERRIDE="$2"
             shift 2
             ;;
         -h|--help)
@@ -180,6 +186,7 @@ MEMORY_VALUE="${MEMORY_OVERRIDE:-${MEMORY:-}}"
 CPUS_VALUE="${CPUS_OVERRIDE:-${CPUS_PER_TASK:-}}"
 JOB_NAME_VALUE="${JOB_NAME_OVERRIDE:-${JOB_NAME:-}}"
 NODES_VALUE="${NODES_OVERRIDE:-${NODES:-}}"
+NTASKS_PER_NODE_VALUE="${NTASKS_PER_NODE_OVERRIDE:-${NTASKS_PER_NODE:-}}"
 
 CMD=("$SUBMIT_SCRIPT" --config "$CONFIG_PATH")
 
@@ -210,6 +217,9 @@ if [[ -n "$NODELIST_OVERRIDE" ]]; then
 fi
 if [[ -n "$NODES_VALUE" ]]; then
     CMD+=(--nodes "$NODES_VALUE")
+fi
+if [[ -n "$NTASKS_PER_NODE_VALUE" ]]; then
+    CMD+=(--ntasks-per-node "$NTASKS_PER_NODE_VALUE")
 fi
 
 echo "Selected config: $CONFIG_PATH"

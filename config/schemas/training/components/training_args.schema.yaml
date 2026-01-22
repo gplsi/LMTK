@@ -20,6 +20,18 @@ properties:
     default: 1
     description: "Size of each data batch"
 
+  num_nodes:
+    type: [integer, 'null']
+    minimum: 1
+    default: null
+    description: "Number of nodes to use; null means use SLURM or local auto-detection"
+
+  devices_per_node:
+    type: [integer, 'null']
+    minimum: 1
+    default: null
+    description: "Devices (tasks) per node; required when num_nodes > 1"
+
   # Model optimization settings
   gradient_checkpointing:
     type: boolean
