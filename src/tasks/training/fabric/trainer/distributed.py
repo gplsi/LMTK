@@ -135,10 +135,19 @@ class DistributedDataParallel(FabricTrainerBase):
         
         self.cli_logger.info("Setting up DDP strategy.")
         if self.devices > 1:
+            parallelization_config = getattr(self.config, "parallelization_config", None)
+            if hasattr(parallelization_config, "to_dict"):
+                parallelization_config = parallelization_config.to_dict()
+            backend = self.config.get("process_group_backend", None)
+            if backend is None and isinstance(parallelization_config, dict):
+                backend = parallelization_config.get("backend", None)
+            if backend is None:
+                backend = "nccl"
+
             # Configure DDPStrategy with common parameters:
             strategy = DDPStrategy(
                 find_unused_parameters=self.config.get("find_unused_parameters", False),
-                process_group_backend=self.config.get("process_group_backend", "nccl"),
+                process_group_backend=backend,
                 static_graph=self.config.get("static_graph", True),
                 # You can add additional parameters here if needed.
             )

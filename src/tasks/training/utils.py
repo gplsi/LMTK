@@ -1,3 +1,7 @@
+import os
+from typing import Optional, Union
+
+from box import Box
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 from transformers.optimization import get_constant_schedule, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
 from transformers.models.gpt2.modeling_gpt2 import GPT2Block
@@ -91,9 +95,16 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
         return warmup_steps, total_steps
 
     if lr_scheduler == 'fixed':
-        scheduler = get_constant_schedule(optimizer)
-        
-    warmup_steps, total_steps = calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps)
+        return get_constant_schedule(optimizer)
+
+    warmup_steps, total_steps = calculate_warmup_steps(
+        number_epochs,
+        world_size,
+        batch_size,
+        warmup_proportion,
+        train_dataset,
+        gradient_accumulation_steps,
+    )
         
     if lr_scheduler == 'cosine':
         # Pure cosine decay without any warmup phase
@@ -186,4 +197,111 @@ def deterministic(seed) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def _parse_slurm_int(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    trimmed = trimmed.split("(")[0].split(",")[0].strip()
+    try:
+        return int(trimmed)
+    except ValueError:
+        return None
+
+
+def resolve_distributed_settings(config: Box, detected_devices: Union[int, str]) -> dict:
+    num_nodes = getattr(config, "num_nodes", None)
+    devices_per_node = getattr(config, "devices_per_node", None)
+
+    if num_nodes is not None:
+        num_nodes = int(num_nodes)
+    if devices_per_node is not None:
+        devices_per_node = int(devices_per_node)
+
+    slurm_nnodes = _parse_slurm_int(os.getenv("SLURM_NNODES"))
+    slurm_tasks_per_node = _parse_slurm_int(os.getenv("SLURM_NTASKS_PER_NODE"))
+    slurm_ntasks = _parse_slurm_int(os.getenv("SLURM_NTASKS"))
+
+    is_external_launcher = bool(
+        os.getenv("SLURM_PROCID") is not None
+        or os.getenv("LOCAL_RANK") is not None
+        or slurm_ntasks is not None
+    )
+
+    if slurm_ntasks and slurm_ntasks > 1 and slurm_tasks_per_node is None:
+        raise ValueError(
+            "SLURM_NTASKS_PER_NODE is required for multi-process SLURM runs; use --ntasks-per-node."
+        )
+
+    if num_nodes is not None and num_nodes > 1 and devices_per_node is None:
+        raise ValueError("devices_per_node must be set when num_nodes > 1.")
+
+    if num_nodes is not None and slurm_nnodes is not None and num_nodes != slurm_nnodes:
+        raise ValueError(
+            f"num_nodes={num_nodes} does not match SLURM_NNODES={slurm_nnodes}."
+        )
+
+    if (
+        devices_per_node is not None
+        and slurm_tasks_per_node is not None
+        and devices_per_node != slurm_tasks_per_node
+    ):
+        raise ValueError(
+            "devices_per_node="
+            f"{devices_per_node} does not match SLURM_NTASKS_PER_NODE={slurm_tasks_per_node}."
+        )
+
+    resolved_num_nodes = num_nodes if num_nodes is not None else (slurm_nnodes or 1)
+    resolved_devices_per_node = (
+        devices_per_node
+        if devices_per_node is not None
+        else slurm_tasks_per_node
+    )
+
+    available_devices = detected_devices if isinstance(detected_devices, int) else 0
+
+    strategy = getattr(config, "parallelization_strategy", None) or "fsdp"
+    if resolved_num_nodes > 1 and strategy in ("none", "dp"):
+        raise ValueError(
+            f"parallelization_strategy={strategy!r} is not supported for multi-node training."
+        )
+
+    if resolved_num_nodes > 1 and available_devices <= 0:
+        raise ValueError("Multi-node training requires GPUs, but no CUDA devices are available.")
+
+    if (
+        slurm_tasks_per_node is not None
+        and available_devices > 0
+        and slurm_tasks_per_node > available_devices
+    ):
+        raise ValueError(
+            "SLURM_NTASKS_PER_NODE="
+            f"{slurm_tasks_per_node} exceeds available CUDA devices ({available_devices})."
+        )
+
+    if (
+        resolved_devices_per_node is not None
+        and slurm_tasks_per_node is None
+        and available_devices > 0
+        and resolved_devices_per_node > available_devices
+    ):
+        raise ValueError(
+            "devices_per_node="
+            f"{resolved_devices_per_node} exceeds available CUDA devices ({available_devices})."
+        )
+
+    devices = resolved_devices_per_node if resolved_devices_per_node is not None else detected_devices
+
+    return {
+        "devices": devices,
+        "num_nodes": resolved_num_nodes,
+        "devices_per_node": resolved_devices_per_node,
+        "is_external_launcher": is_external_launcher,
+        "slurm_nnodes": slurm_nnodes,
+        "slurm_tasks_per_node": slurm_tasks_per_node,
+        "slurm_ntasks": slurm_ntasks,
+    }
     

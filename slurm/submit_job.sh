@@ -30,11 +30,14 @@ NODES=""
 NTASKS_PER_NODE=""
 NODELIST=""
 OUTPUT_DIR=""
-OUTPUT_FILE_PATTERN=""
-ERROR_FILE_PATTERN=""
+OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-}"
+ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-}"
 DRY_RUN=false
 CONFIG_LOGGING_MODE=""
 CONFIG_WANDB_MODE=""
+
+ENV_OUTPUT_FILE_PATTERN="$OUTPUT_FILE_PATTERN"
+ENV_ERROR_FILE_PATTERN="$ERROR_FILE_PATTERN"
 
 # Load configuration file defaults if it exists
 SLURM_CONFIG_FILE="$SCRIPT_DIR/slurm_config.env"
@@ -43,6 +46,13 @@ if [[ -f "$SLURM_CONFIG_FILE" ]]; then
     # Source the configuration file to load defaults
     source "$SLURM_CONFIG_FILE"
     CONFIG_LOADED=true
+fi
+
+if [[ -n "$ENV_OUTPUT_FILE_PATTERN" ]]; then
+    OUTPUT_FILE_PATTERN="$ENV_OUTPUT_FILE_PATTERN"
+fi
+if [[ -n "$ENV_ERROR_FILE_PATTERN" ]]; then
+    ERROR_FILE_PATTERN="$ENV_ERROR_FILE_PATTERN"
 fi
 
 # Set final defaults for any unset variables
@@ -85,8 +95,12 @@ OPTIONAL:
     -j, --job-name JOB_NAME      Job name (default: lmtk)
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
+<<<<<<< HEAD
     --ntasks-per-node TASKS      Number of tasks per node (default: matches GPU count)
     --ntasks TASKS               Total number of tasks (default: matches GPU count)
+=======
+    --ntasks-per-node COUNT      Tasks per node (default: 1)
+>>>>>>> dynamic-padding
     --nodelist NODELIST          Specific nodes to use (optional, e.g., lovelace.iuii.ua.es)
     -o, --output OUTPUT_DIR      Output directory name (optional)
     -d, --dry-run                Show the command that would be executed without running it
@@ -107,6 +121,9 @@ EXAMPLES:
 
     # Different partition
     $0 -c config/experiments/my_experiment.yaml -p gpu -g 8 -m 400G
+
+    # Multi-node run (tasks per node must match GPUs per node)
+    $0 -c config/experiments/my_experiment.yaml --nodes 2 --ntasks-per-node 4 -g 4
 
     # Specific node
     $0 -c config/experiments/my_experiment.yaml --nodelist=lovelace.iuii.ua.es
@@ -179,10 +196,13 @@ while [[ $# -gt 0 ]]; do
             NTASKS_PER_NODE="$2"
             shift 2
             ;;
+<<<<<<< HEAD
         --ntasks)
             NTASKS="$2"
             shift 2
             ;;
+=======
+>>>>>>> dynamic-padding
         --nodelist)
             NODELIST="$2"
             shift 2
@@ -446,6 +466,7 @@ echo "GPU Count: $GPU_COUNT"
 echo "Memory: $MEMORY"
 echo "Time Limit: $TIME_LIMIT"
 echo "CPUs per Task: $CPUS_PER_TASK"
+echo "Tasks per Node: $NTASKS_PER_NODE"
 echo "Nodes: $NODES"
 echo "Tasks per Node: $NTASKS_PER_NODE"
 echo "Total Tasks: $NTASKS"

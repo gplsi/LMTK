@@ -15,6 +15,7 @@ from src.utils.logging import get_logger
 from src.utils.logging import VerboseLevel
 from src.utils.dataset import DatasetStorage
 from src.tasks.training.fabric.trainer.distributed import FSDP, DeepSpeed, DistributedDataParallel, DataParallel
+from src.tasks.training.utils import resolve_distributed_settings
 from src.utils import inherit_init_params
 from src.utils.orchestrator import BaseOrchestrator
 from datasets import Dataset as HFDataset
@@ -45,16 +46,39 @@ class ContinualOrchestrator(BaseOrchestrator):
         """
         super().__init__(config)
         
-        # get all devices available in torch so we can set them to torch modules
-        if (torch.cuda.is_available()):
-            self.devices = torch.cuda.device_count()
-            self.logger.info(f"Found {self.devices} CUDA devices available for training")
-            if self.devices > 0:
-                self.logger.info(f"Found {self.devices} CUDA devices available for training")
-                return
-            
-        self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
-        self.devices = "cpu"
+        detected_devices = "cpu"
+        if torch.cuda.is_available():
+            device_count = torch.cuda.device_count()
+            if device_count > 0:
+                detected_devices = device_count
+                self.logger.info(f"Found {device_count} CUDA devices available for training")
+            else:
+                self.logger.warning("CUDA reports available but no devices were found. Falling back to CPU")
+        else:
+            self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
+
+        resolved = resolve_distributed_settings(self.config, detected_devices)
+        self.devices = resolved["devices"]
+        self.num_nodes = resolved["num_nodes"]
+        self.devices_per_node = resolved["devices_per_node"]
+        self.is_external_launcher = resolved["is_external_launcher"]
+        self.slurm_nnodes = resolved["slurm_nnodes"]
+        self.slurm_tasks_per_node = resolved["slurm_tasks_per_node"]
+        self.slurm_ntasks = resolved["slurm_ntasks"]
+
+        self.logger.info(
+            "Distributed settings: num_nodes=%s devices_per_node=%s devices=%s external_launcher=%s",
+            self.num_nodes,
+            self.devices_per_node,
+            self.devices,
+            self.is_external_launcher,
+        )
+        self.logger.info(
+            "SLURM env: SLURM_NNODES=%s SLURM_NTASKS_PER_NODE=%s SLURM_NTASKS=%s",
+            self.slurm_nnodes,
+            self.slurm_tasks_per_node,
+            self.slurm_ntasks,
+        )
 
     def validate_config(self) -> None:
         """
@@ -87,7 +111,9 @@ class ContinualOrchestrator(BaseOrchestrator):
             devices=self.devices,
             config=self.config,
             dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
+            checkpoint_path=self.config.get("checkpoint", None),
+            num_nodes=self.num_nodes,
+            devices_per_node=self.devices_per_node,
         )
         
         trainer.setup()
@@ -110,7 +136,9 @@ class ContinualOrchestrator(BaseOrchestrator):
             devices=self.devices,
             config=self.config,
             dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
+            checkpoint_path=self.config.get("checkpoint", None),
+            num_nodes=self.num_nodes,
+            devices_per_node=self.devices_per_node,
         )
         
         trainer.setup()
@@ -133,7 +161,9 @@ class ContinualOrchestrator(BaseOrchestrator):
             devices=self.devices,
             config=self.config,
             dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
+            checkpoint_path=self.config.get("checkpoint", None),
+            num_nodes=self.num_nodes,
+            devices_per_node=self.devices_per_node,
         )
         
         trainer.setup()
@@ -157,7 +187,9 @@ class ContinualOrchestrator(BaseOrchestrator):
             devices=self.devices,
             config=self.config,
             dataset=dataset,
-            checkpoint_path=self.config.get("checkpoint", None)
+            checkpoint_path=self.config.get("checkpoint", None),
+            num_nodes=self.num_nodes,
+            devices_per_node=self.devices_per_node,
         )
         
         trainer.setup()

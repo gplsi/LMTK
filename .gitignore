@@ -132,6 +132,8 @@ celerybeat.pid
 
 # Environments
 .env
+slurm/tests/test_secrets.env
+slurm/tests/logs/
 .venv
 env/
 venv/
@@ -183,7 +185,9 @@ tutorials/output
 converted/
 *.err
 *.out
-.windsurf/*
 /converted
 tokenized_visualizations
 .vscode/settings.json
+windsurf/
+.windsurf/
+.vscode/

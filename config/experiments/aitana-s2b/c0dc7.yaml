@@ -34,16 +34,15 @@ number_epochs: 2
 batch_size: 2
 
 # Validation parameters
+
 validate_on_end: false
 validate_after_epoch: false
 validate_after_k_steps: null
 validations_per_epoch: 8
-
 # Saving checkpoints
 save_on_validate: false
 save_on_end: true
 checkpoints_per_epoch: 2
-
 # Gradient parameters
 gradient_accumulation: true
 gradient_accumulation_steps: 8

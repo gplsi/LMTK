@@ -52,17 +52,27 @@ class FabricTrainerBase(ABC):
     strategy setup, logging, checkpointing, gradient accumulation, and validation.
     It is intended to be subclassed with a concrete implementation of the _setup_strategy method.
     """
-    def __init__(self, devices: int, config: Box, dataset: HFDataset, checkpoint_path: str = None) -> None:
+    def __init__(
+        self,
+        devices: Union[int, str],
+        config: Box,
+        dataset: HFDataset,
+        checkpoint_path: str = None,
+        num_nodes: Union[int, None] = None,
+        devices_per_node: Union[int, None] = None,
+    ) -> None:
         """
         Initialize the FabricTrainerBase instance.
 
         Parameters:
-        - devices (int): The number of devices to use for training.
+        - devices (int | str): The number of devices to use for training or "cpu".
         - config (Box): Configuration object containing training parameters. Can include:
             - checkpoint: Path to resume complete training state
             - initial_weights_checkpoint: Path to load only model weights for transfer learning
         - dataset (HFDataset): The dataset (or DatasetDict) used for training.
         - checkpoint_path (str, optional): Path to a checkpoint to resume training, if applicable.
+        - num_nodes (int, optional): Number of nodes to use for training.
+        - devices_per_node (int, optional): Number of devices per node.
 
         Raises:
         - ValueError: If dataset is None or if both checkpoint types are specified.
@@ -79,6 +89,8 @@ class FabricTrainerBase(ABC):
             raise ValueError("Cannot specify both 'checkpoint' and 'initial_weights_checkpoint'. Use 'checkpoint' to resume training or 'initial_weights_checkpoint' for transfer learning.")
         
         self.devices = devices
+        self.num_nodes = num_nodes if num_nodes is not None else 1
+        self.devices_per_node = devices_per_node
         self.config = config
         self.checkpoint_path = checkpoint_path
         self.state = {}
@@ -116,6 +128,13 @@ class FabricTrainerBase(ABC):
 
         This method configures the training strategy, sets up loggers, and then launches the training pipeline using Lightning Fabric.
         """
+        self.cli_logger.info("Setting up FSDP strategy.")
+        self.cli_logger.info(
+            "Fabric config: devices=%s num_nodes=%s devices_per_node=%s",
+            self.devices,
+            self.num_nodes,
+            self.devices_per_node,
+        )
         torch.set_float32_matmul_precision("high")
         # Debug logging for configuration values that might cause type issues
         config_keys_to_check = ['gradient_accumulation_steps', 'validations_per_epoch', 'max_epochs', 'max_steps', 'batch_size', 'eval_batch_size']
@@ -129,6 +148,7 @@ class FabricTrainerBase(ABC):
 
         fabric = L.Fabric(
             devices=self.devices,
+            num_nodes=self.num_nodes,
             strategy=strategy,
             precision=self.config.precision,
             loggers=loggers,
