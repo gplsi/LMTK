@@ -282,26 +282,12 @@ else
     echo "Running without srun (single-node/single-process)"
 fi
 echo "================================"
-
-<<<<<<< HEAD
-cd ..
-SRUN_TOTAL_TASKS="${TOTAL_TASKS:-${SLURM_NTASKS:-}}"
-SRUN_ARGS=()
-if [[ -n "$SRUN_TOTAL_TASKS" ]]; then
-    SRUN_ARGS+=(--ntasks="$SRUN_TOTAL_TASKS")
-fi
-if [[ -n "${NTASKS_PER_NODE:-}" ]]; then
-    SRUN_ARGS+=(--ntasks-per-node="$NTASKS_PER_NODE")
-fi
-srun "${SRUN_ARGS[@]}" "${TRAIN_CMD[@]}"
-=======
 cd "$HOST_PROJECT_ROOT"
 if [[ "$USE_SRUN" == "true" ]]; then
     srun --nodes "$NODES" --ntasks-per-node "$NTASKS_PER_NODE" "${TRAIN_CMD[@]}"
 else
     "${TRAIN_CMD[@]}"
 fi
->>>>>>> dynamic-padding
 # Capture exit code
 EXIT_CODE=$?
 
