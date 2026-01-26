@@ -40,6 +40,7 @@ Example (2 nodes, 4 GPUs per node):
 
 Notes:
 - `--ntasks-per-node` must match the GPUs per node you want to use (same number as `--gpus`).
+- Total tasks is `nodes * ntasks-per-node`; `submit_job.sh` passes `--ntasks` automatically to keep SLURM aligned.
 - Multi-node runs automatically use `srun` inside `slurm/p.slurm`.
 
 ## Optional: Pin `num_nodes` and `devices_per_node` in the Config
