@@ -27,6 +27,7 @@ JOB_NAME=""
 CPUS_PER_TASK=""
 NODES=""
 NTASKS_PER_NODE=""
+TOTAL_TASKS=""
 NODELIST=""
 OUTPUT_DIR=""
 OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-}"
@@ -127,6 +128,7 @@ NOTES:
     - If no WandB key is provided, a warning will be shown but job will continue
     - Use environment variable WANDB_API_KEY as alternative to -k flag
     - Job logs will be saved as {job_id}_lmtk.out and {job_id}_lmtk.err
+    - Total tasks is computed as nodes * ntasks-per-node and passed to sbatch
 SECURITY:
     - Never commit WandB API keys to version control
     - Use environment variables or pass keys via command line
@@ -245,6 +247,18 @@ if [[ ! -f "$FULL_CONFIG_PATH" ]]; then
     exit 1
 fi
 
+if ! [[ "$NODES" =~ ^[0-9]+$ ]] || [[ "$NODES" -lt 1 ]]; then
+    echo "ERROR: --nodes must be a positive integer; got '$NODES'"
+    exit 1
+fi
+
+if ! [[ "$NTASKS_PER_NODE" =~ ^[0-9]+$ ]] || [[ "$NTASKS_PER_NODE" -lt 1 ]]; then
+    echo "ERROR: --ntasks-per-node must be a positive integer; got '$NTASKS_PER_NODE'"
+    exit 1
+fi
+
+TOTAL_TASKS=$((NODES * NTASKS_PER_NODE))
+
 # Check if WandB key is set via environment variable if not provided via command line
 if [[ -z "$WANDB_API_KEY" && -n "${WANDB_API_KEY:-}" ]]; then
     WANDB_API_KEY="${WANDB_API_KEY}"
@@ -300,6 +314,7 @@ EXPORT_VARS="${EXPORT_VARS},JOB_NAME=$JOB_NAME"
 EXPORT_VARS="${EXPORT_VARS},CPUS_PER_TASK=$CPUS_PER_TASK"
 EXPORT_VARS="${EXPORT_VARS},NODES=$NODES"
 EXPORT_VARS="${EXPORT_VARS},NTASKS_PER_NODE=$NTASKS_PER_NODE"
+EXPORT_VARS="${EXPORT_VARS},TOTAL_TASKS=$TOTAL_TASKS"
 
 if [[ -n "$NODELIST" ]]; then
     EXPORT_VARS="${EXPORT_VARS},NODELIST=$NODELIST"
@@ -314,6 +329,7 @@ SBATCH_CMD="$SBATCH_CMD --mem=$MEMORY"
 SBATCH_CMD="$SBATCH_CMD --time=$TIME_LIMIT"
 SBATCH_CMD="$SBATCH_CMD --cpus-per-task=$CPUS_PER_TASK"
 SBATCH_CMD="$SBATCH_CMD --nodes=$NODES"
+SBATCH_CMD="$SBATCH_CMD --ntasks=$TOTAL_TASKS"
 SBATCH_CMD="$SBATCH_CMD --ntasks-per-node=$NTASKS_PER_NODE"
 SBATCH_CMD="$SBATCH_CMD --output=$OUTPUT_FILE_PATTERN"
 SBATCH_CMD="$SBATCH_CMD --error=$ERROR_FILE_PATTERN"
@@ -348,6 +364,7 @@ echo "Time Limit: $TIME_LIMIT"
 echo "CPUs per Task: $CPUS_PER_TASK"
 echo "Tasks per Node: $NTASKS_PER_NODE"
 echo "Nodes: $NODES"
+echo "Total Tasks: $TOTAL_TASKS"
 if [[ -n "$NODELIST" ]]; then
     echo "Nodelist: $NODELIST"
 fi
