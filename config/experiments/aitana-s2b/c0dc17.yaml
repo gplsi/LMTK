@@ -16,7 +16,7 @@ validation_split:
   shuffle: true
 
 # Resuming Training from Checkpoint
-checkpoint: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17/e-001-gs-037751.pth"
+#checkpoint: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17/e-001-gs-037751.pth"
 
 # Output dir
 output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17-epoch-2"
