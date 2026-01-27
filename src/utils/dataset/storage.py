@@ -89,9 +89,51 @@ class DatasetStorage:
             "csv": partial(self._load_dataset_from_extension, "csv"),
             "json": partial(self._load_dataset_from_extension, "json"),
             "jsonl": partial(self._load_dataset_from_extension, "json"),
+            "parquet": partial(self._load_dataset_from_extension, "parquet"),
             # Add more mappings as needed.
         }
         self.text_key = None  # Will be set when loading JSON/JSONL files if specified in config
+
+    def _normalize_text_column(
+        self, dataset: Union[HFDataset, DatasetDict], file_config: Optional[Dict[str, Any]]
+    ) -> Union[HFDataset, DatasetDict]:
+        """
+        Ensure a consistent text column name across formats.
+
+        Tokenization expects a column named "text". For structured formats (CSV/Parquet) the
+        source column may be specified via `text_column`. For backward compatibility we also
+        accept `text_key` as an alias (historically used in some configs).
+        """
+        if dataset is None:
+            raise ValueError("Dataset is None")
+
+        configured_column = None
+        if file_config:
+            configured_column = file_config.get("text_column") or file_config.get("text_key")
+
+        def normalize_split(split: HFDataset) -> HFDataset:
+            if "text" in split.column_names:
+                return split
+
+            if configured_column and configured_column in split.column_names:
+                self.logger.info(
+                    f"Renaming column '{configured_column}' → 'text' for downstream tokenization"
+                )
+                return split.rename_column(configured_column, "text")
+
+            raise ValueError(
+                "Dataset must include a 'text' column for tokenization. "
+                "Set dataset.file_config.text_column (or dataset.file_config.text_key) "
+                f"to a valid column name. Available columns: {split.column_names}"
+            )
+
+        if isinstance(dataset, DatasetDict):
+            return DatasetDict({name: normalize_split(split) for name, split in dataset.items()})
+
+        if isinstance(dataset, HFDataset):
+            return normalize_split(dataset)
+
+        raise ValueError(f"Unsupported dataset type: {type(dataset)}")
 
     def _load_dataset_from_extension(self, data_type: str, files: list[str]) -> Union[HFDataset, DatasetDict]:
         """
@@ -305,7 +347,8 @@ class DatasetStorage:
 
             process_method = self.extension_to_method.get(extension)
             if process_method:
-                datasets.append(process_method(files))
+                loaded_dataset = process_method(files)
+                datasets.append(self._normalize_text_column(loaded_dataset, file_config=file_config))
             else:
                 self.logger.error(
                     f"Could not find Extension processing method for: '{extension}'"
