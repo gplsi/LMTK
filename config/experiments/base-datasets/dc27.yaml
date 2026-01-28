@@ -10,7 +10,7 @@ tokenizer:
 
 dataset:
   source: "local"
-  nameOrPath: "data/downloaded/dc15"
+  nameOrPath: "/home/gplsi/GPLSI/codigos/LMTK/data/downloaded/dc15"
   format: "files"
   file_config:
     text_key: "content"
@@ -18,6 +18,6 @@ dataset:
     encoding: "utf-8"
 
 output:
-  path: "data/tokenized/dc27"
+  path: "/home/gplsi/GPLSI/codigos/LMTK/data/tokenized/dc27"
 
 test_size: 0

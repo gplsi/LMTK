@@ -18,6 +18,6 @@ dataset:
     encoding: "utf-8"
 
 output:
-  path: "data/tokenized/dc20"
+  path: "/home/gplsi/GPLSI/codigos/LMTK/data/tokenized/dc20"
 
 test_size: 0
