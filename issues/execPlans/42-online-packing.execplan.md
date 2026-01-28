@@ -34,6 +34,9 @@ After this change, a novice can run the new smoke configs under `config/tests/` 
 - Observation: `src/main.py` must be executed as a script (`python src/main.py ...`) because it imports task modules as `tasks.<name>`, which relies on Python adding `src/` (the script directory) to `sys.path`.
   Evidence: `src/main.py` uses `__import__(f"tasks.{module_name}", ...)`.
 
+- Observation: `FabricTrainerBase` currently creates dataloaders in `__init__` (before `fabric.launch`). This is fine when Fabric injects its own distributed sampler, but packing mode requires a rank/world-size-aware sampler that must be constructed **after** Fabric has initialized distributed state (works for both SLURM external launches and Fabric-spawned runs).
+  Evidence: `src/tasks/training/fabric/trainer/base.py:FabricTrainerBase.__init__` calls `_load_fabric_datasets_dataloaders`, and `_pipeline` later calls `fabric.setup_dataloaders(...)`.
+
 - Observation: Lightning Fabric only injects a distributed sampler for **map-style datasets**. For `IterableDataset`, Fabric will not auto-replace the sampler.
   Evidence: `lightning/fabric/fabric.py:_requires_distributed_sampler` returns `False` when `has_iterable_dataset(dataloader)` is true.
 
@@ -74,6 +77,10 @@ These observations drive the design choices in this plan: we implement packing a
 
 - Decision: Scheduler sizing uses the dataset backing the train dataloader (the “effective dataset”), not the originally loaded HF dataset.
   Rationale: Packing changes the unit of training from “documents” to “packed blocks”; scheduler step counts must be based on what the dataloader actually yields or warmup/decay schedules will be wrong and can even error.
+  Date/Author: 2026-01-28 / Codex
+
+- Decision: Construct packing dataloaders (and their distributed samplers) inside `_pipeline` after Fabric initializes rank/world size.
+  Rationale: This makes packing-mode sampling correct both when training is launched externally (SLURM `srun`) and when Fabric spawns processes locally.
   Date/Author: 2026-01-28 / Codex
 
 - Decision: Only improve training-config ergonomics for the new `dataset.packing` surface in this plan (safe code defaults); do not attempt a repo-wide training-config simplification.
@@ -381,18 +388,6 @@ New code organization:
 
 Interfaces to implement (in `src/tasks/training/data/packing.py`):
 
-    def get_distributed_rank_info() -> tuple[int, int]:
-        """
-        Return (rank, world_size) in a way compatible with SLURM + srun launches.
-
-        Prefer:
-          - SLURM_PROCID / SLURM_NTASKS
-        Fallback:
-          - RANK / WORLD_SIZE
-        Default:
-          - (0, 1)
-        """
-
     class PackedSequenceDataset(torch.utils.data.Dataset):
         """
         Map-style dataset that exposes packed fixed-length blocks built from variable-length token sequences.
@@ -419,19 +414,24 @@ Interfaces to implement (in `src/tasks/training/data/packing.py`):
         shuffle: bool,
         sampler_drop_last: bool,
         seed: int | None,
+        rank: int,
+        world_size: int,
     ) -> torch.utils.data.DataLoader:
         """
         Build a DataLoader for packing mode with an explicit sampler policy.
 
         Required behaviors:
-        - If world_size == 1: use DataLoader(shuffle=shuffle for train, else False).
-        - If world_size > 1: use DistributedSampler(drop_last=sampler_drop_last, seed=seed or 0),
+        - If world_size == 1: use DataLoader(shuffle=shuffle for train, else False) and no sampler.
+        - If world_size > 1: use DistributedSampler(num_replicas=world_size, rank=rank, drop_last=sampler_drop_last, seed=seed or 0),
           DataLoader(shuffle=False), and drop_last=True for the train split.
         """
 
 Packing algorithm (must be documented in the module docstring for junior readability):
 
-- Define the logical token stream as: doc_0 + [EOS] + doc_1 + [EOS] + ... when insert_eos is enabled.
+- Define the logical token stream:
+  - If `insert_eos` is false: `doc_0 + doc_1 + doc_2 + ...` (simple concatenation).
+  - If `insert_eos` is true: append `eos_token_id` after each document **unless** the document already ends with `eos_token_id`.
+    - This avoids producing `... EOS, EOS ...` sequences when upstream data already contains EOS markers.
 - Define block `i` as the slice `[i * sequence_length : (i+1) * sequence_length]` from the stream.
 - Always drop tail tokens that don’t fit into a full block (floor division for `__len__`).
 - Implement `__getitem__` using a prefix-sum offset array built from doc lengths (and EOS insertions) and `bisect` to find the starting document for a block.
@@ -462,7 +462,8 @@ Trainer integration edits (in `src/tasks/training/fabric/trainer/base.py`):
      - If `insert_eos` is true, require either `packing.eos_token_id` or `packing.tokenizer_name` (load tokenizer with `AutoTokenizer.from_pretrained` to get `.eos_token_id`).
      - If neither provided, raise a clear error (do not silently disable EOS insertion).
    - Keep the underlying HF dataset in its default Python format in packing mode (do not call `set_format(type="torch", ...)` on variable-length doc rows). `PackedSequenceDataset` is responsible for emitting torch tensors with fixed shapes.
-   - Create DataLoaders using `build_packing_dataloader(...)` so the sampler policy is centralized and unit-testable.
+   - Do not create rank-aware samplers before Fabric knows rank/world_size:
+     - Create the packed *datasets* here, but create the *dataloaders* inside `_pipeline` (after `fabric.launch`) using `build_packing_dataloader(...)` so the sampler policy is centralized and unit-testable.
    - Packing config defaults (must be implemented in code because schema defaults are not applied):
      - If `packing.insert_eos` is missing: default to `True`.
      - If `packing.shuffle` is missing: default to `True` for the train split and `False` otherwise.
@@ -471,6 +472,15 @@ Trainer integration edits (in `src/tasks/training/fabric/trainer/base.py`):
 3) Ensure Fabric does not override the sampler:
    - In `_pipeline`, when calling `fabric.setup_dataloaders`, pass `use_distributed_sampler=False` for dataloaders created in packing mode.
    - Leave existing behavior unchanged for non-packing dataloaders.
+
+3.5) Packing dataloaders must be created in `_pipeline`:
+   - Add a small helper in `FabricTrainerBase` like `_build_packing_dataloaders(self, fabric: L.Fabric) -> dict[str, DataLoader]` that:
+     - reads `self.datasets` (already loaded and validation-split ensured),
+     - wraps splits with `PackedSequenceDataset`,
+     - constructs per-split dataloaders via `build_packing_dataloader(..., rank=fabric.global_rank, world_size=fabric.world_size)`.
+   - Replace the existing “FABRIC DATALOADERS SETUP” line so it can handle both modes:
+     - if packing enabled: build dataloaders here, then call `fabric.setup_dataloaders(dataloader, use_distributed_sampler=False)` for each one.
+     - else: keep current behavior (`fabric.setup_dataloaders(dataloader)` with defaults).
 
 4) Deterministic epoch shuffling:
    - At the start of every epoch, call `set_epoch(epoch)` on any `DistributedSampler` used by the training dataloader.
@@ -492,7 +502,7 @@ Unit tests (in `tests/` because this is cross-cutting between tokenization + tra
 - Add `tests/test_packed_sequence_dataset.py` with:
   - `test_packing_inserts_eos_and_blocks_are_fixed_length`
   - `test_len_drops_remainder_tokens_by_default`
-  - `test_distributed_sampler_drop_last_is_enforced_in_packing_mode` (unit-test `build_packing_dataloader` without running distributed by setting env vars for rank/world size)
+  - `test_distributed_sampler_drop_last_is_enforced_in_packing_mode` (unit-test `build_packing_dataloader` by passing `rank/world_size` explicitly)
 
 YAML configs (in `config/tests/`):
 
@@ -581,8 +591,6 @@ Dependencies:
 New interfaces that must exist:
 
 In `src/tasks/training/data/packing.py`:
-
-    def get_distributed_rank_info() -> tuple[int, int]: ...
 
     class PackedSequenceDataset(torch.utils.data.Dataset):
         def __len__(self) -> int: ...

@@ -19,6 +19,7 @@ Add a first-class “online packing” path for continual pretraining (CLM) wher
 - Training (`clm_training`) loads a tokenized dataset from disk and assumes rectangular tensors. Dataloaders are created with default PyTorch collation (no `collate_fn`) and the Fabric pipeline expects columns `input_ids`, `attention_mask`, `labels`. See `src/tasks/training/fabric/trainer/base.py`.
 - Multi-node support relies on SLURM launches (`srun`) and Lightning Fabric’s SLURM environment integration (see issue 37). The data pipeline must not silently duplicate data across ranks/nodes.
 - In DDP-style distributed training, correct shuffling requires calling `DistributedSampler.set_epoch(epoch)` each epoch; we will make this explicit (at least for packing mode) as part of the data pipeline work.
+- For packing, distributed samplers must be constructed after Fabric has initialized rank/world size (inside the Fabric pipeline) so the behavior is correct both for SLURM external launches and for local Fabric-spawned runs.
 
 ## Terminology (avoid confusion)
 
@@ -47,6 +48,7 @@ We want to move away from offline “padding + packaging” for CLM because:
    - Packing must:
      - Produce fixed-length blocks (`sequence_length`) with `attention_mask` all ones and `labels == input_ids` (CLM).
      - Insert an EOS token between documents by default (configurable).
+     - Avoid double-EOS: if a document already ends with EOS, do not insert an extra EOS.
      - Be deterministic and safe for multi-node/multi-process SLURM runs (no silent data duplication across ranks).
      - Work with existing Fabric strategies (FSDP/DDP/DeepSpeed) and current training loop (resume/checkpointing).
      - Avoid distributed hangs by ensuring every rank processes the same number of batches; prefer dropping tail blocks over repeating samples to “pad” ranks.
