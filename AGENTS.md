@@ -46,9 +46,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
   - Coverage: `python -m tox -e coverage`
   - Docs: `python -m tox -e docs` or `./build_docs.sh`.
 - **Quick task runs** (local):
-  - `python -m src.main --config tutorials/configs/tokenization_tutorial.yaml`
-  - `python -m src.main --config tutorials/configs/clm_training_tutorial.yaml`
-  - `python -m src.main --config tutorials/configs/publish_tutorial.yaml`
+  - `python src/main.py --config tutorials/configs/tokenization_tutorial.yaml`
+  - `python src/main.py --config tutorials/configs/clm_training_tutorial.yaml`
+  - `python src/main.py --config tutorials/configs/publish_tutorial.yaml`
 - **SLURM**: For cluster execution, use `slurm/submit_job.sh` (see `slurm/README.md`). Do not reimplement job submission logic in Python; respect the existing shell / env conventions.
 
 ## Testing and Verification (SLURM-aware)
