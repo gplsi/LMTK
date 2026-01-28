@@ -69,3 +69,43 @@ def test_dataset_storage_process_files_parquet_supports_extensionless_files(tmp_
     assert "train" in dataset
     assert "text" in dataset["train"].column_names
     assert dataset["train"][0]["text"] == "hello"
+
+
+def test_dataset_storage_process_files_parquet_accepts_single_file_path(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    parquet = pytest.importorskip("pyarrow.parquet")
+
+    table = pa.table({"content": ["hello", "world"]})
+    parquet_path = tmp_path / "sample.parquet"
+    parquet.write_table(table, parquet_path)
+
+    storage = DatasetStorage(verbose_level=VerboseLevel.ERRORS)
+    dataset = storage.process_files(
+        str(parquet_path),
+        file_config={"format": "parquet", "text_key": "content"},
+    )
+
+    assert "train" in dataset
+    assert "text" in dataset["train"].column_names
+    assert dataset["train"][0]["text"] == "hello"
+
+
+def test_dataset_storage_process_files_parquet_accepts_single_extensionless_file_path(
+    tmp_path: Path,
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    parquet = pytest.importorskip("pyarrow.parquet")
+
+    table = pa.table({"content": ["hello", "world"]})
+    parquet_path = tmp_path / "sample"  # intentionally no extension
+    parquet.write_table(table, parquet_path)
+
+    storage = DatasetStorage(verbose_level=VerboseLevel.ERRORS)
+    dataset = storage.process_files(
+        str(parquet_path),
+        file_config={"format": "parquet", "text_key": "content"},
+    )
+
+    assert "train" in dataset
+    assert "text" in dataset["train"].column_names
+    assert dataset["train"][0]["text"] == "hello"

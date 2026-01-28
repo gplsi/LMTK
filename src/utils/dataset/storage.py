@@ -322,22 +322,24 @@ class DatasetStorage:
 
     def process_files(self, files_path: str, file_config: Optional[Dict] = None) -> HFDataset:
         """
-        Process files within the given directory and build a consolidated dataset.
+        Process files from a directory or a single file path and build a consolidated dataset.
 
-        The method scans the directory, groups the files by their extensions, 
+        The method scans the directory, groups the files by their extensions,
         then uses the appropriate dataset loading method based on the extension.
         If multiple datasets are produced (one for each supported file extension), they are concatenated.
 
         Args:
-            files_path (str): Path to the directory containing files.
+            files_path (str): Path to a directory containing files, or to a single file.
             file_config (Optional[Dict]): Configuration for file processing, including format and text_key.
         
         Returns:
             HFDataset: The processed dataset.
         """
-         
-        if not os.path.isdir(files_path):
-            raise ValueError(f"Invalid directory path: {files_path}.")
+        path = Path(files_path)
+        if not path.exists():
+            raise ValueError(f"Invalid path: {files_path}.")
+        if not path.is_dir() and not path.is_file():
+            raise ValueError(f"Invalid path: {files_path}. Expected a file or directory.")
 
         specific_format = None
         if file_config and "format" in file_config and file_config["format"] != "any":
@@ -365,9 +367,28 @@ class DatasetStorage:
                 f"Processing files from '{files_path}' and grouping by file extension."
             )
             datasets = []
-            extension_files = self._group_files_by_extension(
-                files_path, assumed_extension_for_extensionless=assumed_extension_for_extensionless
-            )
+            if path.is_file():
+                extension = path.suffix.lstrip(".").lower()
+                if not extension:
+                    if assumed_extension_for_extensionless:
+                        extension = assumed_extension_for_extensionless
+                    else:
+                        raise ValueError(
+                            "Input file has no extension and dataset.file_config.format is not set. "
+                            f"Set dataset.file_config.format to one of: {SUPPORTED_EXTENSIONS}."
+                        )
+
+                if specific_format and extension != specific_format:
+                    raise ValueError(
+                        f"Input file extension '{extension}' does not match "
+                        f"dataset.file_config.format '{specific_format}'."
+                    )
+
+                extension_files = {extension: [str(path)]}
+            else:
+                extension_files = self._group_files_by_extension(
+                    files_path, assumed_extension_for_extensionless=assumed_extension_for_extensionless
+                )
 
             for extension, files in extension_files.items():
                 if specific_format and extension != specific_format:
