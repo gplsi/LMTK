@@ -136,3 +136,82 @@ Invariants:
 ## ExecPlan
 
 - `issues/execPlans/42-online-packing.execplan.md`
+
+## Design Contracts (Junior-proof)
+
+These are non-negotiable “contracts” that define correct behavior for v1. If an implementation cannot satisfy one of these, it must fail fast with a clear error.
+
+### Where packing lives
+
+- Online packing is implemented as a **map-style dataset wrapper** (e.g. `PackedSequenceDataset`) that yields already-packed fixed-length blocks.
+- Packing is **not** implemented in a `collate_fn` / HF `DataCollator` (collators only see pre-sampled items and become stateful/fragile under `num_workers>0`, DDP ranks, and resume).
+
+### Packing input contract (tokenized-docs dataset)
+
+- Source HF dataset rows must contain:
+  - `input_ids: List[int]` (variable-length per row)
+  - `length: int` (token count; required for efficient packing + accounting)
+- Source dataset must **not** be required to contain `attention_mask` or `labels` in packing mode.
+- Empty documents (`length == 0`) are skipped; the implementation must log how many were skipped (rank 0).
+
+### Packing output contract (what the trainer sees)
+
+- Every packed sample has fixed shape `[sequence_length]`.
+- Batches have fixed shape `[batch_size, sequence_length]`.
+- For CLM packing v1:
+  - `attention_mask` is all ones (no padding)
+  - `labels == input_ids`
+
+### EOS insertion semantics (document boundary)
+
+- If `insert_eos: true`, the packer inserts exactly one EOS token *between* documents.
+- Avoid double-EOS: if a document already ends in EOS, do not insert an extra EOS.
+- EOS insertion never happens “inside” a document; documents longer than `sequence_length` may span multiple blocks.
+- If `insert_eos: true`, `eos_token_id` must be resolvable (either provided directly or via `tokenizer_name`); otherwise error (no silent fallback).
+
+### Determinism / resume-safety
+
+- `PackedSequenceDataset.__getitem__(i)` must be a pure function of `i` and configuration (no RNG, no mutable cross-worker state).
+- Shuffling (when enabled) is done via the sampler over packed block indices. In DDP, `DistributedSampler.set_epoch(epoch)` must be called every epoch.
+- In distributed runs, the default policy is “no silent duplication across ranks”: prefer dropping remainder over repeating samples.
+
+## Fail-fast Conditions (explicit errors)
+
+- Variable-length tokenization + `tokenizer.overlap > 0` is invalid (hard error).
+- Packing enabled but source dataset does not have `input_ids` (hard error).
+- Packing enabled and `insert_eos: true` but neither `packing.eos_token_id` nor `packing.tokenizer_name` is provided (hard error).
+- Packing enabled but the dataset appears already “offline packed” (e.g. fixed-length `input_ids` with existing `attention_mask/labels`) → hard error with a remediation hint (“disable packing or point to doc-level tokenization output”).
+
+## Verification Recipes (copy/paste)
+
+### 1) Validate configs
+
+    python src/main.py --validate --config config/tests/tokenization_doclevel_smoke.yaml
+    python src/main.py --validate --config config/tests/clm_training_packing_smoke.yaml
+
+### 2) Run doc-level tokenization
+
+    python src/main.py --config config/tests/tokenization_doclevel_smoke.yaml
+
+Expected: output at `output/tests/tokenized_doclevel` with variable-length `input_ids` and `length`.
+
+### 3) Run packing training smoke
+
+    python src/main.py --config config/tests/clm_training_packing_smoke.yaml
+
+Expected: logs (rank 0) confirm packing enabled and the first batch tensor shapes are `[batch_size, sequence_length]`.
+
+### 4) SLURM multi-node smoke (shared filesystem required)
+
+Important: `output/tests/tokenized_doclevel` must be on a filesystem shared across nodes.
+
+    ./slurm/tests/run_tests.sh --config config/tests/tokenization_doclevel_smoke.yaml
+    ./slurm/tests/run_tests.sh --config config/tests/clm_training_packing_multinode_smoke.yaml --nodes 2 --ntasks-per-node 1
+
+## Out of Scope (v1) + Follow-ups
+
+- Multi-input dataset mixing / replay (token-budget ratios) is explicitly out of scope for this issue (follow-up: `issues/43-token-budget-mixture-replay.md`).
+- Extension pathway requirement (v1 must enable v2 cleanly):
+  - Keep packing logic isolated as “doc-level tokens → fixed-length blocks” (single-source).
+  - Ensure the training integration consumes a generic `torch.utils.data.Dataset` of packed blocks + an explicit sampler policy, so a later `MixturePackedDataset` can compose multiple per-dataset packed-block datasets without changing model/training code.
+- Note: doc-level tokenized datasets are not compatible with existing workflows that assume fixed-shape `attention_mask/labels` (e.g. `dataset_merge`); packing mode is the intended consumer.

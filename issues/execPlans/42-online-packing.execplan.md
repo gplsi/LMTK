@@ -51,6 +51,10 @@ These observations drive the design choices in this plan: we implement packing a
   Rationale: Map-style datasets work well with deterministic indexing, have a stable `__len__`, work with PyTorch samplers cleanly, and are easier to resume (the current trainer resumes by skipping batches in a dataloader iterator).
   Date/Author: 2026-01-28 / Codex
 
+- Decision: Do **not** implement packing in a `collate_fn` / HF `DataCollator`.
+  Rationale: Collators only see already-sampled items and become stateful/fragile under `num_workers>0`, distributed ranks, and checkpoint resume. Packing must be indexable + deterministic; that is naturally expressed as a dataset wrapper that yields fixed-length blocks.
+  Date/Author: 2026-01-29 / Codex
+
 - Decision: In packing mode, do **not** rely on Fabric’s `use_distributed_sampler=True` default. Instead, create an explicit sampler and call `fabric.setup_dataloaders(..., use_distributed_sampler=False)` for those dataloaders.
   Rationale: We must guarantee “no silent duplication across ranks” and “no distributed hangs”. PyTorch’s default `DistributedSampler(drop_last=False)` can repeat samples for padding; also we must enforce a consistent `drop_last` policy. Explicit sampler construction makes this behavior auditable and configurable.
   Date/Author: 2026-01-28 / Codex
@@ -86,6 +90,51 @@ These observations drive the design choices in this plan: we implement packing a
 - Decision: Only improve training-config ergonomics for the new `dataset.packing` surface in this plan (safe code defaults); do not attempt a repo-wide training-config simplification.
   Rationale: `src/config/config_loader.ConfigValidator` validates but does not apply JSON-schema defaults. Broad “make fields optional” changes would require a separate config-system plan to safely inject defaults across the entire training configuration.
   Date/Author: 2026-01-28 / Codex
+
+- Decision: v1 packing supports a single input dataset only; multi-dataset mixing is deferred.
+  Rationale: Mixing semantics (doc-level vs token-level), determinism, distributed sharding policy, scheduler sizing, and resume correctness need explicit design + tests. We will keep a clean extension point (“doc source”) but not ship mixing behavior in this issue.
+  Date/Author: 2026-01-29 / Codex
+
+## Contracts
+
+These contracts are the “definition of done” for correctness. If an implementation cannot satisfy one, it must fail fast.
+
+### Where packing lives
+
+- Packing is implemented as a **map-style dataset wrapper** that yields fixed-length blocks (not a collator).
+- Trainer continues to consume rectangular tensors; default PyTorch collation should work in packing mode.
+
+### Input contract (tokenized-docs dataset)
+
+- Source HF dataset rows must contain:
+  - `input_ids: List[int]` (variable-length)
+  - `length: int` (token count; used for sizing/accounting and efficient mapping)
+- Packing mode must not require `attention_mask` or `labels` columns on the source dataset.
+- Empty docs (`length == 0`) are skipped; rank 0 must log how many were skipped.
+
+### Output contract (packed blocks)
+
+- Each packed sample is fixed-length: `len(input_ids) == sequence_length`.
+- For CLM packing v1:
+  - `attention_mask` is all ones (no padding semantics)
+  - `labels == input_ids`
+
+### EOS insertion semantics
+
+- If `insert_eos: true`, insert exactly one EOS token *between* documents.
+- Avoid double-EOS: if a doc already ends with EOS, do not insert an extra EOS.
+- EOS is never inserted “inside” a document; docs longer than `sequence_length` may span multiple blocks.
+- If `insert_eos: true`, EOS must be resolvable:
+  - either `packing.eos_token_id` is provided, or
+  - `packing.tokenizer_name` is provided and resolves `.eos_token_id`.
+  Otherwise: hard error (no silent fallback).
+
+### Determinism / resume-safety
+
+- `PackedSequenceDataset.__getitem__(i)` must be a pure function of `i` and config (no RNG, no mutable cross-worker state).
+- Shuffling is done via the sampler over **packed block indices** (not “reshuffle docs and repack” each epoch).
+- In distributed runs, `DistributedSampler.set_epoch(epoch)` is called every epoch.
+- In distributed runs, the default policy is “no silent duplication across ranks”: prefer dropping remainder over repeating samples.
 
 ## Outcomes & Retrospective
 
@@ -455,12 +504,17 @@ Trainer integration edits (in `src/tasks/training/fabric/trainer/base.py`):
 1) Detect packing enabled:
    - Read `packing = config.dataset.get("packing", None)` and `packing.enabled`.
    - If packing is enabled, relax the “required columns” check: require only `input_ids` (and optionally `length`) on the source HF dataset.
+   - Fail-fast guard: if packing is enabled but the dataset appears already “offline packed” (e.g. fixed-length `input_ids` with existing `attention_mask/labels`), raise with remediation (“disable packing or point to doc-level tokenization output”).
 
 2) Build packed datasets + dataloaders:
    - Create `PackedSequenceDataset` for each split in the DatasetDict.
    - Resolve `eos_token_id`:
      - If `insert_eos` is true, require either `packing.eos_token_id` or `packing.tokenizer_name` (load tokenizer with `AutoTokenizer.from_pretrained` to get `.eos_token_id`).
      - If neither provided, raise a clear error (do not silently disable EOS insertion).
+   - Explicit edge cases (must be implemented + tested):
+     - Empty docs (`length == 0`) are skipped; rank 0 logs how many were skipped.
+     - Docs longer than `sequence_length` are allowed and may span multiple blocks; EOS insertion only happens between docs.
+     - v1 always drops tail tokens that cannot form a full block; rank 0 logs dropped tail tokens.
    - Keep the underlying HF dataset in its default Python format in packing mode (do not call `set_format(type="torch", ...)` on variable-length doc rows). `PackedSequenceDataset` is responsible for emitting torch tensors with fixed shapes.
    - Do not create rank-aware samplers before Fabric knows rank/world_size:
      - Create the packed *datasets* here, but create the *dataloaders* inside `_pipeline` (after `fabric.launch`) using `build_packing_dataloader(...)` so the sampler policy is centralized and unit-testable.
@@ -503,6 +557,7 @@ Unit tests (in `tests/` because this is cross-cutting between tokenization + tra
   - `test_packing_inserts_eos_and_blocks_are_fixed_length`
   - `test_len_drops_remainder_tokens_by_default`
   - `test_distributed_sampler_drop_last_is_enforced_in_packing_mode` (unit-test `build_packing_dataloader` by passing `rank/world_size` explicitly)
+  - `test_empty_docs_are_skipped` (assert no blocks are produced from empty rows)
 
 YAML configs (in `config/tests/`):
 
