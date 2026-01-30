@@ -6,7 +6,7 @@
 # - Pass `-g/--gpus` equal to GPUs per node (typically same as `devices_per_node`)
 #
 # Example:
-#   ./slurm/submit_job.sh -c config/experiments/aitana-s2b/c0dc20_multinode.yaml \
+#   ./slurm/submit_job.sh -c config/experiments/aitana-s2b/c0dc29.yaml \
 #     --nodes 2 --ntasks-per-node 4 -g 4 -p dgx
 
 task: "clm_training"
@@ -65,10 +65,14 @@ lr_scheduler: "warmup_linear"
 warmup_proportion: 0.06
 
 # Distributed strategy
-parallelization_strategy: "ddp"
+parallelization_strategy: "fsdp"
 parallelization_config:
-  num_workers: 4
-  backend: "nccl"
+  auto_wrap_policy: "llama"
+  sharding_strategy: "FULL_SHARD"
+  state_dict_type: "sharded"
+  limit_all_gathers: true
+  cpu_offload: false
+  gradient_checkpointing: true
 
 # Logging (no keys stored here; provide WANDB_API_KEY via env or submit_job.sh -k)
 logging_config: "wandb"
@@ -79,10 +83,10 @@ wandb_group: "aitana-s2b"
 wandb_job_type: "train"
 wandb_tags:
   - "dc20"
-  - "ddp"
+  - "fsdp"
   - "bf16"
   - "multinode"
-wandb_notes: "Continual CLM training on dc20 (multi-node DDP) with Salamandra-2B"
+wandb_notes: "Continual CLM training on dc20 (multi-node FSDP) with Salamandra-2B"
 wandb_resume: "allow"
 wandb_mode: "online"
 log_model: false
