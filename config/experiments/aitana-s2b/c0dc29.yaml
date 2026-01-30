@@ -10,32 +10,32 @@
 #     --nodes 2 --ntasks-per-node 4 -g 4 -p dgx
 
 task: "clm_training"
-experiment_name: "aitana-s2b-c0dc20-multinode"
+experiment_name: "aitana-s2b-c0dc29"
 verbose_level: 3
 
 # Training data (HF dataset saved via `datasets.Dataset.save_to_disk`)
 dataset:
   source: "local"
-  nameOrPath: "data/tokenized/dc20"
+  nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc29"
   format: "hf"
 
-# dc20 tokenization configs typically produce a single "train" split; create a small valid split.
+# dc29 tokenization configs typically produce a single "train" split; create a small valid split.
 validation_split:
   proportion: 0.01
   seed: 42
   shuffle: true
 
 # Output dir (relative to repo root; SLURM script `cd`s to project root)
-output_dir: "output/aitana-s2b-c0dc20-multinode"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc29"
 seed: 42
 
 # Model
-model_name: "BSC-LT/salamandra-2b"
+model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
 precision: "bf16-true"
 
 # Multi-node settings (must match SLURM allocation)
 num_nodes: 2
-devices_per_node: 4
+devices_per_node: 2
 
 # Training parameters
 number_epochs: 1
@@ -52,7 +52,7 @@ save_on_end: true
 
 # Optimizer
 gradient_accumulation: true
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 16
 grad_clip: 1.0
 lr: 0.00002
 lr_decay: true
@@ -78,15 +78,15 @@ parallelization_config:
 logging_config: "wandb"
 wandb_project: "aitana-s2b"
 wandb_entity: "gplsi_continual"
-wandb_run_name: "aitana-s2b-c0dc20-multinode"
+wandb_run_name: "aitana-s2b-c0dc29"
 wandb_group: "aitana-s2b"
 wandb_job_type: "train"
 wandb_tags:
-  - "dc20"
+  - "dc29"
   - "fsdp"
   - "bf16"
   - "multinode"
-wandb_notes: "Continual CLM training on dc20 (multi-node FSDP) with Salamandra-2B"
+wandb_notes: "Continual CLM training on dc29 (multi-node FSDP) with Salamandra-2B"
 wandb_resume: "allow"
 wandb_mode: "online"
 log_model: false
