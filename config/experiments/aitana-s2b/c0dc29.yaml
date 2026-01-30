@@ -1,0 +1,93 @@
+# Multi-node CLM training config for dc20 (tokenized dataset under data/tokenized/dc20).
+#
+# IMPORTANT (SLURM):
+# - `num_nodes` must match `slurm/submit_job.sh --nodes`
+# - `devices_per_node` must match `slurm/submit_job.sh --ntasks-per-node`
+# - Pass `-g/--gpus` equal to GPUs per node (typically same as `devices_per_node`)
+#
+# Example:
+#   ./slurm/submit_job.sh -c config/experiments/aitana-s2b/c0dc29.yaml \
+#     --nodes 2 --ntasks-per-node 4 -g 4 -p dgx
+
+task: "clm_training"
+experiment_name: "aitana-s2b-c0dc20-multinode"
+verbose_level: 3
+
+# Training data (HF dataset saved via `datasets.Dataset.save_to_disk`)
+dataset:
+  source: "local"
+  nameOrPath: "data/tokenized/dc20"
+  format: "hf"
+
+# dc20 tokenization configs typically produce a single "train" split; create a small valid split.
+validation_split:
+  proportion: 0.01
+  seed: 42
+  shuffle: true
+
+# Output dir (relative to repo root; SLURM script `cd`s to project root)
+output_dir: "output/aitana-s2b-c0dc20-multinode"
+seed: 42
+
+# Model
+model_name: "BSC-LT/salamandra-2b"
+precision: "bf16-true"
+
+# Multi-node settings (must match SLURM allocation)
+num_nodes: 2
+devices_per_node: 4
+
+# Training parameters
+number_epochs: 1
+batch_size: 2
+num_workers: 4
+
+# Validation / checkpointing
+validations_per_epoch: 4
+validate_after_epoch: false
+validate_after_k_steps: null
+validate_on_end: true
+save_on_validate: true
+save_on_end: true
+
+# Optimizer
+gradient_accumulation: true
+gradient_accumulation_steps: 8
+grad_clip: 1.0
+lr: 0.00002
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06
+
+# Distributed strategy
+parallelization_strategy: "fsdp"
+parallelization_config:
+  auto_wrap_policy: "llama"
+  sharding_strategy: "FULL_SHARD"
+  state_dict_type: "sharded"
+  limit_all_gathers: true
+  cpu_offload: false
+  gradient_checkpointing: true
+
+# Logging (no keys stored here; provide WANDB_API_KEY via env or submit_job.sh -k)
+logging_config: "wandb"
+wandb_project: "aitana-s2b"
+wandb_entity: "gplsi_continual"
+wandb_run_name: "aitana-s2b-c0dc20-multinode"
+wandb_group: "aitana-s2b"
+wandb_job_type: "train"
+wandb_tags:
+  - "dc20"
+  - "fsdp"
+  - "bf16"
+  - "multinode"
+wandb_notes: "Continual CLM training on dc20 (multi-node FSDP) with Salamandra-2B"
+wandb_resume: "allow"
+wandb_mode: "online"
+log_model: false
+log_iter_interval: 10
