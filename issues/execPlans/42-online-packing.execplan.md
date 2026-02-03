@@ -109,6 +109,7 @@ These contracts are the “definition of done” for correctness. If an implemen
 - Source HF dataset rows must contain:
   - `input_ids: List[int]` (variable-length)
   - `length: int` (token count; used for sizing/accounting and efficient mapping)
+- For correctness, `length` must equal `len(input_ids)` for every row. The packer must validate this invariant on a small deterministic sample and fail fast on mismatch (stale/corrupt `length` silently causes out-of-bounds packing bugs).
 - Packing mode must not require `attention_mask` or `labels` columns on the source dataset.
 - Empty docs (`length == 0`) are skipped; rank 0 must log how many were skipped.
 
@@ -121,8 +122,9 @@ These contracts are the “definition of done” for correctness. If an implemen
 
 ### EOS insertion semantics
 
-- If `insert_eos: true`, insert exactly one EOS token *between* documents.
+- If `insert_eos: true`, append exactly one EOS token *after each document* (unless the document already ends with EOS). This naturally creates a single EOS separator between documents and may also leave the token stream ending with EOS after the final document.
 - Avoid double-EOS: if a doc already ends with EOS, do not insert an extra EOS.
+- The packer does not strip or rewrite other special tokens (e.g. BOS); it only controls optional EOS insertion after documents.
 - EOS is never inserted “inside” a document; docs longer than `sequence_length` may span multiple blocks.
 - If `insert_eos: true`, EOS must be resolvable:
   - either `packing.eos_token_id` is provided, or
@@ -431,9 +433,10 @@ Edits:
 
 New code organization:
 
-- Create `src/tasks/training/data/` as a small, training-owned package for dataset/loader utilities that are not specific to Fabric strategies.
-  - `src/tasks/training/data/__init__.py`
-  - `src/tasks/training/data/packing.py`
+- Use the existing `src/tasks/training/data/` directory as a small, training-owned package for dataset/loader utilities that are not specific to Fabric strategies.
+  - Note: the directory may currently contain only stale `__pycache__` artifacts; it is still the canonical location for this feature.
+  - Add `src/tasks/training/data/__init__.py` (so it is an importable package).
+  - Add `src/tasks/training/data/packing.py`.
 
 Interfaces to implement (in `src/tasks/training/data/packing.py`):
 
@@ -442,7 +445,7 @@ Interfaces to implement (in `src/tasks/training/data/packing.py`):
         Map-style dataset that exposes packed fixed-length blocks built from variable-length token sequences.
 
         Required input column: input_ids (list[int])
-        Optional input column: length (int) to avoid recomputing len(input_ids)
+        Required input column: length (int) (must equal len(input_ids))
         """
 
         def __init__(self, hf_dataset, sequence_length: int, insert_eos: bool, eos_token_id: int | None):
@@ -470,9 +473,15 @@ Interfaces to implement (in `src/tasks/training/data/packing.py`):
         Build a DataLoader for packing mode with an explicit sampler policy.
 
         Required behaviors:
-        - If world_size == 1: use DataLoader(shuffle=shuffle for train, else False) and no sampler.
-        - If world_size > 1: use DistributedSampler(num_replicas=world_size, rank=rank, drop_last=sampler_drop_last, seed=seed or 0),
-          DataLoader(shuffle=False), and drop_last=True for the train split.
+        - If world_size == 1:
+          - Prefer an explicit sampler instead of DataLoader(shuffle=...) so epoch-level shuffling and resume are deterministic.
+          - If `shuffle` is true (train split): use DistributedSampler(num_replicas=1, rank=0, shuffle=True, seed=seed or 0, drop_last=False) and DataLoader(shuffle=False).
+          - If `shuffle` is false (non-train splits): use DataLoader(shuffle=False) and no sampler.
+        - If world_size > 1:
+          - Always use DistributedSampler(num_replicas=world_size, rank=rank, shuffle=shuffle, drop_last=sampler_drop_last, seed=seed or 0) for every split in packing mode.
+          - Use DataLoader(shuffle=False) (shuffling is entirely controlled by the sampler).
+          - Use DataLoader(drop_last=True) for every split when `sampler_drop_last` is true. This ensures every rank sees the same number of batches and avoids sampler padding/duplication.
+          - Trade-off note: `sampler_drop_last=true` can drop a small tail of blocks in validation too; this is acceptable for smoke tests and the “no silent duplication across ranks” contract. If full validation coverage is required, set `sampler_drop_last=false` explicitly and accept that the sampler may pad/duplicate to make per-rank lengths even.
         """
 
 Packing algorithm (must be documented in the module docstring for junior readability):
@@ -481,9 +490,13 @@ Packing algorithm (must be documented in the module docstring for junior readabi
   - If `insert_eos` is false: `doc_0 + doc_1 + doc_2 + ...` (simple concatenation).
   - If `insert_eos` is true: append `eos_token_id` after each document **unless** the document already ends with `eos_token_id`.
     - This avoids producing `... EOS, EOS ...` sequences when upstream data already contains EOS markers.
+  - Important implementation constraint: do not materialize this full stream in memory. It is a conceptual definition only. `PackedSequenceDataset` must produce blocks on-demand via indexing (prefix sums + slicing) so memory use is O(number_of_docs) for offsets, not O(total_tokens).
 - Define block `i` as the slice `[i * sequence_length : (i+1) * sequence_length]` from the stream.
 - Always drop tail tokens that don’t fit into a full block (floor division for `__len__`).
 - Implement `__getitem__` using a prefix-sum offset array built from doc lengths (and EOS insertions) and `bisect` to find the starting document for a block.
+  - Definitions (for junior-proofness):
+    - “Prefix-sum / offsets array” means a cumulative-length array where `offsets[i]` is the total token count up to (but not including) document `i` in the logical stream (after accounting for EOS insertions between documents).
+    - “bisect” means binary-searching `offsets` to find which document contains a global token index `pos` (i.e., find the greatest `i` such that `offsets[i] <= pos`).
 
 Worked example (for docstring and tests):
 
@@ -503,11 +516,15 @@ Trainer integration edits (in `src/tasks/training/fabric/trainer/base.py`):
 
 1) Detect packing enabled:
    - Read `packing = config.dataset.get("packing", None)` and `packing.enabled`.
-   - If packing is enabled, relax the “required columns” check: require only `input_ids` (and optionally `length`) on the source HF dataset.
+   - If packing is enabled, relax the “required columns” check: require only `input_ids` and `length` on the source HF dataset.
    - Fail-fast guard: if packing is enabled but the dataset appears already “offline packed” (e.g. fixed-length `input_ids` with existing `attention_mask/labels`), raise with remediation (“disable packing or point to doc-level tokenization output”).
+     - Implementation hint (to avoid false positives): treat it as “offline packed” only if (a) `attention_mask` or `labels` columns exist, and (b) a small deterministic sample of rows has `len(input_ids) == packing.sequence_length` (or equals a consistent fixed length). If the sample shows variable lengths, do not block packing purely because extra columns exist.
 
 2) Build packed datasets + dataloaders:
    - Create `PackedSequenceDataset` for each split in the DatasetDict.
+   - Require a `length` column in packing mode:
+     - If `length` is missing, raise a clear error (“packing requires doc-level tokenization output with a length field; re-run tokenization with size omitted”).
+     - Validate `length == len(input_ids)` for a small deterministic sample (e.g. first 256 non-empty rows per split) and raise if any mismatch is found. This prevents subtle corruption where a stale length column causes out-of-bounds packing bugs later.
    - Resolve `eos_token_id`:
      - If `insert_eos` is true, require either `packing.eos_token_id` or `packing.tokenizer_name` (load tokenizer with `AutoTokenizer.from_pretrained` to get `.eos_token_id`).
      - If neither provided, raise a clear error (do not silently disable EOS insertion).
@@ -539,15 +556,32 @@ Trainer integration edits (in `src/tasks/training/fabric/trainer/base.py`):
 4) Deterministic epoch shuffling:
    - At the start of every epoch, call `set_epoch(epoch)` on any `DistributedSampler` used by the training dataloader.
    - This applies to both packing and non-packing distributed runs.
+   - In packing mode, this also applies when `world_size == 1` if `shuffle: true`, because we use a `DistributedSampler(num_replicas=1)` for deterministic epoch shuffles.
    - Implementation note: after `fabric.setup_dataloaders`, access the sampler via `self.dataloaders["train"].sampler` (or `self.dataloaders["train"].batch_sampler.sampler` if needed) and guard with `hasattr(sampler, "set_epoch")`.
 
+4.5) Gradient accumulation safety (packing mode):
+   - Current `FabricTrainerBase._accumulate_training` does not flush a partial gradient-accumulation group at end-of-epoch. This is easy to miss and leads to silent “lost” optimizer steps.
+   - Fail-fast guard (packing mode only, to keep blast radius small): if `gradient_accumulation_steps > 1`, assert `len(self.dataloaders["train"]) % gradient_accumulation_steps == 0`. If not, raise a clear error instructing the user to adjust `batch_size`, `sampler_drop_last`, or `gradient_accumulation_steps`.
+
 5) Scheduler correctness:
-   - Build the scheduler using the dataset that backs the (already Fabric-prepared) training dataloader:
-     - use `train_dataset_for_scheduler = self.dataloaders["train"].dataset`
+   - Build the scheduler using the effective number of batches the training loop will actually execute.
+     - Rationale: the current scheduler helper (`src/tasks/training/utils.py:select_scheduler`) computes steps via floor division on dataset length. This can produce `total_steps == 0` for small datasets when `drop_last=False` (DataLoader still yields 1 batch), and in general can diverge from the true number of batches when drop policies change.
+   - After dataloaders are created and (if applicable) prepared by Fabric, compute:
+     - `train_dataloader = self.dataloaders["train"]`
+     - `train_num_batches = len(train_dataloader)` (PyTorch defines this deterministically for map-style datasets)
+     - `gradient_accumulation_steps = int(self.config.get("gradient_accumulation_steps", 1) or 1)`
+     - `optimizer_steps_per_epoch = train_num_batches // gradient_accumulation_steps` (packing mode already enforces divisibility; see 4.5)
+     - `total_optimizer_steps = optimizer_steps_per_epoch * int(self.config.number_epochs)`
+   - Update `src/tasks/training/utils.py:select_scheduler` to accept an explicit `total_steps` (or `steps_per_epoch`) override so the schedule matches `total_optimizer_steps` exactly.
+     - Keep backward compatibility: if the override is not provided, fall back to the current dataset-length-based computation.
    - This fixes both:
      - packing mode (scheduler uses packed-block length), and
      - existing non-packing behavior where `train_data_ratio` / validation-split mutations can make `self.dataset["train"]` disagree with what the dataloader yields.
-   - Add a unit test that monkeypatches `select_scheduler` and asserts the trainer passes `self.dataloaders["train"].dataset` (not `self.dataset["train"]`).
+   - Fail-fast guard: after dataloaders are built, assert `len(self.dataloaders["train"]) > 0` (number of batches). If it is 0, raise a clear error instructing the user to reduce `batch_size`, disable `sampler_drop_last`, or use more data. This prevents downstream schedulers (e.g. cosine) from receiving `total_steps=0` and erroring in confusing ways.
+   - Intra-epoch validation/checkpoint scheduling correctness: when packing is enabled, update any “steps_per_epoch” calculations used for validation/checkpoint cadence (see `FabricTrainerBase._try_validate`) to be derived from the effective train dataloader (or its dataset), not the pre-packing HF dataset. Otherwise, `validations_per_epoch` / `checkpoints_per_epoch` will be scheduled incorrectly under packing.
+   - Add unit tests:
+     - `test_scheduler_steps_use_dataloader_len_not_floor_div_dataset_len` (construct a tiny dataset where `len(dataset) < batch_size * world_size` and `drop_last=False`; assert total_steps is non-zero and matches `len(train_dataloader)`).
+     - Keep the existing intent: also assert the trainer does not size the scheduler from the pre-packing HF dataset (`self.dataset["train"]`) when packing is enabled.
 
 ### Milestone 3 implementation details (tests, configs, docs)
 
@@ -558,6 +592,7 @@ Unit tests (in `tests/` because this is cross-cutting between tokenization + tra
   - `test_len_drops_remainder_tokens_by_default`
   - `test_distributed_sampler_drop_last_is_enforced_in_packing_mode` (unit-test `build_packing_dataloader` by passing `rank/world_size` explicitly)
   - `test_empty_docs_are_skipped` (assert no blocks are produced from empty rows)
+  - `test_scheduler_steps_use_dataloader_len_not_floor_div_dataset_len` (assert scheduler sizing uses dataloader length / optimizer steps, avoiding `total_steps == 0` on small datasets)
 
 YAML configs (in `config/tests/`):
 
@@ -593,7 +628,7 @@ Milestone 2 validation:
 
 Milestone 3 validation:
 
-    python -m pytest -q
+    python -m tox -e py310
     python src/main.py --config config/tests/online_packing_integration_smoke.yaml
 
 SLURM validation (preferred for HPC correctness, run by allowed submitter per `slurm/tests/slurm_test.env`):
@@ -616,7 +651,7 @@ Acceptance is behavioral and must be observable in logs:
   - In distributed runs, logs show the configured rank/world size and that `sampler_drop_last` is enabled (or explicitly disabled by config).
 
 - Automated:
-  - `pytest` passes.
+  - `python -m tox -e py310` passes.
   - SLURM jobs complete with ExitCode `0:0`, and job IDs/log paths are recorded in issue 42.
 
 ## Idempotence and Recovery

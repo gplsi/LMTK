@@ -102,7 +102,7 @@ Out-of-scope for this issue (follow-up candidate):
 - For distributed runs, we will prefer **dropping remainder** over **duplicating samples** to avoid silent data duplication across ranks (standard trade-off: correctness vs full-coverage per epoch).
 - While implementing packing, we will also tighten two training-loop invariants that matter for HPC correctness:
   - epoch-level sampler reseeding (`set_epoch`) for any distributed sampler used by packing (and ideally for all DDP runs),
-  - scheduler sizing uses the effective training dataset length (packed blocks when packing is enabled).
+  - scheduler sizing uses the effective training dataloader length (number of executed batches / optimizer steps), not a floor-division approximation from dataset length. This prevents `total_steps == 0` bugs on small datasets and keeps schedules correct under `drop_last` policies.
 
 ## Acceptance Criteria
 
@@ -110,6 +110,7 @@ Out-of-scope for this issue (follow-up candidate):
 - A CLM training config with `dataset.packing.enabled: true` can train for a short smoke run and receives fixed-length batches (shape `[batch_size, sequence_length]`).
 - Multi-process (or multi-node) SLURM smoke run completes without errors, and logs confirm correct world size and rank coordination (per issue 37 patterns).
 - Unit tests cover packing correctness (EOS insertion, block size, labels) and distributed sharding invariants (no overlap between ranks for a fixed seed).
+- CI-like tests pass via `python -m tox -e py310`.
 
 ## Scope & Invariants (Approval Required if Expanded)
 
@@ -145,12 +146,14 @@ These are non-negotiable “contracts” that define correct behavior for v1. If
 
 - Online packing is implemented as a **map-style dataset wrapper** (e.g. `PackedSequenceDataset`) that yields already-packed fixed-length blocks.
 - Packing is **not** implemented in a `collate_fn` / HF `DataCollator` (collators only see pre-sampled items and become stateful/fragile under `num_workers>0`, DDP ranks, and resume).
+- Packing must not materialize a global “token stream” in memory. The token stream definition is conceptual; the implementation must precompute only lightweight offsets (prefix sums) and produce each packed block on-demand via indexing.
 
 ### Packing input contract (tokenized-docs dataset)
 
 - Source HF dataset rows must contain:
   - `input_ids: List[int]` (variable-length per row)
   - `length: int` (token count; required for efficient packing + accounting)
+- For correctness, `length` must equal `len(input_ids)` for every row. The packer must validate this invariant on a small deterministic sample and fail fast on mismatch (stale/corrupt `length` silently causes out-of-bounds packing bugs).
 - Source dataset must **not** be required to contain `attention_mask` or `labels` in packing mode.
 - Empty documents (`length == 0`) are skipped; the implementation must log how many were skipped (rank 0).
 
@@ -164,8 +167,9 @@ These are non-negotiable “contracts” that define correct behavior for v1. If
 
 ### EOS insertion semantics (document boundary)
 
-- If `insert_eos: true`, the packer inserts exactly one EOS token *between* documents.
+- If `insert_eos: true`, the packer appends exactly one EOS token *after each document* (unless the document already ends in EOS). This naturally creates a single EOS separator between documents and may also leave the token stream ending with EOS after the final document.
 - Avoid double-EOS: if a document already ends in EOS, do not insert an extra EOS.
+- The packer does not strip or rewrite other special tokens (e.g. BOS); it only controls optional EOS insertion between documents.
 - EOS insertion never happens “inside” a document; documents longer than `sequence_length` may span multiple blocks.
 - If `insert_eos: true`, `eos_token_id` must be resolvable (either provided directly or via `tokenizer_name`); otherwise error (no silent fallback).
 
@@ -174,11 +178,13 @@ These are non-negotiable “contracts” that define correct behavior for v1. If
 - `PackedSequenceDataset.__getitem__(i)` must be a pure function of `i` and configuration (no RNG, no mutable cross-worker state).
 - Shuffling (when enabled) is done via the sampler over packed block indices. In DDP, `DistributedSampler.set_epoch(epoch)` must be called every epoch.
 - In distributed runs, the default policy is “no silent duplication across ranks”: prefer dropping remainder over repeating samples.
+  - Concretely in packing mode: default `sampler_drop_last: true` when `world_size > 1`, and apply it consistently across splits (train/valid) unless explicitly overridden for full validation coverage.
 
 ## Fail-fast Conditions (explicit errors)
 
 - Variable-length tokenization + `tokenizer.overlap > 0` is invalid (hard error).
 - Packing enabled but source dataset does not have `input_ids` (hard error).
+- Packing enabled but source dataset does not have `length` (hard error).
 - Packing enabled and `insert_eos: true` but neither `packing.eos_token_id` nor `packing.tokenizer_name` is provided (hard error).
 - Packing enabled but the dataset appears already “offline packed” (e.g. fixed-length `input_ids` with existing `attention_mask/labels`) → hard error with a remediation hint (“disable packing or point to doc-level tokenization output”).
 
@@ -200,6 +206,10 @@ Expected: output at `output/tests/tokenized_doclevel` with variable-length `inpu
     python src/main.py --config config/tests/clm_training_packing_smoke.yaml
 
 Expected: logs (rank 0) confirm packing enabled and the first batch tensor shapes are `[batch_size, sequence_length]`.
+
+### 3b) Run CI-like tests (recommended)
+
+    python -m tox -e py310
 
 ### 4) SLURM multi-node smoke (shared filesystem required)
 
