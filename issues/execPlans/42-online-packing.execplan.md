@@ -25,9 +25,12 @@ After this change, a novice can run the new smoke configs under `config/tests/` 
 
 - [x] (2026-01-28 13:00Z) Drafted initial issue 42 + ExecPlan.
 - [x] (2026-01-28 13:20Z) Revised plan for Fabric correctness: explicit sampler/drop policy, avoid Fabric sampler duplication, corrected CLI commands (`python src/main.py`).
-- [ ] Implement Milestone 1 (doc-level CLM tokenization) with tests and schema updates.
-- [ ] Implement Milestone 2 (training-time packing) with deterministic sampler integration and resume-safe behavior.
+- [x] (2026-01-29) Implement Milestone 1 (doc-level CLM tokenization) with schema updates.
+- [x] (2026-01-29) Implement Milestone 2 (training-time packing) with deterministic sampler integration and resume-safe behavior.
 - [ ] Implement Milestone 3 (tests + SLURM validation) and record job/log evidence in issue 42.
+  - [x] (2026-01-29) Unit tests + local smoke configs added; local `tokenization_doclevel_smoke` + `clm_training_packing_smoke` executed.
+  - [ ] SLURM validation (multi-node) pending.
+  - [ ] Performance + reporting hardening pending (stream cache + packing report).
 
 ## Surprises & Discoveries
 
@@ -121,7 +124,7 @@ These contracts are the “definition of done” for correctness. If an implemen
 
 ### EOS insertion semantics
 
-- If `insert_eos: true`, insert exactly one EOS token *between* documents.
+- If `insert_eos: true`, append EOS after each document (which implies an EOS boundary between documents as well).
 - Avoid double-EOS: if a doc already ends with EOS, do not insert an extra EOS.
 - EOS is never inserted “inside” a document; docs longer than `sequence_length` may span multiple blocks.
 - If `insert_eos: true`, EOS must be resolvable:
@@ -295,6 +298,35 @@ Acceptance:
 - Observability requirement: Add a debug log in the trainer (guarded by `verbose_level >= 4`) that prints:
   - packing enabled, sequence_length, eos_token_id, sampler type, sampler drop_last, and the first batch tensor shapes.
   This gives a junior a concrete “did packing actually happen?” signal.
+
+### Milestone 2.5: Performance + reporting hardening (stream cache + packing report)
+
+Purpose: keep the v1 behavior and contracts, but eliminate the main CPU bottlenecks for corpora with many short docs and add auditable reporting suitable for model publishing.
+
+What will exist at the end:
+
+- Doc-level CLM tokenization persists extra columns needed for efficient packing + provenance:
+  - `ends_with_eos: bool`
+  - `doc_id` (stable per-row id)
+- Packing can optionally use a contiguous on-disk token stream cache:
+  - rank 0 builds the cache, then barrier, then all ranks read it
+  - cache key includes dataset identity + `insert_eos` + `eos_token_id` (and any provenance fields needed)
+  - on cache mismatch/corruption: fail explicitly with a clear remediation message
+- Training writes a `packing_report.json` (rank 0) describing the *actual* packed training data used.
+
+Reporting requirements (minimum fields):
+
+- Dataset identity: `nameOrPath`, dataset fingerprint/hash, doc count, skipped empty docs, sum of raw doc tokens.
+- Packing config: `sequence_length`, `insert_eos`, `eos_token_id`, and tokenizer used to resolve EOS (if applicable).
+- Stream stats: inserted EOS token count, total stream tokens, dropped tail tokens, number of packed blocks.
+- Distributed/sampler stats: `world_size`, sampler type, `sampler_drop_last`, effective blocks used.
+- Run stats: global steps, effective tokens trained (`steps * global_batch_size * sequence_length`), resume info if applicable.
+
+Non-goals (keep it maintainable, not overengineered):
+
+- No multi-dataset mixing (issue 43).
+- No mixed-source blocks and no padding semantics.
+- Minimal file formats and metadata; avoid a “mini data pipeline framework”.
 
 ### Milestone 3: Tests + SLURM validation (including multi-node)
 

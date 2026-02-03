@@ -16,9 +16,10 @@ allOf:
             type: integer
             minimum: 0
             description: "Number of tokens to overlap between examples"
-    
-        required:
-          - overlap
+
+        # overlap is optional; runtime validation enforces:
+        # - fixed-length mode: missing overlap is treated as 0
+        # - doc-level mode (size omitted): overlap must be absent or 0
 
       
 

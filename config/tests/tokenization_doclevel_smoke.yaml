@@ -1,0 +1,26 @@
+task: tokenization
+experiment_name: test_tokenization_doclevel_smoke
+verbose_level: 1
+seed: 42
+
+tokenizer:
+  tokenizer_name: hf-internal-testing/llama-tokenizer
+  task: clm_training
+  # Intentionally omit context_length/max_sequence_length to enable doc-level tokenization.
+  # overlap must be 0/unset in this mode (overlap > 0 is a hard error).
+  batch_size: 64
+  num_proc: 2
+  show_progress: false
+
+dataset:
+  source: local
+  nameOrPath: tutorials/data/raw_text_data
+  format: files
+  file_config:
+    format: txt
+
+output:
+  path: output/tests/tokenized_doclevel
+
+test_size: 0
+

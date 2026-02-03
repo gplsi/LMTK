@@ -34,13 +34,23 @@ class CausalLMTokenizer(BaseTokenizer):
                                       context length and overlap settings.
         """
         super().__init__(config)
-        # Define features with fixed-length sequences for better performance
-        # Using int32 for input_ids and labels to handle large vocabularies
-        self._features = Features({
-            "input_ids": Sequence(Value("int32"), length=config.context_length),
-            "attention_mask": Sequence(Value("int32"), length=config.context_length),
-            "labels": Sequence(Value("int32"), length=config.context_length)
-        })
+        if config.context_length is None:
+            # Doc-level tokenization (variable-length sequences).
+            self._features = Features(
+                {
+                    "input_ids": Sequence(Value("int32")),
+                    "length": Value("int32"),
+                }
+            )
+        else:
+            # Fixed-length tokenization (offline windowing).
+            self._features = Features(
+                {
+                    "input_ids": Sequence(Value("int32"), length=config.context_length),
+                    "attention_mask": Sequence(Value("int32"), length=config.context_length),
+                    "labels": Sequence(Value("int32"), length=config.context_length),
+                }
+            )
         
     def _get_optimal_num_proc(self) -> Optional[int]:
         """
@@ -267,13 +277,34 @@ class CausalLMTokenizer(BaseTokenizer):
         if self._tokenizer is None:
             raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
         
-        # Run tokenizer on the entire batch at once
+        if self.config.context_length is None:
+            # Doc-level: variable-length tokenization without truncation/padding/overflow windows.
+            try:
+                outputs = self._tokenizer(
+                    batch["text"],
+                    truncation=False,
+                    padding=False,
+                )
+            except Exception as e:
+                self.logger.error(f"Tokenization failed: {e}")
+                self.logger.error(f"Batch content preview: {str(batch)[:200]}...")
+                raise RuntimeError(f"Tokenization failed: {e}") from e
+
+            input_ids = outputs["input_ids"]
+            lengths = [len(ids) for ids in input_ids]
+            return {
+                "input_ids": input_ids,
+                "length": lengths,
+            }
+
+        # Fixed-length offline windowing (existing behavior).
+        stride = int(self.config.overlap or 0)
         try:
             outputs = self._tokenizer(
                 batch["text"],
                 truncation=True,
-                max_length=self.config.context_length,
-                stride=self.config.overlap,
+                max_length=int(self.config.context_length),
+                stride=stride,
                 return_overflowing_tokens=True,
                 padding="max_length",  # Pad to max_length for consistency
                 return_tensors="np",  # Direct NumPy conversion
@@ -282,17 +313,14 @@ class CausalLMTokenizer(BaseTokenizer):
             self.logger.error(f"Tokenization failed: {e}")
             self.logger.error(f"Batch content preview: {str(batch)[:200]}...")
             raise RuntimeError(f"Tokenization failed: {e}") from e
-        
-        input_ids = outputs["input_ids"]       # Already NumPy arrays
+
+        input_ids = outputs["input_ids"]  # NumPy arrays
         attention_mask = outputs["attention_mask"]
-        
-        # Efficient vectorized label creation
+
         labels = np.where(attention_mask == 1, input_ids, -100)
-        
-        # Single conversion at the end
+
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "labels": labels,
         }
-

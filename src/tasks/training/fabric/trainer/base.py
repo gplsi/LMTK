@@ -28,6 +28,7 @@ from src.tasks.training.utils import *
 from utils.logging import get_logger
 from lightning.fabric.strategies import FSDPStrategy, DDPStrategy, DeepSpeedStrategy, DataParallelStrategy
 from src.tasks.training.utils import select_optimizer, select_scheduler, deterministic
+from src.tasks.training.data.packing import PackedSequenceDataset, build_packing_dataloader
 
 
 
@@ -95,6 +96,12 @@ class FabricTrainerBase(ABC):
         self.checkpoint_path = checkpoint_path
         self.state = {}
         self.dataset = dataset
+
+        packing_cfg = None
+        if hasattr(self.config, "dataset") and self.config.dataset is not None:
+            packing_cfg = self.config.dataset.get("packing", None)
+        self._packing_cfg = packing_cfg
+        self._packing_enabled = bool(packing_cfg and packing_cfg.get("enabled", False))
         
         # Load datasets and create dataloaders
         result = self._load_fabric_datasets_dataloaders(self.config, self.dataset)
@@ -323,7 +330,8 @@ class FabricTrainerBase(ABC):
             else:
                 # Calculate progress within epoch for intra-epoch saves
                 try:
-                    train_dataset = self.datasets["train"]
+                    train_loader = self.dataloaders.get("train")
+                    train_dataset = train_loader.dataset if train_loader is not None else self.datasets["train"]
                     batch_size = max(1, int(self.config.batch_size))
                     world_size = max(1, int(fabric.world_size))
                     gradient_accumulation_steps = self.config.get("gradient_accumulation_steps", 1)
@@ -585,7 +593,8 @@ class FabricTrainerBase(ABC):
                 return
 
             current_epoch = self.state.get("current_epoch", 1)
-            train_dataset = self.datasets["train"]
+            train_loader = self.dataloaders.get("train")
+            train_dataset = train_loader.dataset if train_loader is not None else self.datasets["train"]
             batch_size = max(1, int(self.config.batch_size))
             world_size = max(1, int(fabric.world_size))
             gradient_accumulation_steps = self.config.get("gradient_accumulation_steps", 1)
@@ -728,6 +737,14 @@ class FabricTrainerBase(ABC):
         for epoch in range(epochs):
             # Update current epoch in state for checkpoint naming
             self.state["current_epoch"] = epoch + 1
+
+            train_loader = self.dataloaders.get("train")
+            if train_loader is not None:
+                sampler = getattr(train_loader, "sampler", None)
+                if sampler is None and hasattr(train_loader, "batch_sampler"):
+                    sampler = getattr(train_loader.batch_sampler, "sampler", None)
+                if sampler is not None and hasattr(sampler, "set_epoch"):
+                    sampler.set_epoch(epoch)
             
             if fabric.global_rank == 0:
                 self.cli_logger.debug(f"Running Epoch {epoch + 1} of {epochs}")
@@ -738,6 +755,18 @@ class FabricTrainerBase(ABC):
                 continue            
             for step, batch in enumerate(batch_iterator):
                 self.train_iter_t0 = time.perf_counter()
+                if (
+                    fabric.global_rank == 0
+                    and int(getattr(self.config, "verbose_level", 1)) >= 4
+                    and not getattr(self, "_logged_first_batch_shapes", False)
+                ):
+                    self.cli_logger.debug(
+                        "First batch shapes: input_ids=%s attention_mask=%s labels=%s",
+                        tuple(batch["input_ids"].shape),
+                        tuple(batch["attention_mask"].shape),
+                        tuple(batch["labels"].shape),
+                    )
+                    self._logged_first_batch_shapes = True
                 if self.config.gradient_accumulation_steps:
                     _, loss = self._accumulate_training(fabric, model, batch, step)
                 else:
@@ -859,6 +888,21 @@ class FabricTrainerBase(ABC):
             else:
                 raise ValueError(f"train_data_ratio {train_data_ratio} results in empty training set")
                 
+        if self._packing_enabled:
+            for split in dataset.keys():
+                column_names = set(dataset[split].column_names)
+                if "input_ids" not in column_names:
+                    raise ValueError(f"Packing mode requires an 'input_ids' column in split '{split}'.")
+                if "attention_mask" in column_names or "labels" in column_names:
+                    raise ValueError(
+                        f"Packing mode expects a doc-level tokenized dataset without 'attention_mask'/'labels' "
+                        f"(split '{split}'). Disable packing or point nameOrPath to the doc-level tokenization output."
+                    )
+
+            # Dataloaders are created in _pipeline after Fabric initializes rank/world size.
+            dataloaders: dict[str, DataLoader] = {}
+            return {"datasets": dataset, "dataloaders": dataloaders}
+
         required_columns = ["input_ids", "attention_mask", "labels"]
         for split in dataset.keys():
             missing_columns = [col for col in required_columns if col not in dataset[split].column_names]
@@ -868,16 +912,17 @@ class FabricTrainerBase(ABC):
                 dataset[split].set_format(type="torch", columns=required_columns)
             except Exception as e:
                 raise RuntimeError(f"Failed to set format for {split} split: {str(e)}")
+
         dataloaders = {}
         for split in dataset.keys():
             try:
                 dataloaders[split] = DataLoader(
-                    dataset[split], 
-                    batch_size=config.batch_size, 
-                    shuffle=(split == "train"), 
+                    dataset[split],
+                    batch_size=config.batch_size,
+                    shuffle=(split == "train"),
                     num_workers=config.num_workers,
                     pin_memory=True,
-                    drop_last=False
+                    drop_last=False,
                 )
             except Exception as e:
                 raise RuntimeError(f"Failed to create DataLoader for {split} split: {str(e)}")
@@ -885,6 +930,96 @@ class FabricTrainerBase(ABC):
             "datasets": dataset,
             "dataloaders": dataloaders
         }
+
+    def _build_packing_dataloaders(self, fabric: L.Fabric) -> dict[str, DataLoader]:
+        if not self._packing_enabled:
+            raise RuntimeError("_build_packing_dataloaders called but packing is not enabled.")
+
+        packing = self.config.dataset.get("packing", None)
+        if packing is None:
+            raise ValueError("Packing is enabled but dataset.packing is missing.")
+
+        sequence_length = packing.get("sequence_length", None)
+        if sequence_length is None:
+            raise ValueError("dataset.packing.sequence_length is required when packing is enabled.")
+        sequence_length = int(sequence_length)
+
+        insert_eos = packing.get("insert_eos", True)
+        insert_eos = True if insert_eos is None else bool(insert_eos)
+
+        eos_token_id = packing.get("eos_token_id", None)
+        tokenizer_name = packing.get("tokenizer_name", None)
+
+        if insert_eos:
+            if eos_token_id is None:
+                if not tokenizer_name:
+                    raise ValueError(
+                        "Packing requires an EOS token when insert_eos is true. "
+                        "Provide dataset.packing.eos_token_id or dataset.packing.tokenizer_name."
+                    )
+                tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
+                eos_token_id = tokenizer.eos_token_id
+            if eos_token_id is None:
+                raise ValueError("Could not resolve eos_token_id for packing (tokenizer returned None).")
+
+        dataloaders: dict[str, DataLoader] = {}
+        for split, hf_split in self.datasets.items():
+            packed_dataset = PackedSequenceDataset(
+                hf_split,
+                sequence_length=sequence_length,
+                insert_eos=insert_eos,
+                eos_token_id=eos_token_id,
+            )
+
+            if split == "train" and len(packed_dataset) == 0:
+                raise ValueError(
+                    "Packing produced 0 full blocks for the training split. "
+                    "Increase dataset size, reduce sequence_length, or disable packing."
+                )
+
+            if int(getattr(self.config, "verbose_level", 1)) >= 4 and fabric.global_rank == 0:
+                self.cli_logger.debug(
+                    "Packing stats (%s): blocks=%s total_tokens=%s dropped_tail_tokens=%s skipped_empty_docs=%s inserted_eos_tokens=%s",
+                    split,
+                    len(packed_dataset),
+                    getattr(packed_dataset, "_total_tokens", None),
+                    getattr(packed_dataset, "dropped_tail_tokens", None),
+                    getattr(packed_dataset, "skipped_empty_docs", None),
+                    getattr(packed_dataset, "inserted_eos_tokens", None),
+                )
+
+            shuffle = packing.get("shuffle", None)
+            if shuffle is None:
+                shuffle = split == "train"
+
+            sampler_drop_last = packing.get("sampler_drop_last", None)
+            if sampler_drop_last is None:
+                sampler_drop_last = fabric.world_size > 1
+
+            dataloaders[split] = build_packing_dataloader(
+                packed_dataset,
+                split=split,
+                batch_size=int(self.config.batch_size),
+                num_workers=int(self.config.num_workers),
+                shuffle=bool(shuffle),
+                sampler_drop_last=bool(sampler_drop_last),
+                seed=self.config.get("seed", None),
+                rank=int(fabric.global_rank),
+                world_size=int(fabric.world_size),
+            )
+
+        if int(getattr(self.config, "verbose_level", 1)) >= 4 and fabric.global_rank == 0:
+            sampler = getattr(dataloaders.get("train"), "sampler", None)
+            self.cli_logger.debug(
+                "Packing enabled: sequence_length=%s insert_eos=%s eos_token_id=%s sampler=%s sampler_drop_last=%s",
+                sequence_length,
+                insert_eos,
+                eos_token_id,
+                type(sampler).__name__ if sampler is not None else None,
+                getattr(sampler, "drop_last", None) if sampler is not None else None,
+            )
+
+        return dataloaders
         
     def _pipeline(self, fabric: L.Fabric) -> None:
         """
@@ -911,7 +1046,14 @@ class FabricTrainerBase(ABC):
         fabric.barrier()
 
         # FABRIC DATALOADERS SETUP
-        self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
+        if self._packing_enabled:
+            self.dataloaders = self._build_packing_dataloaders(fabric)
+            self.dataloaders = {
+                k: fabric.setup_dataloaders(v, use_distributed_sampler=False)
+                for k, v in self.dataloaders.items()
+            }
+        else:
+            self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
 
         # MODEL: instantiate within the fabric.init_module() context
         t0 = time.perf_counter()
@@ -944,7 +1086,7 @@ class FabricTrainerBase(ABC):
             self.config.number_epochs, 
             fabric.world_size, 
             self.config.batch_size, 
-            self.dataset['train'], 
+            self.dataloaders["train"].dataset,
             self.config.warmup_proportion, 
             self.config.gradient_accumulation_steps
         )        

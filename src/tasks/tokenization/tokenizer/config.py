@@ -21,10 +21,10 @@ class TokenizerConfig:
     Dataclass representing configuration settings for tokenization.
 
     Attributes:
-        context_length (int): 
-            The maximum allowed length (in tokens) of the input context. 
-            This parameter is essential for defining how many tokens the tokenizer 
-            should consider at one time.
+        context_length (Optional[int]):
+            The maximum allowed length (in tokens) of the input context.
+            If omitted/None for CLM tokenization, tokenization runs in doc-level mode and produces
+            variable-length `input_ids` (no truncation/padding/windowing).
 
         overlap (Optional[int]): 
             The number of tokens that should overlap when processing segments of text.
@@ -61,7 +61,7 @@ class TokenizerConfig:
        :no-index:
     """
 
-    context_length: int
+    context_length: Optional[int]
     overlap: Optional[int] = None
     tokenizer_name: Optional[str] = None
     verbose_level: VerboseLevel = VerboseLevel.INFO

@@ -93,6 +93,45 @@ python src/main.py --config tutorials/clm_training_tutorial.yaml
 - Logs and checkpoints are saved in the output directory.
 - Use Weights & Biases or TensorBoard for live monitoring.
 
+## Online packing (training-time packing for CLM)
+
+If your dataset was tokenized in doc-level mode (variable-length `input_ids` + `length`), CLM training can pack
+those tokens into fixed-length blocks at training time.
+
+Key properties:
+
+- Produces fixed-shape batches: `[batch_size, sequence_length]`
+- No dynamic padding: `attention_mask` is all ones, `labels == input_ids`
+- Inserts EOS between documents by default (and avoids double-EOS when the source already ends with EOS)
+- Drops tail tokens that cannot fill a full block
+- In DDP, defaults to dropping remainder samples instead of duplicating across ranks
+
+Config (smoke example):
+
+```yaml
+task: clm_training
+experiment_name: test_clm_training_packing_smoke
+verbose_level: 1
+model_name: hf-internal-testing/tiny-random-LlamaForCausalLM
+precision: bf16-true
+seed: 42
+
+dataset:
+  source: local
+  format: hf
+  nameOrPath: output/tests/tokenized_doclevel
+  packing:
+    enabled: true
+    sequence_length: 128
+    tokenizer_name: hf-internal-testing/llama-tokenizer
+    # Optional:
+    # insert_eos: true
+    # shuffle: true
+    # sampler_drop_last: true
+```
+
+See `config/tests/tokenization_doclevel_smoke.yaml` and `config/tests/clm_training_packing_smoke.yaml` for runnable examples.
+
 ## Tips & Best Practices
 - Always validate your config with `make validate` before launching jobs.
 - Use curriculum configs for multi-phase or domain-adaptive training.

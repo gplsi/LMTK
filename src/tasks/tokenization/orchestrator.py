@@ -65,16 +65,31 @@ class TokenizationOrchestrator(BaseOrchestrator):
         Returns:
             HFDataset: The tokenized version of the input dataset.
         """        
+        task = self.config.tokenizer.get("task", "clm_training")
         context_length = getattr(
             self.config.tokenizer,
             "max_sequence_length",
             getattr(self.config.tokenizer, "context_length", None),
         )
-        if context_length is None:
-            raise ValueError(
-                "Tokenizer configuration must define either max_sequence_length or context_length"
-            )
-        overlap = self.config.tokenizer.get("overlap")
+
+        # Doc-level variable-length tokenization is only supported for CLM.
+        if task == "clm_training" and context_length is None:
+            overlap = self.config.tokenizer.get("overlap", 0)
+            if overlap not in (None, 0):
+                raise ValueError(
+                    "Doc-level CLM tokenization is enabled when context_length/max_sequence_length is omitted. "
+                    "In this mode tokenizer.overlap must be absent or 0."
+                )
+            overlap = 0
+        else:
+            if context_length is None:
+                raise ValueError(
+                    "Tokenizer configuration must define either max_sequence_length or context_length"
+                )
+            overlap = self.config.tokenizer.get("overlap", 0)
+            if overlap is None:
+                overlap = 0
+
         tokenizer_name = self.config.tokenizer.tokenizer_name
         batch_size = self.config.tokenizer.get("batch_size", 2000)  # Default batch size if not specified
         num_proc = self.config.tokenizer.get("num_proc", None)
@@ -111,7 +126,6 @@ class TokenizationOrchestrator(BaseOrchestrator):
             seed=seed
         )
 
-        task = self.config.tokenizer.get("task", "clm_training")
         if task == "clm_training":
             tokenizer = CausalLMTokenizer(tokenizer_config)
         elif task == "instruction":

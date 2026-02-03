@@ -164,7 +164,7 @@ These are non-negotiable “contracts” that define correct behavior for v1. If
 
 ### EOS insertion semantics (document boundary)
 
-- If `insert_eos: true`, the packer inserts exactly one EOS token *between* documents.
+- If `insert_eos: true`, the packer appends EOS after each document (which implies an EOS boundary between documents as well).
 - Avoid double-EOS: if a document already ends in EOS, do not insert an extra EOS.
 - EOS insertion never happens “inside” a document; documents longer than `sequence_length` may span multiple blocks.
 - If `insert_eos: true`, `eos_token_id` must be resolvable (either provided directly or via `tokenizer_name`); otherwise error (no silent fallback).
@@ -215,3 +215,47 @@ Important: `output/tests/tokenized_doclevel` must be on a filesystem shared acro
   - Keep packing logic isolated as “doc-level tokens → fixed-length blocks” (single-source).
   - Ensure the training integration consumes a generic `torch.utils.data.Dataset` of packed blocks + an explicit sampler policy, so a later `MixturePackedDataset` can compose multiple per-dataset packed-block datasets without changing model/training code.
 - Note: doc-level tokenized datasets are not compatible with existing workflows that assume fixed-shape `attention_mask/labels` (e.g. `dataset_merge`); packing mode is the intended consumer.
+
+## Performance + Reporting hardening (still pending in this issue)
+
+The v1 implementation is correct and opt-in, but it still risks CPU overhead on corpora with many short documents due to repeated HF row access and boundary-crossing inside `PackedSequenceDataset.__getitem__`. We will address this within issue 42 without changing external behavior.
+
+### A) Tokenization → training contract additions (doc-level CLM)
+
+To streamline training-time packing and improve reporting, doc-level CLM tokenization must also persist:
+
+- `ends_with_eos: bool` (computed using the tokenizer’s EOS id at tokenization time)
+- `doc_id` (stable per-row id; integer is fine for v1)
+
+Invariants:
+- `length == len(input_ids)`
+- `ends_with_eos == (length > 0 and input_ids[-1] == eos_token_id_used_for_tokenization)`
+
+### B) Contiguous token stream cache (single dataset, homogeneous blocks)
+
+Add an optional training-time “token stream cache” layer:
+
+- Build a contiguous 1D token stream (doc concatenation + optional EOS insertion) once per dataset/config.
+- Persist it as a shared on-disk cache (e.g. memmap) keyed by:
+  - dataset fingerprint / path identifier,
+  - `insert_eos` and `eos_token_id`,
+  - tokenizer identifier (if needed for provenance).
+- Rank 0 builds the cache, then `fabric.barrier()`, then all ranks open it read-only.
+- Packing dataset then becomes a simple fixed-stride slice into the stream (cheap even for many short docs).
+
+Non-goals for this hardening step:
+- No multi-dataset mixing (issue 43).
+- No mixed-source blocks and no padding semantics.
+- No overengineering: minimal file formats + minimal metadata + clear errors on cache mismatch.
+
+### C) Packing report (auditable provenance)
+
+Training must emit a `packing_report.json` (rank 0) capturing the *actual* packed training data used, including at minimum:
+
+- Dataset identity: `nameOrPath`, dataset fingerprint/hash, number of docs, skipped empty docs, sum of raw doc tokens.
+- Packing config: `sequence_length`, `insert_eos`, `eos_token_id`, and tokenizer used to resolve EOS (if applicable).
+- Stream stats: inserted EOS token count, total stream tokens, dropped tail tokens, number of packed blocks.
+- Distributed/sampler stats: `world_size`, sampler type, `sampler_drop_last`, effective blocks used.
+- Run stats: global steps, effective tokens trained (`steps * global_batch_size * sequence_length`), resume info if applicable.
+
+This report is intended to be referenced later when publishing models/datasets.

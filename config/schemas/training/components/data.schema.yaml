@@ -19,6 +19,39 @@ properties:
         enum: ["dataset", "files", "hf"]
         description: "Format of the dataset"
         default: "hf"
+      packing:
+        type: object
+        description: "Optional training-time packing configuration for CLM (doc-level tokens -> fixed-length blocks)."
+        properties:
+          enabled:
+            type: boolean
+            description: "Enable training-time packing."
+          sequence_length:
+            type: integer
+            minimum: 1
+            description: "Fixed block length produced by packing."
+          insert_eos:
+            type: boolean
+            description: "Insert eos_token_id between documents (and at document ends when missing)."
+          eos_token_id:
+            type: [integer, "null"]
+            description: "EOS token id to insert when insert_eos is true."
+          tokenizer_name:
+            type: string
+            description: "Tokenizer name used to resolve eos_token_id when not provided directly."
+          shuffle:
+            type: boolean
+            description: "Shuffle packed blocks for the train split (implemented via sampler)."
+          sampler_drop_last:
+            type: boolean
+            description: "In DDP, drop remainder blocks instead of duplicating samples across ranks."
+        allOf:
+          - if:
+              properties:
+                enabled:
+                  const: true
+            then:
+              required: ["sequence_length"]
     required:
       - source
       - nameOrPath

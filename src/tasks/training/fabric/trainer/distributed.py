@@ -22,6 +22,14 @@ from utils import inherit_init_params
 from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
 from torch.distributed.fsdp import BackwardPrefetch
 
+
+def _is_multi_device(devices) -> bool:
+    if isinstance(devices, int):
+        return devices > 1
+    if isinstance(devices, (list, tuple)):
+        return len(devices) > 1
+    return False
+
 @inherit_init_params
 class FSDP(FabricTrainerBase):
     """
@@ -47,7 +55,7 @@ class FSDP(FabricTrainerBase):
         self.cli_logger.info("Using Devices: %s", self.devices)
 
 
-        if self.devices > 1:
+        if _is_multi_device(self.devices):
             # Resolve FSDP configuration with sensible defaults
             fsdp_config = resolve_fsdp_config(
                 config=self.config.to_dict(),
@@ -100,7 +108,7 @@ class DeepSpeed(FabricTrainerBase):
         """
         
         self.cli_logger.info("Setting up DeepSpeed strategy.")
-        if self.devices > 1:
+        if _is_multi_device(self.devices):
             # Pass DeepSpeed-specific parameters from your config
             strategy = DeepSpeedStrategy(
                 zero_stage=self.config.zero_stage,  # e.g. 2 or 3
@@ -134,7 +142,7 @@ class DistributedDataParallel(FabricTrainerBase):
         """
         
         self.cli_logger.info("Setting up DDP strategy.")
-        if self.devices > 1:
+        if _is_multi_device(self.devices):
             parallelization_config = getattr(self.config, "parallelization_config", None)
             if hasattr(parallelization_config, "to_dict"):
                 parallelization_config = parallelization_config.to_dict()
@@ -175,7 +183,7 @@ class DataParallel(FabricTrainerBase):
         """
         
         self.cli_logger.info("Setting up DP strategy.")
-        if self.devices > 1:
+        if _is_multi_device(self.devices):
             strategy = DataParallelStrategy(
                 parallel_devices=self.devices,
                 output_device=(

@@ -46,6 +46,43 @@ output:
 test_size: 0
 ```
 
+## Doc-level CLM tokenization (variable-length)
+
+For online packing workflows (see `docs/CLM_TRAINING.md`), CLM tokenization can run in **doc-level** mode:
+
+- Omit `tokenizer.context_length` / `tokenizer.max_sequence_length`
+- Do **not** use overlap/stride (must be absent or `0`)
+- Output rows contain variable-length `input_ids` and a `length` field
+
+Example (smoke config):
+
+```yaml
+task: tokenization
+experiment_name: test_tokenization_doclevel_smoke
+verbose_level: 1
+
+tokenizer:
+  tokenizer_name: hf-internal-testing/llama-tokenizer
+  task: clm_training
+  # Intentionally omit context_length/max_sequence_length
+  # overlap must be 0/unset in this mode
+  batch_size: 64
+  num_proc: 2
+  show_progress: false
+
+dataset:
+  source: local
+  nameOrPath: tutorials/data/raw_text_data
+  format: files
+  file_config:
+    format: txt
+
+output:
+  path: output/tests/tokenized_doclevel
+
+test_size: 0
+```
+
 2. **Run the tokenization task**:
 
 ```bash

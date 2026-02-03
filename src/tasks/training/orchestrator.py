@@ -46,16 +46,16 @@ class ContinualOrchestrator(BaseOrchestrator):
         """
         super().__init__(config)
         
-        detected_devices = "cpu"
+        detected_devices = 1
         if torch.cuda.is_available():
             device_count = torch.cuda.device_count()
             if device_count > 0:
                 detected_devices = device_count
                 self.logger.info(f"Found {device_count} CUDA devices available for training")
             else:
-                self.logger.warning("CUDA reports available but no devices were found. Falling back to CPU")
+                self.logger.warning("CUDA reports available but no devices were found. Falling back to CPU (devices=1)")
         else:
-            self.logger.warning("No CUDA devices available for training. Training will be done on CPU")
+            self.logger.warning("No CUDA devices available for training. Falling back to CPU (devices=1)")
 
         resolved = resolve_distributed_settings(self.config, detected_devices)
         self.devices = resolved["devices"]
