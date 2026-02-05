@@ -107,3 +107,21 @@ def test_packing_index_disallow_build_raises(tmp_path: Path) -> None:
             allow_build=False,
         )
 
+
+def test_packing_index_ends_with_eos_mismatch_fails_fast(tmp_path: Path) -> None:
+    split = _FakeSplit(
+        rows=[
+            {"input_ids": [1, 2, 0], "length": 3, "ends_with_eos": False},
+        ],
+        column_names=["input_ids", "length", "ends_with_eos"],
+    )
+
+    with pytest.raises(ValueError, match="ends_with_eos"):
+        PackingIndex.load_or_build(
+            hf_split=split,
+            split="train",
+            sequence_length=4,
+            insert_eos=True,
+            eos_token_id=0,
+            cache_dir=tmp_path,
+        )

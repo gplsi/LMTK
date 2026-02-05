@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import time
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -116,15 +117,43 @@ class PackingIndex:
         os.replace(tmp, path)
 
     @staticmethod
-    def _acquire_lock(lock_path: Path, *, timeout_s: int = 1800, poll_s: float = 0.5) -> int:
+    def _acquire_lock(
+        lock_path: Path,
+        *,
+        timeout_s: int = 1800,
+        poll_s: float = 0.5,
+        lock_payload: dict[str, Any] | None = None,
+    ) -> int:
         deadline = time.time() + timeout_s
         while True:
             try:
                 fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                if lock_payload is not None:
+                    try:
+                        payload = dict(lock_payload)
+                        payload.setdefault("pid", os.getpid())
+                        payload.setdefault("host", socket.gethostname())
+                        payload.setdefault("created_at_unix", time.time())
+                        serialized = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
+                        os.write(fd, serialized)
+                        os.fsync(fd)
+                    except Exception:
+                        # Best-effort: the lock itself is the safety mechanism.
+                        pass
                 return fd
             except FileExistsError:
                 if time.time() > deadline:
-                    raise TimeoutError(f"Timed out waiting for packing index lock at {lock_path}.")
+                    lock_contents = None
+                    try:
+                        lock_contents = lock_path.read_text(encoding="utf-8", errors="replace").strip()
+                    except Exception:
+                        lock_contents = None
+
+                    details = f" Existing LOCK contents: {lock_contents}" if lock_contents else ""
+                    raise TimeoutError(
+                        f"Timed out waiting for packing index lock at {lock_path}.{details} "
+                        "If you are sure no training job is running, delete the LOCK file and retry."
+                    )
                 time.sleep(poll_s)
 
     @staticmethod
@@ -219,7 +248,17 @@ class PackingIndex:
                 f"Expected index under {root}."
             )
 
-        lock_fd = cls._acquire_lock(p["lock"])
+        lock_fd = cls._acquire_lock(
+            p["lock"],
+            lock_payload={
+                "index_version": INDEX_VERSION,
+                "split": str(split),
+                "sequence_length": int(sequence_length),
+                "insert_eos": bool(insert_eos),
+                "eos_token_id": int(eos_token_id) if eos_token_id is not None else None,
+                "cache_dir": str(cache_dir),
+            },
+        )
         try:
             if p["meta"].exists():
                 try:
@@ -284,6 +323,11 @@ class PackingIndex:
             total_tokens = int(offsets[kept_docs])
             tail_tokens = total_tokens % int(sequence_length)
 
+            offsets.flush()
+            doc_indices.flush()
+            doc_lengths.flush()
+            doc_stream_lengths.flush()
+
             meta = PackingIndexMeta(
                 version=INDEX_VERSION,
                 split=str(split),
@@ -296,11 +340,6 @@ class PackingIndex:
                 used_ends_with_eos=used_ends_with_eos,
             )
             cls._write_meta_atomic(p["meta"], meta)
-
-            offsets.flush()
-            doc_indices.flush()
-            doc_lengths.flush()
-            doc_stream_lengths.flush()
 
             stats = PackingIndexStats(skipped_empty_docs=skipped_empty, tail_tokens_dropped=tail_tokens)
             return cls(

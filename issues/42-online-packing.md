@@ -226,47 +226,104 @@ Important: `output/tests/tokenized_doclevel` must be on a filesystem shared acro
   - Ensure the training integration consumes a generic `torch.utils.data.Dataset` of packed blocks + an explicit sampler policy, so a later `MixturePackedDataset` can compose multiple per-dataset packed-block datasets without changing model/training code.
 - Note: doc-level tokenized datasets are not compatible with existing workflows that assume fixed-shape `attention_mask/labels` (e.g. `dataset_merge`); packing mode is the intended consumer.
 
-## Recommended additions for large datasets (v1.1)
+## Large-dataset support (implemented in v1.1)
 
-We want online packing to remain correct and deterministic while scaling to tens of millions of documents. The current v1 implementation is correct but can become startup- and RAM-heavy because it scans every row and stores Python lists for offsets/metadata.
+Online packing must remain correct, deterministic, and resumable while scaling to tens of millions of documents. The v1.1 implementation adds a persisted, versioned packing index so startup time and RAM usage are bounded once the index exists.
 
-Recommended additions (low-risk, incremental):
+Implemented components:
 
 1) **Tokenization emits `ends_with_eos: bool` (doc-level only)**  
-   - In doc-level CLM tokenization mode, add an `ends_with_eos` column computed at tokenization time.  
-   - Rationale: packing index build should not need to inspect `input_ids[-1]` for every document at training startup.
+   - Doc-level CLM tokenization emits `ends_with_eos` at tokenization time (see `src/tasks/tokenization/tokenizer/causal.py`).
+   - Rationale: packing index build can avoid inspecting `input_ids[-1]` for every document on every run.
 
 2) **Persisted packing index (memory-mapped) next to the dataset**  
-   - Introduce an on-disk, versioned index artifact stored alongside the tokenized dataset directory, e.g.:
-     - `<dataset_path>/.packing_index/v1/<split>/offsets.int64`
-     - `<dataset_path>/.packing_index/v1/<split>/doc_lengths.int32`
-     - `<dataset_path>/.packing_index/v1/<split>/doc_indices.int64`
-     - `<dataset_path>/.packing_index/v1/<split>/doc_stream_lengths.int32` (or derive via `insert_eos` + `ends_with_eos`)
-     - `<dataset_path>/.packing_index/v1/<split>/meta.json` (packing params + dataset fingerprint)
-   - Use `numpy.memmap` for arrays so RAM usage is bounded and startup is fast.
-   - In SLURM/DDP: only rank 0 builds the index, other ranks wait on a barrier and then load it. Fail fast with a clear error if the dataset path is not on a shared filesystem.
+   - Packing builds (rank 0) or reuses (all ranks) an on-disk, versioned index artifact stored under:
+     - `<dataset_path>/.packing_index/v1/<split>/...` by default, or
+     - `dataset.packing.index_cache_dir` when set (recommended on SLURM to force a shared filesystem path).
+   - Index storage uses `numpy.memmap` so RAM usage is bounded and warm-start is fast (see `src/tasks/training/data/packing_index.py`).
+   - In SLURM/DDP: rank 0 builds → `fabric.barrier()` → other ranks load with `allow_build=False` (see `src/tasks/training/fabric/trainer/base.py`).
 
-3) **Decouple rank-evenness from batch-evenness (drop_last policy)**  
-   - Keep `sampler_drop_last` as the “no duplication across ranks” control.
-   - Add a separate `drop_last_batch` setting for dropping partial batches (coverage vs. stability trade-off). Default recommendation:
-     - train: `drop_last_batch: true` in distributed runs
-     - valid: `drop_last_batch: false`
+3) **Decoupled rank-evenness from batch-evenness (drop policies)**  
+   - `sampler_drop_last`: controls rank-evenness / “no silent duplication across ranks”.
+   - `drop_last_batch`: controls dropping a partial *batch* (coverage vs stability trade-off).
+   - Defaults live in code (schema validates but does not apply defaults).
 
 Acceptance for v1.1:
-- Training startup time does not scale linearly with number of docs once the index exists (index reuse).
-- Peak RAM does not scale with `num_docs` (bounded by memmap window + small buffers).
-- Index is invalidated/rebuilt when any of these change: dataset fingerprint, `sequence_length`, `insert_eos`, `eos_token_id`, index version.
-
-These additions are explicitly intended to avoid “reinventing the wheel” at the storage layer: Hugging Face Datasets remains the storage/row-access abstraction; we only add the missing deterministic packing index artifact.
+- With a warm index, packing initialization avoids rescanning all rows.
+- Peak RAM does not scale with `num_docs` once the memmap index exists.
+- Index invalidates/rebuilds when any of these change: dataset fingerprint/signature, `sequence_length`, `insert_eos`, `eos_token_id`, or index version.
 
 ## Implementation status (2026-02-05)
 
-Implemented the v1 workflow end-to-end (tokenization → training packing), including schemas, docs, smoke configs, and unit tests.
+Implemented the v1 workflow end-to-end (tokenization → training packing), including schemas, docs, smoke configs, unit tests, and the v1.1 large-dataset support (persisted memmap index + drop-policy clarity).
 
-Milestone 4 (large-dataset support) implementation is in progress in this branch/worktree:
-- `ends_with_eos` emitted by doc-level tokenization.
-- Persisted packing index (memory-mapped) under `dataset.nameOrPath/.packing_index` (configurable via `packing.index_cache_dir`).
-- Decoupled `sampler_drop_last` (rank-evenness) from `drop_last_batch` (partial batch dropping).
+For end-to-end validation on real data/models (DC8 + Salamandra), use:
+- `config/experiments/online-packing/tokenization_dc8_doclevel_salamandra2b.yaml`
+- `config/experiments/online-packing/clm_training_dc8_salamandra2b_packing_smoke.yaml`
+- `config/experiments/online-packing/online_packing_dc8_salamandra2b_integration.yaml`
+
+## Validation evidence (to be filled)
+
+This issue is not considered “closed-quality” until we have auditable test evidence for:
+- local/unit CI-like tests (tox), and
+- at least one SLURM multi-node smoke run (per issue 37).
+
+Fill this section with copy/paste evidence when executed.
+
+### Local / CI-like
+
+- Command:
+
+      python -m tox -e py310
+
+- Result:
+  - (paste summary line, e.g. `= N passed in ... =`)
+  - Environment notes (python version, CUDA availability):
+
+### Local smoke (single process)
+
+- Tokenize doc-level:
+
+      python src/main.py --config config/experiments/online-packing/tokenization_dc8_doclevel_salamandra2b.yaml
+
+- Train packing smoke:
+
+      python src/main.py --config config/experiments/online-packing/clm_training_dc8_salamandra2b_packing_smoke.yaml
+
+- Expected key logs (rank 0):
+  - “Packing dataset … blocks=… sequence_length=… insert_eos=… eos_token_id=… sampler_drop_last=… drop_last_batch=… index_cache_dir=…”
+  - First batch shapes: `[batch_size, sequence_length]` (printed when `verbose_level >= 4`).
+
+### SLURM evidence (multi-node)
+
+- Tokenization job:
+  - Command:
+
+        ./slurm/tests/run_tests.sh --config config/tests/tokenization_doclevel_smoke.yaml
+
+  - Job ID:
+  - Log paths:
+  - ExitCode:
+
+- Packing multi-node job:
+  - Command:
+
+        ./slurm/tests/run_tests.sh --config config/tests/clm_training_packing_multinode_smoke.yaml --nodes 2 --ntasks-per-node 1
+
+  - Job ID:
+  - Log paths:
+  - ExitCode:
+
+## Operations / troubleshooting (packing index)
+
+- Default index location: `<dataset.nameOrPath>/.packing_index/v1/<split>/...`
+- Lock file: `<index_root>/LOCK`
+  - Contents include PID/host/timestamp to help debug stuck locks.
+  - If a run times out waiting for the lock, the exception prints the existing lock contents.
+- Build failure sentinel: `<index_cache_dir>/v1/BUILD_FAILED.json`
+  - If rank 0 fails to build the index in distributed runs, all ranks fail fast after the barrier with the sentinel details (prevents distributed hangs).
+- Manual recovery procedure (only if you are sure no job is running):
+  - Delete the `LOCK` file (and `BUILD_FAILED.json` if present), then rerun to rebuild the index.
 
 Key code locations:
 
@@ -303,5 +360,7 @@ Key code locations:
 
 ### Known risks (v1)
 
-- `PackedSequenceDataset` precomputes prefix-sum offsets by scanning the full source dataset once at init time and stores per-document metadata in memory (`O(num_docs)`). This is correct but can be slow/heavy on very large corpora; if it becomes a bottleneck, we should consider a chunked/blocked prefix-sum index or a binary index file stored alongside the dataset.
+- Index build still scans the full dataset once per split to generate memmaps; on very large corpora this is expected to be minutes-hours and should be treated as a first-run cost (warm-start should load quickly).
+- The index lock file (`.packing_index/.../LOCK`) uses an `O_EXCL`-style lock. Some HPC filesystems can be flaky with exclusive file creation; if this happens in practice, we should upgrade the lock to write PID/host/timestamp and/or switch to a safer FS-compatible lock strategy.
+- Index disk footprint scales with number of rows because the memmap arrays are sized to `num_rows` (sliced down to `kept_docs`). This is usually acceptable (int32/int64 arrays) but should be documented operationally (cleanup policy; keep index on fast shared storage).
 - EOS resolution uses `AutoTokenizer.from_pretrained(tokenizer_name)` when `eos_token_id` is not provided. In offline/HPC environments, ensure the tokenizer is already cached locally or set `packing.eos_token_id` explicitly.

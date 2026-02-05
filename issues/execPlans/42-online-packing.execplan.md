@@ -27,8 +27,12 @@ After this change, a novice can run the new smoke configs under `config/tests/` 
 - [x] (2026-01-28 13:20Z) Revised plan for Fabric correctness: explicit sampler/drop policy, avoid Fabric sampler duplication, corrected CLI commands (`python src/main.py`).
 - [x] (2026-02-05 00:00Z) Implemented Milestone 1 (doc-level CLM tokenization) with schema + smoke config + docs.
 - [x] (2026-02-05 00:00Z) Implemented Milestone 2 (training-time packing) with deterministic dataset/sampler integration and fail-fast guards.
-- [ ] Implement Milestone 3 (tox + runtime smoke + SLURM validation) and record job/log evidence in issue 42 (completed: schema/unit config tests pass locally via pytest; remaining: tox + runtime + SLURM).
-- [ ] Implement Milestone 4 (large-dataset support): persisted packing index + drop_last policy decoupling (completed: code + schema + unit tests; remaining: runtime + SLURM evidence).
+- [x] (2026-02-05 00:00Z) Implemented Milestone 3 (unit + integration scaffolding): unit tests + smoke configs + integration runner config + docs.
+- [x] (2026-02-05 00:00Z) Implemented Milestone 4 (large-dataset support): persisted packing index (memmap) + `ends_with_eos` + explicit drop policies.
+- [x] (2026-02-05 00:00Z) Hardened packing-index operational safety: LOCK contains PID/host/time; distributed runs fail fast on rank0 index-build failure (no barrier hangs); added regression tests for sampler disjointness and `ends_with_eos` mismatch.
+- [ ] (2026-02-05 00:00Z) Run repo test suite in a full env (`python -m tox -e py310`) and record results in issue 42.
+- [ ] (2026-02-05 00:00Z) Run runtime smoke locally (tokenization + packing training) and record key logs (packing enabled + batch shapes).
+- [ ] (2026-02-05 00:00Z) Run SLURM multi-node smoke (`clm_training_packing_multinode_smoke.yaml`) and record job IDs + log paths in issue 42.
 
 ## Surprises & Discoveries
 
@@ -111,6 +115,14 @@ These observations drive the design choices in this plan: we implement packing a
   Rationale: Dropping tail *blocks* for rank-evenness is a distributed correctness policy; dropping the final partial *batch* is a throughput/shape policy. Keeping them separate makes coverage vs. stability explicit and avoids accidental extra data loss.
   Date/Author: 2026-02-05 / Codex
 
+- Decision: Write PID/host/timestamp into the packing-index LOCK file and include existing LOCK contents in timeout errors.
+  Rationale: On HPC filesystems, lock-related timeouts are hard to debug. Metadata makes it clear whether the lock is stale or an active build, without changing the locking mechanism.
+  Date/Author: 2026-02-05 / Codex
+
+- Decision: Prevent distributed hangs when rank 0 fails building the packing index by writing a build-failure sentinel and raising on all ranks after the barrier.
+  Rationale: A rank0 exception before `fabric.barrier()` would otherwise hang all other ranks indefinitely. A sentinel makes the failure auditable and ensures all ranks exit promptly.
+  Date/Author: 2026-02-05 / Codex
+
 ## Contracts
 
 These contracts are the “definition of done” for correctness. If an implementation cannot satisfy one, it must fail fast.
@@ -156,7 +168,7 @@ These contracts are the “definition of done” for correctness. If an implemen
 
 ## Outcomes & Retrospective
 
-Implemented doc-level tokenization (`input_ids` + `length`) and training-time packing via a map-style dataset wrapper with deterministic distributed sampling. Added schemas, docs, smoke configs, and unit tests. Remaining work is validation in a full repo environment (`tox`) plus SLURM multi-node evidence recorded in issue 42.
+Implemented doc-level tokenization (`input_ids` + `length` + `ends_with_eos`) and training-time packing via a map-style dataset wrapper with deterministic distributed sampling. Added schemas, docs, smoke configs, integration runner config, and unit tests. Large-dataset support is implemented via a persisted, versioned memmap packing index. Remaining work is validation in a full repo environment (`tox`) plus SLURM multi-node evidence recorded in issue 42.
 
 ## Context and Orientation
 

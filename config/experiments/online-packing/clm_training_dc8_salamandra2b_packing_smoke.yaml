@@ -15,8 +15,6 @@ dataset:
     insert_eos: true
     tokenizer_name: BSC-LT/salamandra-2b
     shuffle: true
-    sampler_drop_last: false
-    drop_last_batch: false
     # For large datasets, this defaults to <dataset.nameOrPath>/.packing_index; set explicitly for shared filesystems on SLURM.
     # index_cache_dir: /shared/path/dc8_doclevel_salamandra2b/.packing_index
 

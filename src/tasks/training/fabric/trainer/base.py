@@ -6,6 +6,7 @@ class, providing a template for custom training strategies.
 """
 
 import math
+import json
 from pathlib import Path
 import time
 import torch
@@ -36,7 +37,7 @@ from src.tasks.training.fabric.model.clm import FabricCLM
 from src.tasks.training.fabric.model.mlm import FabricMLM
 from src.tasks.training.fabric.model.instruction import FabricInstruction
 from src.tasks.training.data.packing import PackedSequenceDataset, build_packing_dataloader
-from src.tasks.training.data.packing_index import PackingIndex
+from src.tasks.training.data.packing_index import INDEX_VERSION, PackingIndex
 
 MODEL_CLASS_MAP = {
     "clm_training": FabricCLM,
@@ -281,18 +282,48 @@ class FabricTrainerBase(ABC):
         seed_value = int(seed) if seed is not None else 0
 
         indices: dict[str, PackingIndex] = {}
+        build_failed_path = index_cache_dir / f"v{INDEX_VERSION}" / "BUILD_FAILED.json"
         if fabric.global_rank == 0:
-            for split_name, split_dataset in self.datasets.items():
-                indices[split_name] = PackingIndex.load_or_build(
-                    hf_split=split_dataset,
-                    split=split_name,
-                    sequence_length=sequence_length,
-                    insert_eos=insert_eos,
-                    eos_token_id=eos_token_id,
-                    cache_dir=index_cache_dir,
-                )
+            build_failed_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                build_failed_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+            try:
+                for split_name, split_dataset in self.datasets.items():
+                    indices[split_name] = PackingIndex.load_or_build(
+                        hf_split=split_dataset,
+                        split=split_name,
+                        sequence_length=sequence_length,
+                        insert_eos=insert_eos,
+                        eos_token_id=eos_token_id,
+                        cache_dir=index_cache_dir,
+                    )
+            except Exception as exc:
+                payload = {
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "created_at_unix": time.time(),
+                    "pid": os.getpid(),
+                    "host": os.getenv("SLURMD_NODENAME") or os.uname().nodename,
+                }
+                try:
+                    build_failed_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                except Exception:
+                    pass
 
         fabric.barrier()
+
+        if build_failed_path.exists():
+            try:
+                details = build_failed_path.read_text(encoding="utf-8", errors="replace").strip()
+            except Exception:
+                details = "<unreadable>"
+            raise RuntimeError(
+                "Packing index build failed on rank 0. "
+                f"See {build_failed_path} for details: {details}"
+            )
 
         if fabric.global_rank != 0:
             for split_name, split_dataset in self.datasets.items():
@@ -343,10 +374,20 @@ class FabricTrainerBase(ABC):
             )
 
             if fabric.global_rank == 0:
+                sampler = getattr(dataloaders[split_name], "sampler", None)
                 self.cli_logger.info(
-                    "Packing dataset split=%s blocks=%s skipped_empty_docs=%s tail_tokens_dropped=%s index_cache_dir=%s",
+                    "Packing dataset split=%s blocks=%s sequence_length=%s insert_eos=%s eos_token_id=%s "
+                    "shuffle=%s sampler=%s sampler_drop_last=%s drop_last_batch=%s "
+                    "skipped_empty_docs=%s tail_tokens_dropped=%s index_cache_dir=%s",
                     split_name,
                     len(packed),
+                    sequence_length,
+                    insert_eos,
+                    eos_token_id,
+                    shuffle,
+                    type(sampler).__name__ if sampler is not None else None,
+                    sampler_drop_last,
+                    drop_last_batch,
                     packed.stats.skipped_empty_docs,
                     packed.stats.tail_tokens_dropped,
                     index_cache_dir,
