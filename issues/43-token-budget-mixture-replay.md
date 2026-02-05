@@ -16,6 +16,8 @@ Add a follow-up to issue 42 that enables continual pretraining with **multiple i
 
 This feature is explicitly designed to layer on top of the packing work in issue 42.
 
+This issue provides the canonical design for multi-source continual pretraining in LMTK. The implementation must be DDP/FSDP-safe under SLURM + Lightning Fabric and must be auditable (exactly what tokens/blocks came from where).
+
 ## Problem
 
 For continual pretraining and replay we often want to train on multiple corpora with target proportions such as:
@@ -27,6 +29,23 @@ For continual pretraining and replay we often want to train on multiple corpora 
 Those proportions must be defined and enforced over **tokens (or fixed-length packed blocks)**, not over documents/examples, because example lengths vary drastically.
 
 We also need auditable accounting: “what did we actually train on?” must be reported and persisted (especially for SLURM multi-node runs).
+
+## Background / Current State
+
+- Issue 42 added:
+  - doc-level CLM tokenization (`input_ids` variable length + `length` + `ends_with_eos`),
+  - training-time online packing via a map-style dataset wrapper (`PackedSequenceDataset`),
+  - a persisted memmap packing index (`PackingIndex`) and explicit distributed sampler/drop policies.
+- Current training config supports **one** dataset via `dataset.nameOrPath` (schema: `config/schemas/training/components/data.schema.yaml`). There is no schema surface for `dataset.sources` today.
+- The training loop is currently epoch-driven (`number_epochs`), but validation can also be driven by `validate_after_k_steps`.
+
+## Terminology (definitions for v1)
+
+- **Packed block**: one training sample of exactly `sequence_length` tokens produced by issue 42 packing (fixed shape `[sequence_length]`).
+- **Homogeneous block**: a packed block attributable to exactly one dataset source (no token-level mixing within a block).
+- **Interleaved mixing**: the training stream alternates blocks from different datasets over time to approximate a target ratio (e.g. A:A:B repeating/shuffled), rather than training in sequential phases.
+- **Token budget**: the desired allocation of training tokens per dataset. In v1, this is implemented via packed blocks:
+  - `tokens ~= blocks * sequence_length` (exact enough for fixed-length blocks).
 
 ## Key Decisions (locked for v1 of this issue)
 
@@ -42,6 +61,10 @@ We also need auditable accounting: “what did we actually train on?” must be 
 3) **Token-budget ratios, not per-batch hard constraints**
    - Ratios are enforced over a window (e.g. per epoch or per N steps), not by forcing each individual batch to match exact ratios.
    - Rationale: avoids unnecessary complexity and maintains stochasticity while still achieving the intended expected-gradient mixture.
+
+4) **DDP/FSDP-friendly by construction**
+   - Mixing is implemented as a map-style dataset with deterministic `__getitem__` and explicit distributed sampler policy (no stateful collators; no iterable-only mixing).
+   - Rationale: correctness under SLURM multi-node + resume is more important than micro-optimizing the input pipeline.
 
 ## Goals
 
@@ -65,6 +88,35 @@ We also need auditable accounting: “what did we actually train on?” must be 
    - Each input dataset is expected to be a “tokenized-docs dataset” (variable-length `input_ids` + `length`) produced by issue 42 Milestone 1.
    - Packing stays in training; tokenization remains doc-level.
 
+## Non-negotiable contracts (junior-proof)
+
+These contracts define “correct v1 behavior”. If any cannot be satisfied, the implementation must fail fast with a clear error.
+
+### Contract A: Source compatibility
+
+All sources in a mixture must be compatible:
+- Same `sequence_length` for packing (batching requires fixed shape).
+- Same tokenizer/vocab space for the target model (token IDs must be meaningful for a single model).
+  - v1 requirement: all sources must use the same tokenizer name (or at least the same `eos_token_id` and vocabulary). The implementation must fail fast if sources specify incompatible tokenizer/eos settings.
+
+### Contract B: Deterministic mapping from global index → (dataset_id, local_block_idx)
+
+- Mixing must be a pure function: `MixturePackedDataset.__getitem__(i)` depends only on `i` and config/seed (no mutable worker state).
+- The mapping must not require storing a schedule array in RAM proportional to the number of blocks.
+- In DDP/FSDP, distributed sharding must be explicit and must not rely on Fabric’s implicit sampler behavior.
+
+### Contract C: No distributed hangs
+
+- If rank 0 fails while building any required artifact (packing index or mixture artifacts), all ranks must fail fast (no barrier hangs).
+
+### Contract D: Accounting must match reality
+
+- Every emitted sample carries `dataset_id` (as a tensor) so per-dataset blocks are countable.
+- At end-of-run, rank 0 writes a report to disk including:
+  - requested weights,
+  - realized blocks/tokens per dataset,
+  - realized ratios and deviation.
+
 ## Non-goals
 
 - Do not implement mixed-source blocks (token-level mixing inside a block).
@@ -72,7 +124,7 @@ We also need auditable accounting: “what did we actually train on?” must be 
 - Do not redesign task dispatch or SLURM submission logic.
 - Do not implement “exact uniqueness” guarantees (replay implies repetition is allowed and expected).
 
-## Proposed Approach (high level)
+## Proposed Approach (high level, exact semantics)
 
 ### A) Per-dataset packed-block datasets
 
@@ -86,14 +138,17 @@ For each configured dataset `Di`:
 
 Create a map-style dataset (e.g. `MixturePackedDataset`) that:
 
-- Exposes a global `__len__` (either:
-  - per-epoch blocks, or
-  - a token-budget-derived number of blocks),
+- Exposes a global `__len__` defined by **a fixed total number of blocks** (`dataset.mixture.total_blocks`).
+  - v1 recommendation: set `number_epochs: 1` for mixture runs and set `total_blocks` to the desired run length. Use `validate_after_k_steps` / `checkpoints_per_epoch` for cadence.
 - Maps each global block index `i` to:
-  - `dataset_id = schedule[i]`,
-  - `local_block_idx = f(i, dataset_id, seed, epoch)` with repeat/shuffle semantics.
+  - `dataset_id` using an exact-counts interleaving policy (weights → exact blocks-per-dataset over the whole run),
+  - `local_block_idx` using deterministic sampling with replacement: `local_block_idx = hash(seed, i, dataset_id) % num_blocks_in_dataset`.
 
-The schedule should be deterministic and should approximate weights tightly over time (e.g. deficit round-robin / weighted fair scheduling), not purely random draws.
+The key property: we mix at the **block selection** level. Each block is still produced by the per-dataset packer and remains homogeneous.
+
+The mixing schedule must satisfy:
+- Exact global counts: for `total_blocks`, allocate exact `blocks_per_dataset` from weights with deterministic remainder handling.
+- Order randomization: interleave sources by applying a deterministic permutation to `i` before dataset selection (to avoid long runs of one source).
 
 ### C) Dataloader + sampler policy
 
@@ -106,6 +161,50 @@ The schedule should be deterministic and should approximate weights tightly over
 - Each sample carries `dataset_id` (and optionally `dataset_name`) so we can count per-dataset blocks.
 - Maintain counters per rank; reduce across ranks at safe synchronization points (end of epoch and end of run).
 - Persist a `mixture_report.json` (or similar) into `output_dir` on rank 0.
+
+## Configuration (exact YAML surface for v1)
+
+This issue adds an opt-in surface under `dataset.sources` + `dataset.mixture`. When `dataset.sources` is present, `dataset.nameOrPath` is not used.
+
+Minimal example (two sources A/B, 2:1 mixing, one-epoch run):
+
+    task: clm_training
+    experiment_name: clm_training_mixture_smoke
+    verbose_level: 2
+    model_name: BSC-LT/salamandra-2b
+    precision: bf16-true
+    seed: 42
+
+    dataset:
+      source: local
+      format: hf
+      sources:
+        - dataset_id: A
+          nameOrPath: /shared/tokenized/dsA_doclevel_salamandra2b
+          weight: 2
+        - dataset_id: B
+          nameOrPath: /shared/tokenized/dsB_doclevel_salamandra2b
+          weight: 1
+      packing:
+        enabled: true
+        sequence_length: 2048
+        insert_eos: true
+        tokenizer_name: BSC-LT/salamandra-2b
+      mixture:
+        enabled: true
+        total_blocks: 10000
+        # optional; defaults in code to `seed`
+        schedule_seed: null
+
+    number_epochs: 1
+    batch_size: 1
+    num_workers: 0
+    validate_after_k_steps: 200
+    output_dir: output/mixture_smoke
+
+Notes:
+- `total_blocks` controls run length. Approx tokens trained: `total_blocks * sequence_length`.
+- Replay is expressed as just another source entry with a weight (e.g., `dataset_id: R`).
 
 ## Acceptance Criteria
 
@@ -126,3 +225,7 @@ The schedule should be deterministic and should approximate weights tightly over
 - Keep mixing logic separate from packing logic:
   - packing produces “blocks from one dataset”,
   - mixing selects which dataset’s blocks to emit next.
+
+## ExecPlan
+
+- `issues/execPlans/43-token-budget-mixture-replay.execplan.md` (to be created)
