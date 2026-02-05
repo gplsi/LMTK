@@ -29,7 +29,17 @@ OPTIMIZERS = {
 
 
 # Scheduler for dealing with training with and without gradient accumulation
-def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number_epochs: int, world_size: int, batch_size: int, train_dataset: HFDataset, warmup_proportion: float, gradient_accumulation_steps: int = None) -> torch.optim.lr_scheduler.LambdaLR:
+def select_scheduler(
+    optimizer: torch.optim.Optimizer,
+    lr_scheduler: str,
+    number_epochs: int,
+    world_size: int,
+    batch_size: int,
+    train_dataset: HFDataset,
+    warmup_proportion: float,
+    gradient_accumulation_steps: int = None,
+    total_steps: Optional[int] = None,
+) -> torch.optim.lr_scheduler.LambdaLR:
     """
     Selects and returns an appropriate learning rate scheduler based on the specified configuration.
     
@@ -61,7 +71,15 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
         ValueError: If the scheduler type provided does not match any of the supported schedulers.
     """
     
-    def calculate_warmup_steps(number_epochs, world_size, batch_size, warmup_proportion, train_dataset, gradient_accumulation_steps=None):
+    def calculate_warmup_steps(
+        number_epochs,
+        world_size,
+        batch_size,
+        warmup_proportion,
+        train_dataset,
+        gradient_accumulation_steps=None,
+        total_steps_override: Optional[int] = None,
+    ):
         """
         Calculates the number of warmup steps and total training steps based on the training configuration.
         
@@ -83,16 +101,22 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
                 - warmup_steps (int): Number of steps allocated for warmup.
                 - total_steps (int): Total number of training steps after adjusting for gradient accumulation.
         """
-        steps_per_epoch = len(train_dataset) // (batch_size * world_size)
-        total_steps = number_epochs * steps_per_epoch
-        if gradient_accumulation_steps:
-            total_steps = total_steps // gradient_accumulation_steps
+        if total_steps_override is not None:
+            total_steps_value = int(total_steps_override)
+            if total_steps_value < 0:
+                raise ValueError("total_steps must be >= 0.")
+            total_steps_value = total_steps_value
+        else:
+            steps_per_epoch = len(train_dataset) // (batch_size * world_size)
+            total_steps_value = number_epochs * steps_per_epoch
+            if gradient_accumulation_steps:
+                total_steps_value = total_steps_value // gradient_accumulation_steps
             
-        if (warmup_proportion == 0): 
-            return 0, total_steps
+        if warmup_proportion == 0:
+            return 0, total_steps_value
         
-        warmup_steps = int(total_steps * warmup_proportion)
-        return warmup_steps, total_steps
+        warmup_steps = int(total_steps_value * warmup_proportion)
+        return warmup_steps, total_steps_value
 
     if lr_scheduler == 'fixed':
         return get_constant_schedule(optimizer)
@@ -104,7 +128,16 @@ def select_scheduler(optimizer: torch.optim.Optimizer, lr_scheduler: str, number
         warmup_proportion,
         train_dataset,
         gradient_accumulation_steps,
+        total_steps_override=total_steps,
     )
+
+    if total_steps <= 0:
+        raise ValueError(
+            "Computed total training steps is 0 for a non-fixed scheduler. "
+            "This usually indicates too little data for the configured batch/world_size, "
+            "or an incorrect scheduler sizing. Consider reducing batch_size, disabling drop_last, "
+            "or passing an explicit total_steps override."
+        )
         
     if lr_scheduler == 'cosine':
         # Pure cosine decay without any warmup phase

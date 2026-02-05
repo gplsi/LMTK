@@ -65,16 +65,32 @@ class TokenizationOrchestrator(BaseOrchestrator):
         Returns:
             HFDataset: The tokenized version of the input dataset.
         """        
+        task = self.config.tokenizer.get("task", "clm_training")
         context_length = getattr(
             self.config.tokenizer,
             "max_sequence_length",
             getattr(self.config.tokenizer, "context_length", None),
         )
-        if context_length is None:
+        overlap = self.config.tokenizer.get("overlap", 0)
+        if overlap is None:
+            overlap = 0
+
+        # CLM doc-level tokenization mode: omit size and produce variable-length sequences.
+        if task == "clm_training" and context_length is None:
+            if int(overlap) > 0:
+                raise ValueError(
+                    "Doc-level (variable-length) CLM tokenization is enabled by omitting "
+                    "context_length/max_sequence_length, but tokenizer.overlap > 0 was provided. "
+                    "Set overlap to 0 or omit it."
+                )
+            overlap = 0
+        elif context_length is None:
             raise ValueError(
                 "Tokenizer configuration must define either max_sequence_length or context_length"
             )
-        overlap = self.config.tokenizer.get("overlap")
+        else:
+            overlap = int(overlap)
+
         tokenizer_name = self.config.tokenizer.tokenizer_name
         batch_size = self.config.tokenizer.get("batch_size", 2000)  # Default batch size if not specified
         num_proc = self.config.tokenizer.get("num_proc", None)
@@ -110,8 +126,6 @@ class TokenizationOrchestrator(BaseOrchestrator):
             test_size=test_size,
             seed=seed
         )
-
-        task = self.config.tokenizer.get("task", "clm_training")
         if task == "clm_training":
             tokenizer = CausalLMTokenizer(tokenizer_config)
         elif task == "instruction":

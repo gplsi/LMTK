@@ -16,9 +16,9 @@ allOf:
             type: integer
             minimum: 0
             description: "Number of tokens to overlap between examples"
-    
-        required:
-          - overlap
+
+        # overlap is optional at schema level; runtime validation enforces overlap==0 when
+        # doc-level (variable-length) tokenization is enabled by omitting size parameters.
 
       
 

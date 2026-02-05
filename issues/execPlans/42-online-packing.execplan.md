@@ -25,9 +25,10 @@ After this change, a novice can run the new smoke configs under `config/tests/` 
 
 - [x] (2026-01-28 13:00Z) Drafted initial issue 42 + ExecPlan.
 - [x] (2026-01-28 13:20Z) Revised plan for Fabric correctness: explicit sampler/drop policy, avoid Fabric sampler duplication, corrected CLI commands (`python src/main.py`).
-- [ ] Implement Milestone 1 (doc-level CLM tokenization) with tests and schema updates.
-- [ ] Implement Milestone 2 (training-time packing) with deterministic sampler integration and resume-safe behavior.
-- [ ] Implement Milestone 3 (tests + SLURM validation) and record job/log evidence in issue 42.
+- [x] (2026-02-05 00:00Z) Implemented Milestone 1 (doc-level CLM tokenization) with schema + smoke config + docs.
+- [x] (2026-02-05 00:00Z) Implemented Milestone 2 (training-time packing) with deterministic dataset/sampler integration and fail-fast guards.
+- [ ] Implement Milestone 3 (tox + runtime smoke + SLURM validation) and record job/log evidence in issue 42 (completed: schema/unit config tests pass locally via pytest; remaining: tox + runtime + SLURM).
+- [ ] Implement Milestone 4 (large-dataset support): persisted packing index + drop_last policy decoupling (completed: code + schema + unit tests; remaining: runtime + SLURM evidence).
 
 ## Surprises & Discoveries
 
@@ -42,6 +43,9 @@ After this change, a novice can run the new smoke configs under `config/tests/` 
 
 - Observation: Lightning Fabric’s default distributed sampler kwargs do not set `drop_last`, meaning PyTorch’s `DistributedSampler(drop_last=False)` behavior can **pad and repeat samples** when `len(dataset)` is not divisible by `world_size`.
   Evidence: `lightning/fabric/strategies/parallel.py:ParallelStrategy.distributed_sampler_kwargs` returns only `{"num_replicas": ..., "rank": ...}`; `lightning/fabric/fabric.py:_get_distributed_sampler` does not set `drop_last`.
+
+- Observation: This Codex sandbox environment does not have Hugging Face `datasets` installed, so full `pytest` collection fails on any module that imports `datasets`.
+  Evidence: Local `pytest` collection errors with `ModuleNotFoundError: No module named 'datasets'`.
 
 These observations drive the design choices in this plan: we implement packing as a map-style dataset for deterministic sizing and we take control of distributed sampling (including `drop_last`) to avoid silent duplication and distributed hangs.
 
@@ -95,6 +99,18 @@ These observations drive the design choices in this plan: we implement packing a
   Rationale: Mixing semantics (doc-level vs token-level), determinism, distributed sharding policy, scheduler sizing, and resume correctness need explicit design + tests. We will keep a clean extension point (“doc source”) but not ship mixing behavior in this issue.
   Date/Author: 2026-01-29 / Codex
 
+- Decision: `dataset.packing` is supported only for `task: clm_training` in v1.
+  Rationale: v1 packing generates `labels == input_ids` and enforces CLM-specific assumptions; enabling it for other tasks would silently produce incorrect supervision. We fail fast instead.
+  Date/Author: 2026-02-05 / Codex
+
+- Decision: For large datasets, persist a versioned packing index as memory-mapped arrays stored next to the tokenized dataset.
+  Rationale: Re-scanning all documents and keeping Python lists in RAM at each training startup does not scale to large corpora. HF Datasets provides the storage and row access; we only add the missing deterministic prefix-sum index artifact.
+  Date/Author: 2026-02-05 / Codex
+
+- Decision: Decouple “no duplication across ranks” (`sampler_drop_last`) from “drop partial batches” (`drop_last_batch`).
+  Rationale: Dropping tail *blocks* for rank-evenness is a distributed correctness policy; dropping the final partial *batch* is a throughput/shape policy. Keeping them separate makes coverage vs. stability explicit and avoids accidental extra data loss.
+  Date/Author: 2026-02-05 / Codex
+
 ## Contracts
 
 These contracts are the “definition of done” for correctness. If an implementation cannot satisfy one, it must fail fast.
@@ -140,7 +156,7 @@ These contracts are the “definition of done” for correctness. If an implemen
 
 ## Outcomes & Retrospective
 
-Not started.
+Implemented doc-level tokenization (`input_ids` + `length`) and training-time packing via a map-style dataset wrapper with deterministic distributed sampling. Added schemas, docs, smoke configs, and unit tests. Remaining work is validation in a full repo environment (`tox`) plus SLURM multi-node evidence recorded in issue 42.
 
 ## Context and Orientation
 
@@ -395,6 +411,22 @@ Acceptance:
 - `python -m pytest -q` passes unit tests locally when the environment is available.
 - SLURM jobs complete with ExitCode `0:0` and logs show correct rank/world size and packing enabled.
 
+### Milestone 4: Large-dataset support (index + policy clarity)
+
+What will exist at the end:
+
+- Doc-level tokenization outputs an additional `ends_with_eos: bool` column (CLM doc-level mode only).
+- Packing can reuse or build a persisted index stored alongside the tokenized dataset on disk (memory-mapped arrays).
+- In SLURM/DDP, only rank 0 builds the index and other ranks wait on a barrier and then load it. If the dataset output path is not on a shared filesystem, the run fails fast with an actionable error.
+- Drop policy is explicit:
+  - `sampler_drop_last` controls rank-evenness and “no duplication across ranks”.
+  - `drop_last_batch` controls whether to drop the final partial batch.
+
+Acceptance:
+
+- With a warm index, packing dataset initialization avoids scanning all rows and peak RAM does not scale with `num_docs`.
+- Index invalidates and rebuilds when any of these change: dataset fingerprint, `sequence_length`, `insert_eos`, `eos_token_id`, or index version.
+
 ## Plan of Work
 
 This plan follows TDD for the behavior changes: add focused unit tests first (fail), implement packing/tokenization until green, then refactor for clarity and performance.
@@ -608,6 +640,55 @@ Docs:
   - `docs/TOKENIZATION.md` with a “doc-level tokenization” section and a warning about overlap being invalid when size is omitted.
   - `docs/CLM_TRAINING.md` with a “packing” section that explains the sampler/drop trade-offs in distributed runs.
 
+### Milestone 4 implementation details (large datasets: index + drop_last)
+
+Goal:
+
+Make online packing viable for large corpora by avoiding full dataset scans at startup and bounding RAM usage with memory-mapped arrays.
+
+Edits:
+
+1) Doc-level tokenization emits `ends_with_eos`:
+   - In `src/tasks/tokenization/tokenizer/causal.py`, doc-level mode only:
+     - Add `ends_with_eos: Value("bool")` (or `Value("int8")` if bool is unsupported in your datasets version) to the doc-level `Features`.
+     - Compute `ends_with_eos` in `_tokenize_doc_function` using the tokenizer’s EOS id:
+       - hard error if EOS id cannot be resolved (doc-level packing depends on this signal when `insert_eos` is enabled).
+
+2) Persisted packing index:
+   - Add `src/tasks/training/data/packing_index.py` implementing:
+     - a `PackingIndexMeta` struct saved as JSON with: index version, dataset fingerprint (or dataset path + split sizes as a fallback), split name, `sequence_length`, `insert_eos`, `eos_token_id`.
+     - a `PackingIndex.load_or_build(...)` that:
+       - checks for an existing matching index under `index_cache_dir`,
+       - otherwise builds and writes `offsets`, `doc_indices`, `doc_lengths`, and `doc_stream_lengths` as `numpy.memmap`,
+       - writes `meta.json`,
+       - uses a simple file lock to prevent concurrent builders.
+   - In DDP/SLURM: build index on rank 0 only, then `fabric.barrier()`, then load on all ranks. If multi-node and the index cache dir is not shared, fail fast with an error that instructs the user to use a shared path.
+
+3) Use the index in packing:
+   - Refactor `src/tasks/training/data/packing.py:PackedSequenceDataset` to:
+     - accept an optional `PackingIndex`,
+     - use memmapped arrays instead of Python lists when present.
+   - Keep the in-memory index path as a fallback for small datasets (or when caching is disabled).
+
+4) Decouple drop policies:
+   - Extend `dataset.packing` with `drop_last_batch` (optional).
+   - In `src/tasks/training/data/packing.py:build_packing_dataloader`:
+     - keep `sampler_drop_last` controlling `DistributedSampler(drop_last=...)`,
+     - set `DataLoader(drop_last=drop_last_batch)` instead of tying it to `sampler_drop_last`.
+
+Schema updates:
+
+- In `config/schemas/training/components/data.schema.yaml` under `dataset.packing`, add:
+  - `index_cache_dir` (string or null): where to store/reuse the persisted index (default in code: `<dataset_path>/.packing_index`).
+  - `drop_last_batch` (bool or null): whether to drop the final partial batch (default in code: train=true for distributed, valid=false).
+
+Tests (requires `datasets` installed):
+
+- Add unit tests to lock:
+  - index build + reuse (rebuild only when params/fingerprint mismatch),
+  - memmap-backed packing output equivalence with in-memory packing on a small dataset,
+  - `drop_last_batch` affects `len(dataloader)` without changing sampler sharding decisions.
+
 ## Concrete Steps
 
 All commands below run from the repository root.
@@ -697,6 +778,8 @@ In `config/schemas/training/components/data.schema.yaml`, under `dataset`, defin
 - `eos_token_id` (int or null)
 - `shuffle` (bool or null; default in code is true for train)
 - `sampler_drop_last` (bool or null; default in code is true when world_size > 1)
+- `drop_last_batch` (bool or null; default in code: train=true for distributed, valid=false)
+- `index_cache_dir` (string or null; default in code: `<dataset_path>/.packing_index`)
 
 ## LMTK Project Patterns to Embed in ExecPlans
 
@@ -707,3 +790,7 @@ Plan update note (2026-01-28): Reworked the plan to be Fabric- and HPC-correct b
 Plan update note (2026-01-28): Tightened the spec to be more junior-proof by (1) explicitly scoping v1 to “drop remainder tokens” (no partial-block padding semantics), (2) removing the `drop_remainder_tokens` knob from the proposed public config, (3) making overlap/default-stride and sampler seeding requirements explicit, and (4) explicitly scoping `set_epoch` + scheduler sizing fixes needed for correct DDP/HPC behavior.
 
 Plan update note (2026-01-28): Clarified config ergonomics scope: only the new `dataset.packing` surface gets code defaults in this plan; repo-wide training-config simplification is intentionally out-of-scope because schema defaults are not currently applied by `ConfigValidator`.
+
+Plan update note (2026-02-05): Marked Milestones 1–2 as implemented, recorded the sandbox test limitation (missing `datasets`), and added a v1 guard to fail fast if `dataset.packing` is enabled for non-CLM tasks.
+
+Plan update note (2026-02-05): Added Milestone 4 for large-dataset support (persisted memmap packing index + decoupled drop_last policy) to keep online packing viable on HPC-scale corpora.

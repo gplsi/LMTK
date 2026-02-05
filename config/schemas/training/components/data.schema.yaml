@@ -19,6 +19,53 @@ properties:
         enum: ["dataset", "files", "hf"]
         description: "Format of the dataset"
         default: "hf"
+      packing:
+        type: object
+        description: "Optional training-time packing configuration for doc-level tokenized datasets."
+        properties:
+          enabled:
+            type: boolean
+            default: false
+          sequence_length:
+            type: integer
+            minimum: 1
+            description: "Fixed packed sequence length (model context window). Required when enabled is true."
+          insert_eos:
+            type: [boolean, "null"]
+            description: "Whether to append one EOS after each document (unless already present). Defaults in code to true."
+          tokenizer_name:
+            type: [string, "null"]
+            description: "Tokenizer name used to resolve eos_token_id when insert_eos is true and eos_token_id is not provided."
+          eos_token_id:
+            type: [integer, "null"]
+            minimum: 0
+            description: "Explicit EOS token id to use when insert_eos is true."
+          shuffle:
+            type: [boolean, "null"]
+            description: "Whether to shuffle packed blocks via the sampler. Defaults in code to true for train split and false otherwise."
+          sampler_drop_last:
+            type: [boolean, "null"]
+            description: "Whether to drop tail blocks per rank to avoid sampler padding/duplication. Defaults in code to true when world_size > 1."
+          drop_last_batch:
+            type: [boolean, "null"]
+            description: "Whether to drop the final partial batch from the DataLoader. Defaults in code to true for train split in distributed runs and false otherwise."
+          index_cache_dir:
+            type: [string, "null"]
+            description: "Optional directory to store/reuse the persisted packing index. Defaults in code to <dataset.nameOrPath>/.packing_index."
+        additionalProperties: false
+    allOf:
+      - if:
+          properties:
+            packing:
+              type: object
+              properties:
+                enabled:
+                  const: true
+        then:
+          required: ["packing"]
+          properties:
+            packing:
+              required: ["sequence_length"]
     required:
       - source
       - nameOrPath

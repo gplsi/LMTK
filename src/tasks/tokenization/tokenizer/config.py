@@ -61,7 +61,7 @@ class TokenizerConfig:
        :no-index:
     """
 
-    context_length: int
+    context_length: Optional[int]
     overlap: Optional[int] = None
     tokenizer_name: Optional[str] = None
     verbose_level: VerboseLevel = VerboseLevel.INFO

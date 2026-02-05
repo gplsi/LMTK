@@ -1,0 +1,50 @@
+task: clm_training
+experiment_name: clm_training_dc8_salamandra2b_packing_smoke
+verbose_level: 3
+model_name: BSC-LT/salamandra-2b
+precision: bf16-true
+seed: 42
+
+dataset:
+  source: local
+  format: hf
+  nameOrPath: data/tokenized/dc8_doclevel_salamandra2b
+  packing:
+    enabled: true
+    sequence_length: 2048
+    insert_eos: true
+    tokenizer_name: BSC-LT/salamandra-2b
+    shuffle: true
+    sampler_drop_last: false
+    drop_last_batch: false
+    # For large datasets, this defaults to <dataset.nameOrPath>/.packing_index; set explicitly for shared filesystems on SLURM.
+    # index_cache_dir: /shared/path/dc8_doclevel_salamandra2b/.packing_index
+
+# Keep this small when validating the end-to-end loop.
+# Note: this field is not schema-validated today but is supported by the trainer.
+train_data_ratio: 0.0001
+
+number_epochs: 1
+batch_size: 1
+num_workers: 0
+validate_after_epoch: false
+validate_on_end: false
+validations_per_epoch: 1
+save_on_validate: false
+save_on_end: false
+output_dir: output/online_packing/dc8_salamandra2b
+
+gradient_accumulation: false
+gradient_accumulation_steps: 1
+grad_clip: 1.0
+lr: 2.0e-05
+lr_decay: false
+weight_decay: 0.0
+beta1: 0.9
+beta2: 0.95
+
+lr_scheduler: fixed
+warmup_proportion: 0.0
+
+logging_config: none
+parallelization_strategy: dp

@@ -1,0 +1,9 @@
+task: testing
+experiment_name: online_packing_dc8_salamandra2b_integration
+verbose_level: 2
+testing:
+  mode: integration
+  configs:
+    - config/experiments/online-packing/tokenization_dc8_doclevel_salamandra2b.yaml
+    - config/experiments/online-packing/clm_training_dc8_salamandra2b_packing_smoke.yaml
+  stop_on_failure: true

@@ -98,6 +98,66 @@ python src/main.py --config tutorials/clm_training_tutorial.yaml
 - Use curriculum configs for multi-phase or domain-adaptive training.
 - For SLURM clusters, use the provided scripts in `slurm/`.
 
+## Online packing (training-time packing for CLM)
+
+LMTK supports an opt-in **online packing** mode for CLM training. In this mode, training consumes a **doc-level**
+tokenized dataset (variable-length `input_ids` plus a `length` column) and packs it into fixed-length blocks
+(`sequence_length`) at training time.
+
+### When to use it
+- You want to avoid overlap/stride tokenization (which repeats tokens) and instead pack documents efficiently.
+- You want packing logic to live in training so it can later support mixtures/replay without re-tokenizing.
+
+### Input requirements
+Your dataset (typically produced by `task: tokenization` in doc-level mode) must contain:
+- `input_ids: List[int]` (variable-length)
+- `length: int` (must equal `len(input_ids)`)
+
+### Packing semantics (v1)
+- Produces fixed-length blocks of exactly `sequence_length`.
+- `labels == input_ids` and `attention_mask` is all ones (no padding).
+- If `insert_eos` is enabled (default), one EOS token is appended after each document unless it already ends in EOS.
+- Tail tokens that do not fit into a full block are dropped.
+
+### Distributed behavior
+In multi-process/multi-node runs, packing uses an explicit distributed sampler. By default (`sampler_drop_last: true`
+when `world_size > 1`), per-rank tail blocks are dropped to avoid silent sample duplication.
+
+Packing also supports a persisted on-disk packing index for large datasets (memory-mapped prefix sums). By default it is
+stored under `<dataset.nameOrPath>/.packing_index`; override with `packing.index_cache_dir` when needed (e.g., to point
+to a shared filesystem path on SLURM).
+
+Note: `sampler_drop_last` controls rank-evenness (“no duplication across ranks”). Dropping a final partial **batch** is a
+separate policy controlled by `packing.drop_last_batch`.
+
+### Example config (smoke)
+
+```yaml
+task: clm_training
+experiment_name: test_clm_training_packing_smoke
+verbose_level: 1
+model_name: hf-internal-testing/tiny-random-LlamaForCausalLM
+precision: bf16-true
+seed: 42
+
+dataset:
+  source: local
+  format: hf
+  nameOrPath: output/tests/tokenized_doclevel
+  packing:
+    enabled: true
+    sequence_length: 128
+    tokenizer_name: hf-internal-testing/llama-tokenizer
+
+number_epochs: 1
+batch_size: 1
+num_workers: 0
+lr_scheduler: fixed
+warmup_proportion: 0.0
+lr: 2.0e-05
+parallelization_strategy: dp
+```
+
 ## References
 - See `tutorials/clm_training_tutorial.ipynb` for a full notebook walkthrough.
 - See the main README for installation and environment setup.

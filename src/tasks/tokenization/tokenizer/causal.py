@@ -34,13 +34,26 @@ class CausalLMTokenizer(BaseTokenizer):
                                       context length and overlap settings.
         """
         super().__init__(config)
-        # Define features with fixed-length sequences for better performance
-        # Using int32 for input_ids and labels to handle large vocabularies
-        self._features = Features({
-            "input_ids": Sequence(Value("int32"), length=config.context_length),
-            "attention_mask": Sequence(Value("int32"), length=config.context_length),
-            "labels": Sequence(Value("int32"), length=config.context_length)
-        })
+        self._doc_level_mode = config.context_length is None
+
+        if self._doc_level_mode:
+            self._features = Features(
+                {
+                    "input_ids": Sequence(Value("int32")),
+                    "length": Value("int32"),
+                    "ends_with_eos": Value("bool"),
+                }
+            )
+        else:
+            # Define features with fixed-length sequences for better performance.
+            # Using int32 for input_ids and labels to handle large vocabularies.
+            self._features = Features(
+                {
+                    "input_ids": Sequence(Value("int32"), length=config.context_length),
+                    "attention_mask": Sequence(Value("int32"), length=config.context_length),
+                    "labels": Sequence(Value("int32"), length=config.context_length),
+                }
+            )
         
     def _get_optimal_num_proc(self) -> Optional[int]:
         """
@@ -115,6 +128,7 @@ class CausalLMTokenizer(BaseTokenizer):
             self.logger.info(f"  - Context length: {self.config.context_length}")
             self.logger.info(f"  - Overlap: {self.config.overlap}")
             self.logger.info(f"  - Batch size: {getattr(self.config, 'batch_size', 1000)}")
+            self.logger.info(f"  - Doc-level mode: {self._doc_level_mode}")
             
             # Get optimal number of processes
             num_proc = self._get_optimal_num_proc()
@@ -142,7 +156,9 @@ class CausalLMTokenizer(BaseTokenizer):
                     
                     # Configure mapping parameters
                     map_kwargs = {
-                        "function": self._tokenize_function,
+                        "function": self._tokenize_doc_function
+                        if self._doc_level_mode
+                        else self._tokenize_function,
                         "batched": True,
                         "features": self._features,
                         "remove_columns": split_dataset.column_names,
@@ -185,7 +201,9 @@ class CausalLMTokenizer(BaseTokenizer):
                 
                 # Configure mapping parameters
                 map_kwargs = {
-                    "function": self._tokenize_function,
+                    "function": self._tokenize_doc_function
+                    if self._doc_level_mode
+                    else self._tokenize_function,
                     "batched": True,
                     "features": self._features,
                     "remove_columns": dataset.column_names,
@@ -296,3 +314,43 @@ class CausalLMTokenizer(BaseTokenizer):
             "labels": labels,
         }
 
+    def _tokenize_doc_function(self, batch: Dict[str, List[str]]) -> Dict[str, List[List[int]]]:
+        """
+        Batch-tokenize input texts in doc-level mode (variable-length, no overflow windows).
+
+        Returns variable-length `input_ids` plus explicit `length` and `ends_with_eos` columns.
+        """
+        if self._tokenizer is None:
+            try:
+                self._initialize_tokenizer()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize tokenizer: {e}")
+                raise RuntimeError(f"Tokenizer initialization failed: {e}") from e
+
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization. Check tokenizer_name in config.")
+
+        try:
+            outputs = self._tokenizer(
+                batch["text"],
+                padding=False,
+                truncation=False,
+            )
+        except Exception as e:
+            self.logger.error(f"Doc-level tokenization failed: {e}")
+            self.logger.error(f"Batch content preview: {str(batch)[:200]}...")
+            raise RuntimeError(f"Doc-level tokenization failed: {e}") from e
+
+        input_ids = outputs["input_ids"]
+        lengths = [len(ids) for ids in input_ids]
+
+        eos_token_id = getattr(self._tokenizer, "eos_token_id", None)
+        if eos_token_id is None:
+            raise ValueError(
+                "Doc-level CLM tokenization requires the tokenizer to define eos_token_id "
+                "to compute ends_with_eos."
+            )
+        eos_token_id = int(eos_token_id)
+        ends_with_eos = [bool(ids) and int(ids[-1]) == eos_token_id for ids in input_ids]
+
+        return {"input_ids": input_ids, "length": lengths, "ends_with_eos": ends_with_eos}

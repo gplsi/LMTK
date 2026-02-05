@@ -225,3 +225,83 @@ Important: `output/tests/tokenized_doclevel` must be on a filesystem shared acro
   - Keep packing logic isolated as “doc-level tokens → fixed-length blocks” (single-source).
   - Ensure the training integration consumes a generic `torch.utils.data.Dataset` of packed blocks + an explicit sampler policy, so a later `MixturePackedDataset` can compose multiple per-dataset packed-block datasets without changing model/training code.
 - Note: doc-level tokenized datasets are not compatible with existing workflows that assume fixed-shape `attention_mask/labels` (e.g. `dataset_merge`); packing mode is the intended consumer.
+
+## Recommended additions for large datasets (v1.1)
+
+We want online packing to remain correct and deterministic while scaling to tens of millions of documents. The current v1 implementation is correct but can become startup- and RAM-heavy because it scans every row and stores Python lists for offsets/metadata.
+
+Recommended additions (low-risk, incremental):
+
+1) **Tokenization emits `ends_with_eos: bool` (doc-level only)**  
+   - In doc-level CLM tokenization mode, add an `ends_with_eos` column computed at tokenization time.  
+   - Rationale: packing index build should not need to inspect `input_ids[-1]` for every document at training startup.
+
+2) **Persisted packing index (memory-mapped) next to the dataset**  
+   - Introduce an on-disk, versioned index artifact stored alongside the tokenized dataset directory, e.g.:
+     - `<dataset_path>/.packing_index/v1/<split>/offsets.int64`
+     - `<dataset_path>/.packing_index/v1/<split>/doc_lengths.int32`
+     - `<dataset_path>/.packing_index/v1/<split>/doc_indices.int64`
+     - `<dataset_path>/.packing_index/v1/<split>/doc_stream_lengths.int32` (or derive via `insert_eos` + `ends_with_eos`)
+     - `<dataset_path>/.packing_index/v1/<split>/meta.json` (packing params + dataset fingerprint)
+   - Use `numpy.memmap` for arrays so RAM usage is bounded and startup is fast.
+   - In SLURM/DDP: only rank 0 builds the index, other ranks wait on a barrier and then load it. Fail fast with a clear error if the dataset path is not on a shared filesystem.
+
+3) **Decouple rank-evenness from batch-evenness (drop_last policy)**  
+   - Keep `sampler_drop_last` as the “no duplication across ranks” control.
+   - Add a separate `drop_last_batch` setting for dropping partial batches (coverage vs. stability trade-off). Default recommendation:
+     - train: `drop_last_batch: true` in distributed runs
+     - valid: `drop_last_batch: false`
+
+Acceptance for v1.1:
+- Training startup time does not scale linearly with number of docs once the index exists (index reuse).
+- Peak RAM does not scale with `num_docs` (bounded by memmap window + small buffers).
+- Index is invalidated/rebuilt when any of these change: dataset fingerprint, `sequence_length`, `insert_eos`, `eos_token_id`, index version.
+
+These additions are explicitly intended to avoid “reinventing the wheel” at the storage layer: Hugging Face Datasets remains the storage/row-access abstraction; we only add the missing deterministic packing index artifact.
+
+## Implementation status (2026-02-05)
+
+Implemented the v1 workflow end-to-end (tokenization → training packing), including schemas, docs, smoke configs, and unit tests.
+
+Milestone 4 (large-dataset support) implementation is in progress in this branch/worktree:
+- `ends_with_eos` emitted by doc-level tokenization.
+- Persisted packing index (memory-mapped) under `dataset.nameOrPath/.packing_index` (configurable via `packing.index_cache_dir`).
+- Decoupled `sampler_drop_last` (rank-evenness) from `drop_last_batch` (partial batch dropping).
+
+Key code locations:
+
+- Tokenization doc-level mode:
+  - `src/tasks/tokenization/orchestrator.py`
+  - `src/tasks/tokenization/tokenizer/config.py`
+  - `src/tasks/tokenization/tokenizer/causal.py`
+- Training-time packing:
+  - `src/tasks/training/data/packing.py`
+  - `src/tasks/training/fabric/trainer/base.py`
+  - `src/tasks/training/utils.py`
+- Schemas/configs/docs/tests:
+  - `config/schemas/training/components/data.schema.yaml`
+  - `config/schemas/tokenization/tokenization.clm_training.schema.yaml`
+  - `config/tests/tokenization_doclevel_smoke.yaml`
+  - `config/tests/clm_training_packing_smoke.yaml`
+  - `config/tests/clm_training_packing_multinode_smoke.yaml`
+  - `config/tests/online_packing_integration_smoke.yaml`
+  - `docs/TOKENIZATION.md`, `docs/CLM_TRAINING.md`
+  - `tests/test_packed_sequence_dataset.py`, `tests/unit/config/test_online_packing_schema.py`
+
+### Test evidence / remaining validation
+
+- Added schema-level unit tests that validate:
+  - doc-level CLM tokenization config can omit `overlap`;
+  - packing requires `sequence_length` when enabled.
+- Local evidence (2026-02-05):
+  - `python3 -m pytest -q tests/unit/config/test_online_packing_schema.py` → `3 passed`
+  - `python3 -m pytest -q tests/unit/config/test_test_configs_defaults.py` → `4 passed`
+- Local evidence (2026-02-05, Milestone 4):
+  - `python3 -m pytest -q tests/unit/training/test_packing_index.py` → `3 passed`
+- Full runtime tests and smoke runs must be executed in a real repo environment (Conda/Poetry/tox) where HF `datasets` + `transformers` are installed.
+- SLURM validation is still required for multi-node evidence: record job IDs + logs here once run.
+
+### Known risks (v1)
+
+- `PackedSequenceDataset` precomputes prefix-sum offsets by scanning the full source dataset once at init time and stores per-document metadata in memory (`O(num_docs)`). This is correct but can be slow/heavy on very large corpora; if it becomes a bottleneck, we should consider a chunked/blocked prefix-sum index or a binary index file stored alongside the dataset.
+- EOS resolution uses `AutoTokenizer.from_pretrained(tokenizer_name)` when `eos_token_id` is not provided. In offline/HPC environments, ensure the tokenizer is already cached locally or set `packing.eos_token_id` explicitly.

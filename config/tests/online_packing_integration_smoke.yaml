@@ -1,0 +1,10 @@
+task: testing
+experiment_name: test_online_packing_integration_smoke
+verbose_level: 1
+testing:
+  mode: integration
+  configs:
+    - config/tests/tokenization_doclevel_smoke.yaml
+    - config/tests/clm_training_packing_smoke.yaml
+  stop_on_failure: true
+
