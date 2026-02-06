@@ -37,7 +37,7 @@ We also need auditable accounting: “what did we actually train on?” must be 
   - training-time online packing via a map-style dataset wrapper (`PackedSequenceDataset`),
   - a persisted memmap packing index (`PackingIndex`) and explicit distributed sampler/drop policies.
 - Current training config supports **one** dataset via `dataset.nameOrPath` (schema: `config/schemas/training/components/data.schema.yaml`). There is no schema surface for `dataset.sources` today.
-- The training loop in `src/tasks/training/fabric/trainer/base.py` is currently epoch-driven (`validations_per_epoch`, `checkpoints_per_epoch`, end-of-epoch/end-of-run). `validate_after_k_steps` exists in schema but is not currently consumed by this trainer.
+- The training loop in `src/tasks/training/fabric/trainer/base.py` is primarily epoch-oriented (`validations_per_epoch`, `checkpoints_per_epoch`, end-of-epoch/end-of-run), but it also consumes `validate_after_k_steps` for additional global-step validation triggers. This issue must preserve that existing behavior.
 
 ## Terminology (definitions for v1)
 
@@ -448,6 +448,10 @@ Notes:
   - weighted aggregate is computed from per-source losses (not from sampled mixed validation batches).
 - Resume safety tests cover:
   - fail-fast when resume metadata mismatches any Contract G field.
+- Reproducibility evidence includes:
+  - per-source dataset identity recorded in report metadata (`dataset_id`, `nameOrPath`, and dataset fingerprint/revision when available),
+  - deterministic split/schedule inputs (`seed`, `schedule_seed`, split-seed algorithm id),
+  - smoke metric sanity threshold: `val_loss_weighted` is finite and falls in `(0, 30)` for the test config.
 - For a successful run:
   - `effective_total_blocks == requested_total_blocks`
   - `sum(realized_blocks_per_dataset) == effective_total_blocks`
@@ -469,15 +473,35 @@ Notes:
 
     ./slurm/tests/run_tests.sh --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml --nodes 2 --ntasks-per-node 1
 
+   Use the SLURM test defaults from `slurm/tests/slurm_test.env` unless explicitly overridden:
+   - `PARTITION=postiguet1`,
+   - `GPU_COUNT=1` (default target: 1x RTX 4090),
+   - `CPUS_PER_TASK=8`, `MEMORY=32G`, `TIME_LIMIT=02:00:00`.
+
+   The submitter guard must pass before submission:
+   - ensure your username is present in `ALLOWED_SUBMITTERS` in `slurm/tests/slurm_test.env`.
+
+4) Fallback submission path (if `run_tests.sh` is unavailable):
+
+    ./slurm/submit_job.sh --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml --partition postiguet1 --gpus 1 --nodes 2 --ntasks-per-node 1 --cpus 8 --memory 32G --time 02:00:00
+
+5) Log retrieval and completion check:
+
+    sacct -j <JOB_ID> --format=JobID,State,ExitCode,Elapsed
+
+   If `run_tests.sh` was used, also collect the printed log paths (`Stdout log`, `Stderr log`).
+   If `submit_job.sh` was used directly, collect paths from the emitted `--output` / `--error` values.
+
 Required evidence to record in this issue:
 - exact command,
 - SLURM job ID,
 - stdout/stderr log paths,
 - path to produced `mixture_report.json`,
+- source reproducibility manifest (`dataset_id`, `nameOrPath`, fingerprint/revision when available),
 - short log/report excerpt proving:
   - requested/effective block equality,
   - realized totals/ratios,
-  - per-source validation provenance and validation metrics.
+  - per-source validation provenance and validation metrics (including `val_loss_weighted` threshold check).
 
 ## Integration Points / Invariants (must align with issue 42)
 

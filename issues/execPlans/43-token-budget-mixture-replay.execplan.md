@@ -30,7 +30,7 @@ After this change, a novice can run one config and get:
 
 ## Surprises & Discoveries
 
-- Observation: current trainer validation cadence is epoch-driven (`validations_per_epoch`, `checkpoints_per_epoch`), and `validate_after_k_steps` is not consumed in `src/tasks/training/fabric/trainer/base.py`.
+- Observation: current trainer validation cadence is primarily epoch-driven (`validations_per_epoch`, `checkpoints_per_epoch`), and `_try_validate` also supports `validate_after_k_steps` for global-step triggers.
   Evidence: `_try_validate` logic in `src/tasks/training/fabric/trainer/base.py`.
 
 - Observation: `src/tasks/training/orchestrator.py` currently loads exactly one source via `dataset.nameOrPath`.
@@ -182,6 +182,7 @@ Before implementation, add failing tests in `tests/unit/training/test_mixture_pa
 Acceptance:
 
 - tests fail initially for missing implementation (red state is explicit and expected).
+- the test location remains discoverable and scoped: these tests stay under `tests/unit/training/` because they cross schema, orchestrator, and trainer boundaries; any helper classes specific to `MixturePackedDataset` should be colocated under `src/tasks/training/data/` when needed.
 
 ### Milestone 3: Implement mixture runtime
 
@@ -246,13 +247,25 @@ Acceptance:
 
 ### Milestone 5: SLURM validation and evidence capture
 
-Use the existing SLURM test runner path:
+Use the existing SLURM test runner path and keep runtime defaults aligned with `slurm/tests/slurm_test.env`:
 
 - `slurm/tests/run_tests.sh`,
 - `slurm/tests/slurm_test.env`,
 - optional secrets from `slurm/tests/test_secrets.env`.
 
-Ensure submitter guard is satisfied (`ALLOWED_SUBMITTERS` in `slurm/tests/slurm_test.env`).
+Run command:
+
+    ./slurm/tests/run_tests.sh --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml --nodes 2 --ntasks-per-node 1 --partition postiguet1 --gpus 1 --cpus 8 --memory 32G --time 02:00:00
+
+Ensure submitter guard is satisfied (`ALLOWED_SUBMITTERS` in `slurm/tests/slurm_test.env`). If the runner script is unavailable, use:
+
+    ./slurm/submit_job.sh --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml --partition postiguet1 --gpus 1 --nodes 2 --ntasks-per-node 1 --cpus 8 --memory 32G --time 02:00:00
+
+After submission, record completion and logs with:
+
+    sacct -j <JOB_ID> --format=JobID,State,ExitCode,Elapsed
+
+When using `run_tests.sh`, also record the printed `Stdout log` and `Stderr log` paths.
 
 Acceptance:
 
@@ -332,6 +345,10 @@ A change is accepted only when all are true:
 
 5. Regression:
    - existing online-packing tests continue to pass.
+6. Reproducibility and metric checks:
+   - each source in `mixture_report.json` includes reproducibility identity fields (`dataset_id`, `nameOrPath`, and dataset fingerprint/revision when available),
+   - logged `seed`, `schedule_seed`, and split-seed algorithm id are present,
+   - smoke metric gate passes: `val_loss_weighted` is finite and in `(0, 30)`.
 
 ## Idempotence and Recovery
 
@@ -444,3 +461,7 @@ Finalized junior-proof runtime semantics by clarifying virtual-epoch budgeting v
 ## Revision Note (2026-02-06, update 5)
 
 Locked non-overengineered validation behavior by requiring reuse of existing `FabricTrainerBase._ensure_validation_split` semantics per source instead of introducing a parallel split implementation.
+
+## Revision Note (2026-02-06, update 6)
+
+Corrected the `validate_after_k_steps` observation to match current trainer behavior, added explicit SLURM partition/resource and log-retrieval instructions (with manual fallback), and added reproducibility/metric acceptance gates required for ML-facing validation evidence.
