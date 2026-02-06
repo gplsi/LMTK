@@ -66,6 +66,14 @@ After this change, a novice can run one config and get:
   Rationale: aligns with current trainer behavior and avoids introducing a second cadence mechanism in this issue.
   Date/Author: 2026-02-06 / Codex
 
+- Decision: per-source `weight` becomes optional only in all-or-none mode; when omitted for all sources, effective weights are derived from per-source train packed-block capacities.
+  Rationale: this preserves natural corpus proportions with zero manual tuning while keeping deterministic, auditable semantics.
+  Date/Author: 2026-02-06 / Codex
+
+- Decision: mixture mode fails fast when any source has zero train packed blocks after per-source validation split construction.
+  Rationale: a zero-capacity source makes deterministic sampling invalid and would otherwise create hidden fallback behavior.
+  Date/Author: 2026-02-06 / Codex
+
 ## Outcomes & Retrospective
 
 - Pending implementation.
@@ -103,10 +111,13 @@ At completion, the following must exist:
    - `dataset.sources` item fields:
      - `dataset_id: string` (required, unique),
      - `nameOrPath: string` (required),
-     - `weight: number` (required, `> 0`),
+     - `weight: number | null` (optional, `> 0` when set),
      - `tokenizer_name: string | null` (optional compatibility metadata),
      - `eos_token_id: integer | null` (optional compatibility metadata),
      - `index_cache_dir: string | null` (optional).
+   - source-weight rule:
+     - either every source sets `weight` (manual mode), or every source omits `weight` (derive from source blocks),
+     - mixed provided/omitted source weights are invalid.
    - `dataset.mixture` fields:
      - `enabled: boolean` (required when `sources` exists),
      - `budget_mode: string` with enum `anchor_epochs` / `explicit_blocks` (default `anchor_epochs`),
@@ -127,6 +138,10 @@ At completion, the following must exist:
    - detect mixture mode from config,
    - build per-source packed datasets and compose with `MixturePackedDataset`,
    - resolve requested budget from selected budget mode (`anchor_epochs` or `explicit_blocks`),
+   - resolve effective source weights before allocation:
+     - manual mode when all `weight` values are provided,
+     - inferred mode when all `weight` values are omitted (`effective_weight_i = source_blocks_i` from train split),
+     - fail fast on mixed provided/omitted weights,
    - resolve default anchor as source with max **train-split** packed blocks when not specified,
    - auto-build per-source validation splits independently before mixture composition, reusing `FabricTrainerBase._ensure_validation_split` semantics per source (no duplicate splitter),
    - enforce `number_epochs == 1` in mixture mode (hard error otherwise),
@@ -155,13 +170,18 @@ At the end of this milestone, these commands succeed:
 Acceptance:
 
 - single-source training configs still validate unchanged,
-- invalid mixture configs fail with explicit messages (missing `sources`, duplicate `dataset_id`, non-positive `weight`, invalid budget-mode conditionals such as missing `anchor_epochs` or missing `total_blocks` when required).
+- invalid mixture configs fail with explicit messages (missing `sources`, duplicate `dataset_id`, non-positive `weight` when provided, mixed provided/omitted weights, invalid budget-mode conditionals such as missing `anchor_epochs` or missing `total_blocks` when required).
 
 ### Milestone 2: Red tests for mixture semantics
 
 Before implementation, add failing tests in `tests/unit/training/test_mixture_packing.py` for:
 
 - deterministic exact allocation (`weights -> target_blocks`) with deterministic remainder handling,
+- weight resolution behavior:
+  - all-manual weights are preserved,
+  - all-omitted weights derive from source block counts,
+  - mixed weight presence fails fast,
+  - any source with zero train packed blocks fails fast with `dataset_id`,
 - no `O(total_blocks)` schedule materialization in dataset state,
 - deterministic mapping for fixed seed,
 - deterministic mapping is stable across processes (no Python built-in `hash` dependency),
@@ -195,6 +215,8 @@ Implement:
 Required runtime behavior:
 
 - exact deterministic target allocation per source over resolved budget,
+- effective weights are resolved deterministically (manual or derived from source block counts) before allocation,
+- fail fast when any source has zero train packed blocks (`B_i == 0`) after validation split construction,
 - local block selection with replacement: `local_idx = blake2b_u64(f"{schedule_seed}|{global_idx}|{dataset_id}") % source_num_blocks`,
 - no token mixing inside blocks,
 - in `anchor_epochs` mode, use canonical anchor-fixed derivation:
@@ -228,7 +250,7 @@ Add:
 
 The report file (rank 0) must include:
 
-- config summary (`dataset_id`, weight, sequence_length, budget_mode, anchor_dataset_id, requested_total_blocks, effective_total_blocks, seed/schedule_seed),
+- config summary (`dataset_id`, configured_weight, effective_weight, weight_mode, sequence_length, budget_mode, anchor_dataset_id, requested_total_blocks, effective_total_blocks, seed/schedule_seed),
 - source capacities (`source_blocks_available`),
 - runtime context (world_size, global batch settings, drop policies),
 - `target_blocks_per_dataset`,
@@ -324,6 +346,11 @@ A change is accepted only when all are true:
    - budget resolution is deterministic and auditable:
      - in `explicit_blocks`, requested budget equals configured `total_blocks`,
      - in `anchor_epochs`, requested budget equals derived per-epoch total times `anchor_epochs`,
+   - source weight resolution is deterministic and auditable:
+     - all-manual weights use configured values,
+     - all-omitted weights use train packed-block counts as effective weights,
+     - mixed provided/omitted weights fail fast,
+     - any source with zero train packed blocks fails fast with `dataset_id`,
    - mixture mode enforces `number_epochs == 1`,
    - `effective_total_blocks == requested_total_blocks`,
    - `sum(realized_blocks_per_dataset) == effective_total_blocks`,
@@ -347,6 +374,7 @@ A change is accepted only when all are true:
    - existing online-packing tests continue to pass.
 6. Reproducibility and metric checks:
    - each source in `mixture_report.json` includes reproducibility identity fields (`dataset_id`, `nameOrPath`, and dataset fingerprint/revision when available),
+   - report includes `weight_mode`, per-source `configured_weight`, and per-source `effective_weight`,
    - logged `seed`, `schedule_seed`, and split-seed algorithm id are present,
    - smoke metric gate passes: `val_loss_weighted` is finite and in `(0, 30)`.
 
@@ -364,6 +392,18 @@ Reference snippets (normative for v1 behavior):
     def blake2b_u64(text: str) -> int:
         digest = hashlib.blake2b(text.encode("utf-8"), digest_size=8).digest()
         return int.from_bytes(digest, byteorder="big", signed=False)
+
+    def resolve_effective_weights(
+        configured_weights_by_id: dict[str, float | None],
+        source_blocks: dict[str, int],
+    ) -> tuple[dict[str, float], str]:
+        ids = sorted(configured_weights_by_id)
+        present = [configured_weights_by_id[i] is not None for i in ids]
+        if all(present):
+            return ({i: float(configured_weights_by_id[i]) for i in ids}, "manual")
+        if not any(present):
+            return ({i: float(source_blocks[i]) for i in ids}, "from_source_blocks")
+        raise ValueError("All sources must either set weight or omit weight.")
 
     def allocate_exact_counts(total: int, weights_by_id: dict[str, float]) -> dict[str, int]:
         ids = sorted(weights_by_id)  # deterministic tie-break
@@ -405,6 +445,15 @@ Reference snippets (normative for v1 behavior):
     split_seed_i = blake2b_u64(f"valsplit|{base_seed}|{dataset_id}") % 2147483647
 
     mixture_meta = {
+      "weight_mode": weight_mode,
+      "sources": [
+        {
+          "dataset_id": did,
+          "configured_weight": configured_weights_by_id[did],
+          "effective_weight": weights_by_id[did]
+        }
+        for did in sorted(weights_by_id)
+      ],
       "budget_mode": budget_mode,
       "anchor_dataset_id": anchor_dataset_id,
       "requested_total_blocks": requested_total_blocks,
@@ -419,6 +468,7 @@ Minimal expected `mixture_report.json` structure:
 
     {
       "sequence_length": 128,
+      "weight_mode": "manual",
       "budget_mode": "explicit_blocks",
       "anchor_dataset_id": null,
       "source_blocks_available": {"A": 1000, "B": 300},
@@ -426,7 +476,10 @@ Minimal expected `mixture_report.json` structure:
       "effective_total_blocks": 1000,
       "world_size": 2,
       "dataset_index_map": {"0": "A", "1": "B"},
-      "sources": [{"dataset_id": "A", "weight": 2.0}, {"dataset_id": "B", "weight": 1.0}],
+      "sources": [
+        {"dataset_id": "A", "configured_weight": 2.0, "effective_weight": 2.0},
+        {"dataset_id": "B", "configured_weight": 1.0, "effective_weight": 1.0}
+      ],
       "target_blocks_per_dataset": {"A": 667, "B": 333},
       "realized_blocks_per_dataset": {"A": 667, "B": 333},
       "realized_tokens_per_dataset": {"A": 85376, "B": 42624},
@@ -465,3 +518,11 @@ Locked non-overengineered validation behavior by requiring reuse of existing `Fa
 ## Revision Note (2026-02-06, update 6)
 
 Corrected the `validate_after_k_steps` observation to match current trainer behavior, added explicit SLURM partition/resource and log-retrieval instructions (with manual fallback), and added reproducibility/metric acceptance gates required for ML-facing validation evidence.
+
+## Revision Note (2026-02-06, update 7)
+
+Added the all-or-none source-weight contract: manual weights remain supported, and when all weights are omitted the plan now requires deterministic derivation from per-source train packed-block capacities, with explicit fail-fast behavior for mixed presence and report/resume metadata updates.
+
+## Revision Note (2026-02-06, update 8)
+
+Added an explicit zero-capacity guard: mixture runs must fail fast when any source has zero train packed blocks after per-source validation splitting, and the failing `dataset_id` must be surfaced in tests and runtime behavior.

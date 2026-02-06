@@ -89,8 +89,11 @@ We also need auditable accounting: “what did we actually train on?” must be 
 
 ## Goals
 
-1) **Config: multi-dataset + weights**
-   - Training config supports specifying multiple datasets and weights interpreted as **token/blocks ratios**.
+1) **Config: multi-dataset + ratios**
+   - Training config supports specifying multiple datasets and ratios interpreted as **token/blocks ratios**.
+   - Ratios may be:
+     - explicitly provided via per-source `weight`, or
+     - inferred automatically from per-source train packed-block counts when `weight` is omitted for all sources.
    - Include explicit `dataset_id` / `name` fields for reporting.
 
 2) **Deterministic, DDP-safe mixing**
@@ -139,7 +142,9 @@ All sources in a mixture must be compatible:
 
 - Every emitted sample carries a tensor-safe source identity (`dataset_idx: int64`), with a deterministic `dataset_idx <-> dataset_id` mapping persisted in report/checkpoint metadata.
 - At end-of-run, rank 0 writes a report to disk including:
-  - requested weights,
+  - weight mode (`manual` or `from_source_blocks`),
+  - configured per-source weights (including null when omitted),
+  - resolved effective per-source weights used for allocation,
   - deterministic target block allocation per dataset,
   - realized blocks/tokens per dataset,
   - realized ratios and deviation.
@@ -150,6 +155,13 @@ All sources in a mixture must be compatible:
   - `requested_total_blocks`,
   - `effective_total_blocks` (the exact executed block budget after applying distributed constraints).
 - Budget resolution rules:
+  - Weight resolution (applies before allocation):
+    - if all sources set `weight`, use those values (`weight_mode=manual`),
+    - if all sources omit `weight`, infer weights from per-source **train-split** packed-block capacities `B_i` (`weight_mode=from_source_blocks`, with `weight_i = B_i`),
+    - mixed specification (some sources set `weight`, others omit) is invalid and must fail fast.
+  - Source capacity precondition:
+    - every source must have `B_i > 0` on the train split after validation split construction,
+    - if any source has `B_i == 0`, fail fast with the offending `dataset_id` (no fallback dropping, no synthetic padding).
   - `explicit_blocks`: `requested_total_blocks = dataset.mixture.total_blocks`.
   - `anchor_epochs`: build/load per-source **train-split** packing index lengths `B_i`; choose anchor:
     - `dataset.mixture.anchor_dataset_id` when provided,
@@ -206,7 +218,7 @@ All sources in a mixture must be compatible:
 ### Contract G: Resume compatibility for budget/accounting integrity
 
 - In mixture mode, resume must fail fast unless these are unchanged from checkpoint metadata:
-  - source set and weights,
+  - source set, weight mode, configured weights, and resolved effective weights,
   - `budget_mode`, `anchor_dataset_id`, `requested_total_blocks`,
   - `world_size`, `batch_size`, `gradient_accumulation_steps`,
   - hashing/allocation algorithm identifiers.
@@ -244,15 +256,18 @@ Create a map-style dataset (e.g. `MixturePackedDataset`) that:
     - derive `requested_total_blocks = anchor_epochs * total_blocks_per_epoch`.
   - `explicit_blocks`:
     - use configured `total_blocks` as `requested_total_blocks`.
+- Resolves effective source weights once per run:
+  - manual when all sources provide `weight`,
+  - inferred from train packed-block capacities when all sources omit `weight`.
 - Maps each global block index `i` to:
-  - `dataset_idx`/`dataset_id` using an exact-counts interleaving policy (weights → exact blocks-per-dataset over the whole run),
+  - `dataset_idx`/`dataset_id` using an exact-counts interleaving policy (resolved weights → exact blocks-per-dataset over the whole run),
   - `local_block_idx` using deterministic sampling with replacement from a stable hash:
     - `local_block_idx = blake2b_u64(f"{schedule_seed}|{i}|{dataset_id}") % num_blocks_in_dataset`.
 
 The key property: we mix at the **block selection** level. Each block is still produced by the per-dataset packer and remains homogeneous.
 
 The mixing schedule must satisfy:
-- Exact global counts: for resolved `requested_total_blocks`, allocate exact `blocks_per_dataset` from weights with deterministic remainder handling.
+- Exact global counts: for resolved `requested_total_blocks`, allocate exact `blocks_per_dataset` from resolved weights with deterministic remainder handling.
 - Order randomization: interleave sources by applying a deterministic permutation to `i` before dataset selection (to avoid long runs of one source).
 
 ### C) Dataloader + sampler policy
@@ -267,7 +282,7 @@ The mixing schedule must satisfy:
 - Validation uses packed blocks with the same `sequence_length` contract as training.
 - Emit:
   - per-source `val_loss_<dataset_id>`,
-  - weighted aggregate `val_loss_weighted` from configured training weights.
+  - weighted aggregate `val_loss_weighted` from resolved training weights.
 - Keep v1 simple:
   - no separate validation ratio scheduler,
   - no sampled mixed validation stream.
@@ -295,7 +310,20 @@ Use these snippets as the exact algorithmic reference during implementation.
         digest = hashlib.blake2b(text.encode("utf-8"), digest_size=8).digest()
         return int.from_bytes(digest, byteorder="big", signed=False)
 
-    # 2) Exact deterministic allocation (Hamilton / largest remainder)
+    # 2) Resolve effective weights (all-manual or all-derived; mixed is invalid)
+    def resolve_effective_weights(
+        configured_weights_by_id: dict[str, float | None],
+        source_blocks: dict[str, int],
+    ) -> tuple[dict[str, float], str]:
+        ids = sorted(configured_weights_by_id)
+        present = [configured_weights_by_id[i] is not None for i in ids]
+        if all(present):
+            return ({i: float(configured_weights_by_id[i]) for i in ids}, "manual")
+        if not any(present):
+            return ({i: float(source_blocks[i]) for i in ids}, "from_source_blocks")
+        raise ValueError("All sources must either set weight or omit weight.")
+
+    # 3) Exact deterministic allocation (Hamilton / largest remainder)
     def allocate_exact_counts(total: int, weights_by_id: dict[str, float]) -> dict[str, int]:
         ids = sorted(weights_by_id)  # deterministic tie-break by dataset_id
         z = sum(weights_by_id[i] for i in ids)
@@ -308,7 +336,7 @@ Use these snippets as the exact algorithmic reference during implementation.
             base[i] += 1
         return base
 
-    # 3) Anchor-fixed per-epoch allocation for budget_mode=anchor_epochs
+    # 4) Anchor-fixed per-epoch allocation for budget_mode=anchor_epochs
     def derive_anchor_epoch_targets(
         source_blocks: dict[str, int],
         weights_by_id: dict[str, float],
@@ -322,13 +350,13 @@ Use these snippets as the exact algorithmic reference during implementation.
         targets_non_anchor = allocate_exact_counts(total_non_anchor, raw_non_anchor)
         return {anchor_id: b_anchor, **targets_non_anchor}
 
-    # 4) Weighted validation metric
+    # 5) Weighted validation metric
     val_loss_weighted = sum(normalized_weight[i] * val_loss_per_dataset[i] for i in dataset_ids)
 
-    # 5) Deterministic per-source validation split seed
+    # 6) Deterministic per-source validation split seed
     split_seed_i = blake2b_u64(f"valsplit|{base_seed}|{dataset_id}") % 2147483647
 
-    # 6) Deterministic permutation of [0, total) without materializing an O(total) array
+    # 7) Deterministic permutation of [0, total) without materializing an O(total) array
     # (used before cumulative lookup to avoid long source runs while keeping exact counts)
     def permute_index(i: int, total: int, schedule_seed: int) -> int:
         if total <= 1:
@@ -339,7 +367,7 @@ Use these snippets as the exact algorithmic reference during implementation.
         offset = blake2b_u64(f"perm_offset|{schedule_seed}") % total
         return (i * stride + offset) % total
 
-    # 7) O(log S) dataset-id lookup without materializing full schedule
+    # 8) O(log S) dataset-id lookup without materializing full schedule
     # counts_by_id: exact per-source counts for the epoch or run (sum == total)
     ordered_ids = sorted(counts_by_id)
     cumulative = []
@@ -350,9 +378,17 @@ Use these snippets as the exact algorithmic reference during implementation.
     # map permutation index p = permute_index(i, total, schedule_seed) in [0, total)
     # did = first dataset with p < upper_bound using binary search on cumulative
 
-    # 8) Resume guard metadata (must match at resume time)
+    # 9) Resume guard metadata (must match at resume time)
     mixture_meta = {
-        "sources": [{"dataset_id": did, "weight": weights_by_id[did]} for did in sorted(weights_by_id)],
+        "weight_mode": weight_mode,
+        "sources": [
+            {
+                "dataset_id": did,
+                "configured_weight": configured_weights_by_id[did],
+                "effective_weight": weights_by_id[did],
+            }
+            for did in sorted(weights_by_id)
+        ],
         "budget_mode": budget_mode,
         "anchor_dataset_id": anchor_id,
         "requested_total_blocks": requested_total_blocks,
@@ -414,13 +450,30 @@ Minimal example (two sources A/B, 2:1 mixing, implicit anchor + epoch budget):
     validations_per_epoch: 5
     output_dir: output/mixture_smoke
 
+Alternative example (omit all weights to preserve original source proportions by block counts):
+
+    dataset:
+      sources:
+        - dataset_id: A
+          nameOrPath: /shared/tokenized/dsA_doclevel_salamandra2b
+        - dataset_id: B
+          nameOrPath: /shared/tokenized/dsB_doclevel_salamandra2b
+      mixture:
+        enabled: true
+        budget_mode: anchor_epochs
+        anchor_epochs: 1
+
 Notes:
 - `anchor_epochs` defines run length relative to anchor capacity.
 - In `anchor_epochs`, anchor capacity means train-split packed blocks after per-source validation split construction.
 - For exact direct budgets, set:
   - `budget_mode: explicit_blocks`
   - `total_blocks: <N>`
-- Replay is expressed as just another source entry with a weight (e.g., `dataset_id: R`).
+- Replay is expressed as just another source entry (with manual `weight` when custom replay ratio is desired).
+- `weight` is optional per source, but only in all-or-none mode:
+  - all provided: manual ratio mode,
+  - all omitted: ratio inferred from per-source train packed-block counts,
+  - mixed provided/omitted is invalid.
 - In distributed runs, the config must satisfy Contract E divisibility invariants; invalid combinations fail fast with clear errors.
 - Validation in v1 is per-source auto-generated when source `valid` is absent (Contract F), using the existing `validation_split` config deterministically.
 - Validation cadence remains the current trainer cadence: with mixture mode (`number_epochs: 1`), `validations_per_epoch` and `checkpoints_per_epoch` are distributed over the full resolved block budget.
@@ -432,6 +485,11 @@ Notes:
 - Unit tests cover:
   - schedule determinism given seed/epoch,
   - exact target allocation over resolved budget (including deterministic remainder handling),
+  - weight resolution behavior:
+    - all-manual weights are respected,
+    - all-omitted weights are inferred from source block counts,
+    - mixed manual/omitted weights fail fast,
+    - any source with zero train packed blocks fails fast with `dataset_id`,
   - stable-hash schedule behavior (no dependency on Python `hash()`),
   - exact Hamilton allocation with lexicographic tie-break on equal remainders,
   - anchor resolution (`anchor_dataset_id` override and default largest-source anchor),
@@ -450,6 +508,7 @@ Notes:
   - fail-fast when resume metadata mismatches any Contract G field.
 - Reproducibility evidence includes:
   - per-source dataset identity recorded in report metadata (`dataset_id`, `nameOrPath`, and dataset fingerprint/revision when available),
+  - weight resolution metadata (`weight_mode`, configured weights, and effective weights),
   - deterministic split/schedule inputs (`seed`, `schedule_seed`, split-seed algorithm id),
   - smoke metric sanity threshold: `val_loss_weighted` is finite and falls in `(0, 30)` for the test config.
 - For a successful run:
