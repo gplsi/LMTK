@@ -1,0 +1,26 @@
+task: tokenization
+experiment_name: tokenization_dc46_doclevel_salamandra2b
+verbose_level: 3
+seed: 42
+
+tokenizer:
+  tokenizer_name: BSC-LT/salamandra-2b
+  task: clm_training
+  # Doc-level mode: omit context_length/max_sequence_length and overlap.
+  batch_size: 512
+  num_proc: 1
+  show_progress: true
+
+dataset:
+  source: local
+  nameOrPath: data/downloaded/dc14
+  format: files
+  file_config:
+    text_key: content
+    format: parquet
+    encoding: utf-8
+
+output:
+  path: data/tokenized/dc46_doclevel_salamandra2b
+
+test_size: 0
