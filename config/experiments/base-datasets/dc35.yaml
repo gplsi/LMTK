@@ -1,0 +1,23 @@
+task: "tokenization"
+experiment_name: "tokenization_dc35"
+verbose_level: 3
+
+tokenizer:
+  tokenizer_name: "BSC-LT/salamandra-2b"
+  context_length: 8192
+  overlap: 0
+  task: "clm_training"
+
+dataset:
+  source: "local"
+  nameOrPath: "/home/gplsi/GPLSI/codigos/LMTK/data/downloaded/dc13"
+  format: "files"
+  file_config:
+    text_key: "content"
+    format: "parquet"
+    encoding: "utf-8"
+
+output:
+  path: "/home/gplsi/GPLSI/codigos/LMTK/data/tokenized/dc35"
+
+test_size: 0
