@@ -1,0 +1,19 @@
+task: dataset_analysis
+experiment_name: dataset_analysis_dc30
+verbose_level: 3
+
+dataset:
+  source: local
+  nameOrPath: data/tokenized/dc30
+  format: hf
+
+analysis:
+  splits: ["train"]
+  top_k: 100
+  compute_padding_metrics: true
+  compute_token_frequency: true
+  compute_unique_tokens: true
+  report_name: dc30_analysis
+
+output:
+  path: output/experiments/base-datasets/analytics/dc30

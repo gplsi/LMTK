@@ -1,0 +1,20 @@
+task: dataset_analysis
+experiment_name: test_dataset_analysis_smoke_fixed
+verbose_level: 1
+
+dataset:
+  source: local
+  # Fixed-window tokenized dataset with attention_mask/labels.
+  nameOrPath: data/tokenized/dc20
+  format: hf
+
+analysis:
+  splits: ["train"]
+  top_k: 20
+  compute_padding_metrics: true
+  compute_token_frequency: true
+  compute_unique_tokens: true
+  report_name: smoke_fixed
+
+output:
+  path: output/tests/dataset_analysis

@@ -1,0 +1,19 @@
+task: dataset_analysis
+experiment_name: dataset_analysis_example
+verbose_level: 3
+
+dataset:
+  source: local
+  nameOrPath: data/tokenized/dc40_doclevel_salamandra2b
+  format: hf
+
+analysis:
+  splits: ["train"]
+  top_k: 100
+  compute_padding_metrics: true
+  compute_token_frequency: true
+  compute_unique_tokens: true
+  report_name: dc40_doclevel_analysis
+
+output:
+  path: output/dataset_analysis

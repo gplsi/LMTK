@@ -1,0 +1,20 @@
+task: dataset_analysis
+experiment_name: test_dataset_analysis_smoke_doclevel
+verbose_level: 1
+
+dataset:
+  source: local
+  # Doc-level tokenized dataset with input_ids + length.
+  nameOrPath: data/tokenized/dc40_doclevel_salamandra2b
+  format: hf
+
+analysis:
+  splits: ["train"]
+  top_k: 20
+  compute_padding_metrics: true
+  compute_token_frequency: true
+  compute_unique_tokens: true
+  report_name: smoke_doclevel
+
+output:
+  path: output/tests/dataset_analysis

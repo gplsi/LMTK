@@ -1,0 +1,68 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "dataset_analysis.schema.yaml"
+description: "Schema for tokenized dataset analysis task"
+
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      dataset:
+        type: object
+        properties:
+          source:
+            type: string
+            enum: ["local"]
+            description: "Only local Hugging Face datasets saved to disk are supported in v1."
+          nameOrPath:
+            type: string
+            description: "Path to a tokenized dataset saved via Hugging Face save_to_disk."
+          format:
+            type: string
+            enum: ["hf", "dataset"]
+            default: "hf"
+            description: "Dataset storage format."
+        required:
+          - source
+          - nameOrPath
+          - format
+      analysis:
+        type: object
+        properties:
+          splits:
+            type: array
+            items:
+              type: string
+            description: "Optional list of splits to analyze. When omitted, all available splits are used."
+          top_k:
+            type: integer
+            minimum: 1
+            default: 100
+            description: "How many most frequent tokens to include."
+          compute_padding_metrics:
+            type: boolean
+            default: true
+            description: "Whether to compute non-padding/effective-token metrics."
+          compute_token_frequency:
+            type: boolean
+            default: true
+            description: "Whether to compute top-k token frequency statistics."
+          compute_unique_tokens:
+            type: boolean
+            default: true
+            description: "Whether to compute exact unique token count."
+          report_name:
+            type: string
+            default: "dataset_analysis"
+            description: "Base name for output report files."
+        additionalProperties: false
+      output:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Directory where reports will be written."
+        required:
+          - path
+    required:
+      - dataset
+      - output

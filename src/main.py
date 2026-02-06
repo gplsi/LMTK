@@ -42,7 +42,8 @@ def execute_task(config_path: str):
         'mlm_training': 'training', 
         'instruction': 'training',
         'tokenization': 'tokenization',
-        'publish': 'publish'
+        'publish': 'publish',
+        'dataset_analysis': 'dataset_analysis',
     }
 
     # Get the module name for this task type
