@@ -202,7 +202,21 @@ fi
 echo "Sourcing environment script: $ENV_SCRIPT"
 source "$ENV_SCRIPT"
 
-echo "Python executable after environment setup: $(which python || true)"
+if ! command -v "$PYTHON_COMMAND" >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_COMMAND="python3"
+    elif command -v python >/dev/null 2>&1; then
+        PYTHON_COMMAND="python"
+    else
+        echo "❌ ERROR: No python executable found in PATH after environment setup."
+        exit 1
+    fi
+fi
+
+# Resolve to an absolute path so `srun` doesn't depend on PATH propagation.
+PYTHON_COMMAND="$(command -v "$PYTHON_COMMAND")"
+
+echo "Python executable after environment setup: $PYTHON_COMMAND"
 echo "Conda environment: ${CONDA_DEFAULT_ENV:-unknown}"
 echo "PYTHONPATH: ${PYTHONPATH:-not set}"
 echo "================================"
@@ -282,7 +296,6 @@ else
     echo "Running without srun (single-node/single-process)"
 fi
 echo "================================"
-
 cd "$HOST_PROJECT_ROOT"
 if [[ "$USE_SRUN" == "true" ]]; then
     srun --nodes "$NODES" --ntasks-per-node "$NTASKS_PER_NODE" "${TRAIN_CMD[@]}"
@@ -291,6 +304,9 @@ else
 fi
 # Capture exit code
 EXIT_CODE=$?
+
+#REMOVE TMP DIRECTORY MAPPED
+rm -R /leonardo_scratch/large/userexternal/sgaliano/tmp/*
 
 echo "===== Job Completion ====="
 echo "Container finished with exit code: $EXIT_CODE"

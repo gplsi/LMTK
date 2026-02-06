@@ -5,8 +5,8 @@ fi
 
 echo "Setting up environment..."
 
-if [[ -f /home/gplsi/rst29/anaconda3/etc/profile.d/conda.sh ]]; then
-  source /home/gplsi/rst29/anaconda3/etc/profile.d/conda.sh
+if [[ -f /leonardo_work/EUHPC_D22_034/miniconda3/etc/profile.d/conda.sh ]]; then
+  source /leonardo_work/EUHPC_D22_034/miniconda3/etc/profile.d/conda.sh
 else
   echo "Error: conda initialization script not found." >&2
   return 1

@@ -23,6 +23,7 @@ GPU_COUNT=""
 MEMORY=""
 TIME_LIMIT=""
 PARTITION=""
+QOS=""
 JOB_NAME=""
 CPUS_PER_TASK=""
 NODES=""
@@ -33,6 +34,8 @@ OUTPUT_DIR=""
 OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-}"
 ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-}"
 DRY_RUN=false
+CONFIG_LOGGING_MODE=""
+CONFIG_WANDB_MODE=""
 
 ENV_OUTPUT_FILE_PATTERN="$OUTPUT_FILE_PATTERN"
 ENV_ERROR_FILE_PATTERN="$ERROR_FILE_PATTERN"
@@ -58,10 +61,11 @@ GPU_COUNT="${GPU_COUNT:-2}"
 MEMORY="${MEMORY:-64G}"
 TIME_LIMIT="${TIME_LIMIT:-48:00:00}"
 PARTITION="${PARTITION:-dgx}"
+QOS="${QOS:-boost_qos_dbg}"
 JOB_NAME="${JOB_NAME:-lmtk}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 NODES="${NODES:-1}"
-NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
+NTASKS_PER_NODE="${NTASKS_PER_NODE:-}"
 OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-%j_lmtk.out}"
 ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-%j_lmtk.err}"
 
@@ -88,6 +92,7 @@ OPTIONAL:
     -m, --memory MEMORY          Memory to request (default: 64G)
     -t, --time TIME_LIMIT        Time limit (default: 48:00:00)
     -p, --partition PARTITION    SLURM partition (default: dgx)
+    -q, --qos QOS                SLURM QoS (default: boost_qos_dbg)
     -j, --job-name JOB_NAME      Job name (default: lmtk)
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
@@ -166,6 +171,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -p|--partition)
             PARTITION="$2"
+            shift 2
+            ;;
+        -q|--qos)
+            QOS="$2"
             shift 2
             ;;
         -j|--job-name)
@@ -275,13 +284,25 @@ if [[ -z "$HUGGINGFACE_API_KEY" ]]; then
     fi
 fi
 
-# Warn about WandB key but don't fail
+# Warn about WandB key but don't fail (unless offline mode requested)
 if [[ -z "$WANDB_API_KEY" ]]; then
-    echo "⚠️  WARNING: No WandB API key provided."
-    echo "   - Experiment tracking will be disabled"
-    echo "   - To enable WandB, use: $0 -c $CONFIG_FILE -k your_wandb_key"
-    echo "   - Or set environment variable: export WANDB_API_KEY=your_key"
-    echo ""
+    if [[ "$CONFIG_LOGGING_MODE" == "wandb" && "$CONFIG_WANDB_MODE" != "offline" ]]; then
+        echo "⚠️  WARNING: No WandB API key provided."
+        echo "   - Experiment tracking will be disabled"
+        echo "   - To enable WandB, use: $0 -c $CONFIG_FILE -k your_wandb_key"
+        echo "   - Or set environment variable: export WANDB_API_KEY=your_key"
+        echo ""
+    fi
+fi
+
+# Default ntasks-per-node to the GPU count if not explicitly provided
+if [[ -z "$NTASKS_PER_NODE" ]]; then
+    NTASKS_PER_NODE="$GPU_COUNT"
+fi
+
+# Default total ntasks to the GPU count if not explicitly provided
+if [[ -z "$NTASKS" ]]; then
+    NTASKS="$GPU_COUNT"
 fi
 
 # Always pass CONFIG_FILE relative to PROJECT_ROOT for the container
@@ -310,20 +331,32 @@ EXPORT_VARS="${EXPORT_VARS},GPU_COUNT=$GPU_COUNT"
 EXPORT_VARS="${EXPORT_VARS},MEMORY=$MEMORY"
 EXPORT_VARS="${EXPORT_VARS},TIME_LIMIT=$TIME_LIMIT"
 EXPORT_VARS="${EXPORT_VARS},PARTITION=$PARTITION"
+EXPORT_VARS="${EXPORT_VARS},QOS=$QOS"
 EXPORT_VARS="${EXPORT_VARS},JOB_NAME=$JOB_NAME"
 EXPORT_VARS="${EXPORT_VARS},CPUS_PER_TASK=$CPUS_PER_TASK"
 EXPORT_VARS="${EXPORT_VARS},NODES=$NODES"
 EXPORT_VARS="${EXPORT_VARS},NTASKS_PER_NODE=$NTASKS_PER_NODE"
 EXPORT_VARS="${EXPORT_VARS},TOTAL_TASKS=$TOTAL_TASKS"
+if [[ -n "${PYTHON_COMMAND:-}" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},PYTHON_COMMAND=$PYTHON_COMMAND"
+fi
+if [[ -n "${MAIN_SCRIPT:-}" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},MAIN_SCRIPT=$MAIN_SCRIPT"
+fi
 
 if [[ -n "$NODELIST" ]]; then
     EXPORT_VARS="${EXPORT_VARS},NODELIST=$NODELIST"
+fi
+
+if [[ "$CONFIG_LOGGING_MODE" == "wandb" && "$CONFIG_WANDB_MODE" == "offline" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},WANDB_MODE=offline"
 fi
 
 # Build the sbatch command with proper SLURM directives
 SBATCH_CMD="sbatch"
 SBATCH_CMD="$SBATCH_CMD --job-name=$JOB_NAME"
 SBATCH_CMD="$SBATCH_CMD --partition=$PARTITION"
+SBATCH_CMD="$SBATCH_CMD --qos=$QOS"
 SBATCH_CMD="$SBATCH_CMD --gres=gpu:$GPU_COUNT"
 SBATCH_CMD="$SBATCH_CMD --mem=$MEMORY"
 SBATCH_CMD="$SBATCH_CMD --time=$TIME_LIMIT"
@@ -358,6 +391,7 @@ echo "Config File: $CONFIG_FILE"
 echo "Full Config Path: $FULL_CONFIG_PATH"
 echo "Job Name: $JOB_NAME"
 echo "Partition: $PARTITION"
+echo "QoS: $QOS"
 echo "GPU Count: $GPU_COUNT"
 echo "Memory: $MEMORY"
 echo "Time Limit: $TIME_LIMIT"

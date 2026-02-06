@@ -2,45 +2,46 @@
 
 task: "clm_training"
 experiment_name: "aitana-s2b-c0dc17"
-verbose_level: 4
+verbose_level: 3
 
 # Training data
 dataset:
   source: "local"  # huggingface, local
-  nameOrPath: "/home/gplsi/GPLSI/codigos/LMTK/data/tokenized/dc17"
+  nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc17"
   format: "hf"
 
 validation_split:
-  proportion: 0.01
+  proportion: 0.005
   seed: 42
   shuffle: true
 
+# Resuming Training from Checkpoint
+#checkpoint: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17/e-001-gs-037751.pth"
+
 # Output dir
-output_dir: "output/aitana-s2b-c0dc17"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17-epoch-2"
 seed: 42
 
 # Model
-model_name: "BSC-LT/salamandra-2b"
+model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
 
 # Model precision
 precision: "bf16-true"
 static_graph: false
 
 # Training parameters
-number_epochs: 1
+number_epochs: 2
 batch_size: 2
 
 # Validation parameters
 validate_on_end: true
 validate_after_epoch: false
-validate_after_k_steps: null
-
+validations_per_epoch: 20
 
 # Saving checkpoints
-save_on_validate: true
+save_on_validate: false
 save_on_end: true
-
-
+checkpoints_per_epoch: 4
 
 # Gradient parameters
 gradient_accumulation: true
@@ -74,18 +75,11 @@ wandb_tags:
   - "continual"
 wandb_notes: "Continual CLM training on dc17 with Salamandra-2B"
 wandb_resume: "allow"
-wandb_mode: "online"
+wandb_mode: "offline"
 log_model: false
 log_iter_interval: 10
 
 # Distributed_strategy
-parallelization_strategy: "fsdp"
-
-# FSDP specific parameters
-auto_wrap_policy: "llama"
-sharding_strategy: "FULL_SHARD"
-state_dict_type: "sharded"
-limit_all_gathers: true
-cpu_offload: false
+parallelization_strategy: "ddp"
 num_workers: 4
-gradient_checkpointing: true
+cpu_offload: false

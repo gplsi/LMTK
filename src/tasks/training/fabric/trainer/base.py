@@ -523,6 +523,8 @@ class FabricTrainerBase(ABC):
             checkpoint_name = f"e-{current_epoch:03d}-gs-{global_iteration:06d}.pth"
             
             output_checkpoint_path = Path(self.config.output_dir, checkpoint_name)
+
+            self.cli_logger.info(f"Saving checkpoint to {output_checkpoint_path}")
             
             # Log checkpoint saving info
             progress_info = ""
@@ -554,7 +556,7 @@ class FabricTrainerBase(ABC):
             
             self.cli_logger.info(f"Saving checkpoint to {checkpoint_name!r}{progress_info}")
             fabric.save(output_checkpoint_path, self.state)
-            self.cli_logger.debug(f"Checkpoint saved successfully to {str(output_checkpoint_path)}")
+            self.cli_logger.info(f"Checkpoint saved successfully to {str(output_checkpoint_path)}")
             
         except Exception as e:
             self.cli_logger.error(f"Failed to save checkpoint: {str(e)}")
@@ -662,7 +664,7 @@ class FabricTrainerBase(ABC):
         """
         Log training metrics for monitoring.
         """
-        
+
         self.cli_logger.debug(
             f"iter {self.state['iter_num']} step {self.state['step_count']}: loss {loss.item():.4f}, iter time:"
             f" {(self.train_t1 - self.train_iter_t0) * 1000:.2f}ms remaining time: "
@@ -676,6 +678,31 @@ class FabricTrainerBase(ABC):
             lengths=self.total_lengths,
             train_loss=loss.item()
         )
+
+    def _log_learning_rates(self, fabric: L.Fabric) -> None:
+        """Log current learning rates for each optimizer param group."""
+        optimizer = self.state.get("optimizer")
+        if optimizer is None:
+            return
+
+        lr_metrics = {}
+        primary_lr = None
+        for idx, group in enumerate(optimizer.param_groups):
+            lr = group.get("lr")
+            if lr is None:
+                continue
+            lr_value = float(lr)
+            lr_metrics[f"lr/group_{idx}"] = lr_value
+            if primary_lr is None:
+                primary_lr = lr_value
+
+        if not lr_metrics:
+            return
+
+        if primary_lr is not None:
+            lr_metrics.setdefault("lr", primary_lr)
+
+        fabric.log_dict(lr_metrics, self.state["step_count"])
     
     def _gradient_clipping(self, fabric: L.Fabric, model: L.LightningModule, optimizer: torch.optim.Optimizer) -> None:
         """
@@ -728,6 +755,7 @@ class FabricTrainerBase(ABC):
             scheduler.step()
             optimizer.zero_grad()
             self.state["step_count"] += 1
+            self._log_learning_rates(fabric)
             self._try_validate(fabric)
         self.state["iter_num"] += 1
         return outputs, loss
@@ -753,6 +781,8 @@ class FabricTrainerBase(ABC):
         validate_on_end = self.config.get("validate_on_end", True)
         save_on_validate = self.config.get("save_on_validate", False)
         save_on_end = self.config.get("save_on_end", False)
+        validate_after_k_steps = self.config.get("validate_after_k_steps", None)
+        total_steps_completed = self.state.get("step_count", 0)
 
         try:
             validations_per_epoch = max(1, int(validations_per_epoch))
@@ -768,6 +798,21 @@ class FabricTrainerBase(ABC):
                 self.cli_logger.warning(f"Invalid checkpoints_per_epoch value {checkpoints_per_epoch!r}; ignoring setting")
                 parsed_checkpoints = None
         checkpoints_per_epoch = parsed_checkpoints
+
+        step_interval = None
+        if validate_after_k_steps is not None:
+            try:
+                step_interval = int(validate_after_k_steps)
+                if step_interval <= 0:
+                    self.cli_logger.warning(
+                        f"validate_after_k_steps must be a positive integer, got {validate_after_k_steps!r}; disabling setting"
+                    )
+                    step_interval = None
+            except (TypeError, ValueError):
+                self.cli_logger.warning(
+                    f"Invalid validate_after_k_steps value {validate_after_k_steps!r}; expected integer"
+                )
+                step_interval = None
 
         should_validate = False
         should_save = False
@@ -831,7 +876,6 @@ class FabricTrainerBase(ABC):
             if checkpoints_per_epoch is not None:
                 checkpoint_steps = _build_epoch_schedule(checkpoints_per_epoch, steps_per_epoch)
 
-            total_steps_completed = self.state["step_count"]
             steps_in_previous_epochs = (current_epoch - 1) * steps_per_epoch
             step_in_current_epoch = total_steps_completed - steps_in_previous_epochs
 
@@ -851,6 +895,16 @@ class FabricTrainerBase(ABC):
 
             if should_validate and save_on_validate:
                 should_save = True
+
+        if step_interval is not None and total_steps_completed > 0:
+            if total_steps_completed % step_interval == 0:
+                should_validate = True
+                if save_on_validate:
+                    should_save = True
+                self.cli_logger.debug(
+                    f"Validation triggered at global optimizer step {total_steps_completed} "
+                    f"(validate_after_k_steps={step_interval})"
+                )
 
         validation_completed = False
         attempted_validation = should_validate
@@ -918,7 +972,8 @@ class FabricTrainerBase(ABC):
             scheduler.step()
             optimizer.zero_grad()
             self.state["step_count"] += 1
-            
+
+            self._log_learning_rates(fabric)
             self._try_validate(fabric)
             self.state["iter_num"] += 1
             return outputs, loss
