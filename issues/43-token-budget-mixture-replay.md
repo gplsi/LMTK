@@ -37,7 +37,7 @@ We also need auditable accounting: “what did we actually train on?” must be 
   - training-time online packing via a map-style dataset wrapper (`PackedSequenceDataset`),
   - a persisted memmap packing index (`PackingIndex`) and explicit distributed sampler/drop policies.
 - Current training config supports **one** dataset via `dataset.nameOrPath` (schema: `config/schemas/training/components/data.schema.yaml`). There is no schema surface for `dataset.sources` today.
-- The training loop is currently epoch-driven (`number_epochs`), but validation can also be driven by `validate_after_k_steps`.
+- The training loop in `src/tasks/training/fabric/trainer/base.py` is currently epoch-driven (`validations_per_epoch`, `checkpoints_per_epoch`, end-of-epoch/end-of-run). `validate_after_k_steps` exists in schema but is not currently consumed by this trainer.
 
 ## Terminology (definitions for v1)
 
@@ -65,6 +65,10 @@ We also need auditable accounting: “what did we actually train on?” must be 
 4) **DDP/FSDP-friendly by construction**
    - Mixing is implemented as a map-style dataset with deterministic `__getitem__` and explicit distributed sampler policy (no stateful collators; no iterable-only mixing).
    - Rationale: correctness under SLURM multi-node + resume is more important than micro-optimizing the input pipeline.
+
+5) **Effective-budget invariants are explicit**
+   - In distributed runs we fail fast unless `total_blocks` is compatible with world-size sharding and optimizer-step settings.
+   - Rationale: ratio accounting is only meaningful when executed blocks exactly match defined budgets.
 
 ## Goals
 
@@ -114,8 +118,17 @@ All sources in a mixture must be compatible:
 - Every emitted sample carries `dataset_id` (as a tensor) so per-dataset blocks are countable.
 - At end-of-run, rank 0 writes a report to disk including:
   - requested weights,
+  - deterministic target block allocation per dataset,
   - realized blocks/tokens per dataset,
   - realized ratios and deviation.
+
+### Contract E: Effective budget under distributed execution
+
+- The implementation must define and persist `effective_total_blocks` (the exact executed block budget after applying distributed constraints).
+- It must fail fast on incompatible configurations rather than silently padding/duplicating/dropping in ways that invalidate mixture accounting.
+- Required minimum checks in v1:
+  - `total_blocks % world_size == 0` in distributed runs.
+  - per-rank block count is compatible with `batch_size` and `gradient_accumulation_steps` (no silent lost optimizer steps).
 
 ## Non-goals
 
@@ -139,7 +152,7 @@ For each configured dataset `Di`:
 Create a map-style dataset (e.g. `MixturePackedDataset`) that:
 
 - Exposes a global `__len__` defined by **a fixed total number of blocks** (`dataset.mixture.total_blocks`).
-  - v1 recommendation: set `number_epochs: 1` for mixture runs and set `total_blocks` to the desired run length. Use `validate_after_k_steps` / `checkpoints_per_epoch` for cadence.
+  - v1 recommendation: set `number_epochs: 1` for mixture runs and set `total_blocks` to the desired run length. Use `validations_per_epoch` / `checkpoints_per_epoch` for cadence.
 - Maps each global block index `i` to:
   - `dataset_id` using an exact-counts interleaving policy (weights → exact blocks-per-dataset over the whole run),
   - `local_block_idx` using deterministic sampling with replacement: `local_block_idx = hash(seed, i, dataset_id) % num_blocks_in_dataset`.
@@ -182,9 +195,11 @@ Minimal example (two sources A/B, 2:1 mixing, one-epoch run):
         - dataset_id: A
           nameOrPath: /shared/tokenized/dsA_doclevel_salamandra2b
           weight: 2
+          tokenizer_name: BSC-LT/salamandra-2b
         - dataset_id: B
           nameOrPath: /shared/tokenized/dsB_doclevel_salamandra2b
           weight: 1
+          tokenizer_name: BSC-LT/salamandra-2b
       packing:
         enabled: true
         sequence_length: 2048
@@ -199,22 +214,48 @@ Minimal example (two sources A/B, 2:1 mixing, one-epoch run):
     number_epochs: 1
     batch_size: 1
     num_workers: 0
-    validate_after_k_steps: 200
+    validations_per_epoch: 5
     output_dir: output/mixture_smoke
 
 Notes:
 - `total_blocks` controls run length. Approx tokens trained: `total_blocks * sequence_length`.
 - Replay is expressed as just another source entry with a weight (e.g., `dataset_id: R`).
+- In distributed runs, the config must satisfy Contract E divisibility invariants; invalid combinations fail fast with clear errors.
 
 ## Acceptance Criteria
 
-- A smoke config trains for a short run and logs realized mix within a small tolerance of target ratios.
+- A smoke config trains for a short run and persists deterministic target vs realized allocation in `mixture_report.json`.
 - Unit tests cover:
   - schedule determinism given seed/epoch,
-  - ratio accuracy over N blocks,
+  - exact target allocation over `total_blocks` (including deterministic remainder handling),
   - repeat/shuffle behavior when a dataset has fewer than one epoch’s worth of blocks,
-  - DDP-safe `drop_last` policy is enforced (no silent duplication).
+  - DDP-safe policy enforcement (no silent duplication and explicit fail-fast on incompatible budgets).
+- For a successful run:
+  - `sum(realized_blocks_per_dataset) == effective_total_blocks`
+  - `sum(realized_tokens_per_dataset) == effective_total_blocks * sequence_length`
+  - per-dataset deviation is exactly explained by deterministic allocation and documented rounding/distributed constraints.
 - SLURM multi-node smoke run completes with correct accounting persisted on rank 0.
+
+## Validation Runbook (required evidence)
+
+1) Local schema validation:
+
+    python src/main.py --validate --config config/tests/clm_training_packing_mixture_smoke.yaml
+
+2) Local targeted unit tests:
+
+    python3 -m pytest -q tests/unit/training/test_mixture_packing.py
+
+3) SLURM smoke:
+
+    ./slurm/tests/run_tests.sh --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml --nodes 2 --ntasks-per-node 1
+
+Required evidence to record in this issue:
+- exact command,
+- SLURM job ID,
+- stdout/stderr log paths,
+- path to produced `mixture_report.json`,
+- short log/report excerpt proving totals and realized ratios.
 
 ## Integration Points / Invariants (must align with issue 42)
 
@@ -228,4 +269,4 @@ Notes:
 
 ## ExecPlan
 
-- `issues/execPlans/43-token-budget-mixture-replay.execplan.md` (to be created)
+- `issues/execPlans/43-token-budget-mixture-replay.execplan.md`

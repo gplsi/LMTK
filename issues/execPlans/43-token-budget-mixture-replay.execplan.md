@@ -6,231 +6,281 @@ PLANS.md is checked into the repo at `PLANS.md`, and this document must be maint
 
 ## Purpose / Big Picture
 
-Enable CLM continual pretraining on a mixture of multiple tokenized-doc datasets (produced by issue 42 doc-level tokenization) with a user-defined **token/blocks ratio** and optional replay, while keeping every packed training block **homogeneous** (attributable to exactly one dataset source).
+Enable `task: clm_training` to train from multiple doc-level tokenized sources with deterministic block-level mixing and replay, while preserving issue-42 guarantees:
 
-After this change, a novice can:
+- each packed block belongs to exactly one source,
+- distributed execution avoids silent duplication/padding side effects,
+- accounting is persisted and auditable.
 
-1) Configure multiple sources under `dataset.sources` with weights (e.g. A:2, B:1, R:1).
-2) Set a single run budget as a total number of packed blocks (`dataset.mixture.total_blocks`) and run training with `number_epochs: 1`.
-3) Observe deterministic, DDP/FSDP-safe interleaving of dataset sources with auditable accounting written to `output_dir/mixture_report.json`.
+After this change, a novice can run one config and get:
 
-This work must be safe under SLURM multi-node + Lightning Fabric. It must avoid silent sampler padding duplication, avoid distributed hangs, and fail fast on misconfiguration.
+1. multi-source packed training from `dataset.sources`,
+2. deterministic realized allocation over `dataset.mixture.total_blocks`,
+3. a rank-0 `mixture_report.json` that proves what was actually trained.
 
 ## Progress
 
-- [ ] (2026-02-05 00:00Z) Add schema surface for multi-source dataset mixing.
-- [ ] (2026-02-05 00:00Z) Implement multi-source loading + packing wrappers.
-- [ ] (2026-02-05 00:00Z) Implement deterministic interleaving dataset (`MixturePackedDataset`).
-- [ ] (2026-02-05 00:00Z) Implement auditable accounting + persisted report.
-- [ ] (2026-02-05 00:00Z) Add unit tests + smoke configs + SLURM evidence.
+- [ ] (2026-02-06 00:00Z) Add schema support for `dataset.sources` and `dataset.mixture`.
+- [ ] (2026-02-06 00:00Z) Add red tests for deterministic allocation and distributed invariants.
+- [ ] (2026-02-06 00:00Z) Implement mixture dataset and trainer integration.
+- [ ] (2026-02-06 00:00Z) Implement per-source compatibility checks and fail-fast guards.
+- [ ] (2026-02-06 00:00Z) Implement rank-safe accounting and `mixture_report.json`.
+- [ ] (2026-02-06 00:00Z) Add smoke configs and integration testing config.
+- [ ] (2026-02-06 00:00Z) Run local validation + SLURM smoke; record job IDs/logs in issue 43.
 
 ## Surprises & Discoveries
 
-- (fill in during implementation)
+- Observation: current trainer validation cadence is epoch-driven (`validations_per_epoch`, `checkpoints_per_epoch`), and `validate_after_k_steps` is not consumed in `src/tasks/training/fabric/trainer/base.py`.
+  Evidence: `_try_validate` logic in `src/tasks/training/fabric/trainer/base.py`.
+
+- Observation: `src/tasks/training/orchestrator.py` currently loads exactly one source via `dataset.nameOrPath`.
+  Evidence: `load_dataset` in `src/tasks/training/orchestrator.py`.
 
 ## Decision Log
 
-- Decision: Mixing is **block-level interleaving** (no token-level mixing inside a packed block).
-  Rationale: Makes determinism, accounting, debugging, and distributed safety straightforward. Token-level mixing changes semantics and is harder to audit.
-  Date/Author: 2026-02-05 / Codex
+- Decision: v1 mixing stays map-style and block-level only; no token-level mixed blocks.
+  Rationale: keeps determinism, accounting, and distributed correctness simple and auditable.
+  Date/Author: 2026-02-06 / Codex
 
-- Decision: v1 run length is expressed as `dataset.mixture.total_blocks` and we recommend `number_epochs: 1`.
-  Rationale: The existing trainer is epoch-driven and schema requires `number_epochs`. Expressing the whole run as one epoch avoids complex per-epoch mixture state updates across DataLoader workers.
-  Date/Author: 2026-02-05 / Codex
+- Decision: enforce explicit divisibility/step-budget fail-fast instead of silent correction.
+  Rationale: silent drops/padding would make reported ratios untrustworthy.
+  Date/Author: 2026-02-06 / Codex
 
-- Decision: The mixture schedule must have exact global counts per dataset derived from weights, and must be randomized in order via a deterministic permutation.
-  Rationale: Exact counts make accounting and debugging simple; deterministic permutation avoids long contiguous runs of a single dataset without storing a large schedule array in memory.
-  Date/Author: 2026-02-05 / Codex
+- Decision: validation cadence for mixture runs uses epoch-based knobs (`validations_per_epoch`, `checkpoints_per_epoch`) in v1.
+  Rationale: aligns with existing trainer behavior and avoids introducing a second cadence mechanism in this issue.
+  Date/Author: 2026-02-06 / Codex
 
 ## Outcomes & Retrospective
 
-- (fill in after milestones complete)
+- Pending implementation.
 
 ## Context and Orientation
 
-LMTK is YAML-driven. `src/main.py` loads a YAML config, validates it with `src.config.config_loader.ConfigValidator` (schemas under `config/schemas/`), and dispatches to the task module under `src/tasks/` based on `config.task`.
+LMTK is YAML-driven. `src/main.py` validates configs with `src/config/config_loader.py` and dispatches to task modules under `src/tasks/`.
 
-This plan extends the `task: clm_training` data pipeline. Issue 42 introduced:
+Current relevant behavior:
 
-- Doc-level CLM tokenization output: variable-length `input_ids` per doc plus `length` and `ends_with_eos`.
-- Training-time online packing: `PackedSequenceDataset` in `src/tasks/training/data/packing.py`, backed by a persisted memmap `PackingIndex` in `src/tasks/training/data/packing_index.py`.
-- Fabric-safe distributed sampling policies in `src/tasks/training/fabric/trainer/base.py`.
+- issue 42 already provides doc-level CLM tokenization output (`input_ids`, `length`, `ends_with_eos`) and training-time packing primitives:
+  - `src/tasks/training/data/packing.py`
+  - `src/tasks/training/data/packing_index.py`
+- `src/tasks/training/orchestrator.py` currently loads one dataset path (`dataset.nameOrPath`) and passes it into Fabric trainers.
+- `src/tasks/training/fabric/trainer/base.py` supports single-source packing and explicit distributed sampler policies.
 
-The current training orchestrator (`src/tasks/training/orchestrator.py`) loads exactly one dataset from `dataset.nameOrPath`. For this issue, we must support multiple disk datasets under `dataset.sources`.
+This plan extends that existing path. It does not add new tasks or new SLURM submission logic.
 
-## Interfaces and Dependencies (what must exist at end)
+Terms used in this plan:
 
-### Configuration (schema)
+- packed block: one fixed-length training sample of size `sequence_length`,
+- homogeneous block: packed block attributable to one dataset source only,
+- effective_total_blocks: actual executable block budget after enforcing distributed and optimization-step invariants.
 
-Update `config/schemas/training/components/data.schema.yaml` so `dataset` supports one of:
+## Interfaces and Dependencies
 
-1) Single dataset (existing behavior):
-   - `dataset.nameOrPath` (required) + optional `dataset.packing`
+At completion, the following must exist:
 
-2) Multi-source dataset mixing (new behavior):
-   - `dataset.sources` (required; non-empty array)
-   - `dataset.mixture` (required when `dataset.sources` is present)
-   - `dataset.packing` remains the packing config applied to **all** sources (must be compatible).
+1. Schema surface in `config/schemas/training/components/data.schema.yaml`:
+   - support either:
+     - single-source (`dataset.nameOrPath`), or
+     - multi-source (`dataset.sources` + `dataset.mixture`).
+   - `dataset.sources` item fields:
+     - `dataset_id: string` (required, unique),
+     - `nameOrPath: string` (required),
+     - `weight: number` (required, `> 0`),
+     - `tokenizer_name: string | null` (optional compatibility metadata),
+     - `eos_token_id: integer | null` (optional compatibility metadata),
+     - `index_cache_dir: string | null` (optional).
+   - `dataset.mixture` fields:
+     - `enabled: boolean` (required when `sources` exists),
+     - `total_blocks: integer >= 1` (required),
+     - `schedule_seed: integer | null` (optional),
+     - `report_path: string | null` (optional; default `<output_dir>/mixture_report.json`),
+     - `validation_mode: string | null` with enum `first_source` / `concat_all`.
 
-Define `dataset.sources` item schema:
+2. Runtime dataset in `src/tasks/training/data/mixture.py`:
+   - `class MixturePackedDataset(torch.utils.data.Dataset)`,
+   - `__len__ -> effective_total_blocks`,
+   - `__getitem__(i)` returns `input_ids`, `attention_mask`, `labels`, `dataset_id`.
 
-- `dataset_id: string` (required; unique within config; used for reporting)
-- `nameOrPath: string` (required; path to tokenized-doc dataset on disk)
-- `weight: number` (required; >0; mixing weight)
-- `index_cache_dir: string | null` (optional; overrides default `<nameOrPath>/.packing_index`)
+3. Trainer integration in `src/tasks/training/fabric/trainer/base.py`:
+   - detect mixture mode from config,
+   - build per-source packed datasets and compose with `MixturePackedDataset`,
+   - enforce distributed and step-budget invariants with hard errors,
+   - aggregate per-source counters across ranks and write `mixture_report.json` on rank 0.
 
-Define `dataset.mixture` schema:
-
-- `enabled: boolean` (required; must be true when sources are present)
-- `total_blocks: integer` (required; >= 1; global number of packed blocks for the run)
-- `schedule_seed: integer | null` (optional; defaults in code to training `seed` or 0)
-- `report_path: string | null` (optional; defaults in code to `<output_dir>/mixture_report.json`)
-- `validation_mode: string | null` (optional; enum: `first_source`, `concat_all`; defaults in code to `first_source`)
-
-### Runtime (Python)
-
-Create a new dataset wrapper for mixing (map-style):
-
-- `src/tasks/training/data/mixture.py:MixturePackedDataset`
-  - `__len__ -> total_blocks`
-  - `__getitem__(i) -> dict[str, torch.Tensor]` with keys:
-    - `input_ids`, `attention_mask`, `labels` (from a per-source `PackedSequenceDataset`)
-    - `dataset_id` (a scalar tensor encoding which source the block came from)
-
-Implement a deterministic mapping without storing an `O(total_blocks)` schedule array:
-
-1) Convert weights to exact block counts:
-   - Let `W = sum(weights)`
-   - For each dataset k:
-     - `raw_k = total_blocks * weight_k / W`
-     - `count_k = floor(raw_k)`
-   - Distribute the remaining `R = total_blocks - sum(count_k)` blocks by largest fractional part.
-   - Tie-break deterministically by `dataset_id` lexical order.
-
-2) Randomize order by a permutation of `0..total_blocks-1`:
-   - Use an affine permutation `j = (a*i + b) mod N` with `gcd(a, N) == 1`.
-   - Derive `a` and `b` deterministically from `schedule_seed`.
-   - Find `dataset_id` by mapping `j` into the prefix-sum ranges of `count_k`.
-
-3) Choose local block index with replacement:
-   - `local = hash64(schedule_seed, i, dataset_id) % num_blocks_in_source`
-
-Per-source datasets:
-
-- Load each tokenized-doc dataset from disk (`datasets.load_from_disk`).
-- Ensure it has a `'train'` split (wrap single split as `DatasetDict({"train": ...})` like existing code).
-- Apply `_ensure_validation_split` logic per source if validation is enabled.
-- Build/reuse a `PackingIndex` per split under each source’s `index_cache_dir`.
-- Wrap each split with `PackedSequenceDataset`.
-
-Trainer integration:
-
-- Extend `src/tasks/training/fabric/trainer/base.py` to support:
-  - single-source packing (existing) and
-  - multi-source mixing + packing (new).
-- Ensure DDP/FSDP sampler behavior remains explicit:
-  - create a `DistributedSampler` for the mixture dataset with `drop_last=True` when `world_size > 1`.
-  - fail fast if `total_blocks` is not divisible by `world_size` when distributed (to avoid dropping/padding that would skew budgets).
-
-Accounting:
-
-- In the training loop, if `dataset_id` is present in the batch:
-  - count blocks per dataset id (`torch.bincount` on CPU is fine),
-  - aggregate across ranks at end-of-run,
-  - write a JSON report on rank 0.
+4. Orchestrator loading updates in `src/tasks/training/orchestrator.py`:
+   - support `dataset.sources` loading path (DatasetDict per source) while preserving existing single-source behavior.
 
 ## Milestones
 
-### Milestone 1: Schema + config surface
+### Milestone 1: Schema and config surface
 
-Scope:
-- Update `config/schemas/training/components/data.schema.yaml` with `dataset.sources` + `dataset.mixture` and `anyOf`/`if-then` to require:
-  - either `nameOrPath` (single) or `sources` (multi),
-  - `mixture.total_blocks` when `sources` present.
+Add schema support in `config/schemas/training/components/data.schema.yaml` for `dataset.sources` and `dataset.mixture`, while preserving existing single-source configs.
 
-Acceptance:
-- `python src/main.py --validate --config <new smoke config>` succeeds.
+At the end of this milestone, these commands succeed:
 
-### Milestone 2: Multi-source loading + packing wrappers
-
-Scope:
-- Add helper(s) to load multiple datasets from disk and apply issue-42 packing per source.
-- Fail-fast checks:
-  - all sources exist on disk,
-  - each source has required columns (`input_ids`, `length`),
-  - all sources share compatible packing config (`sequence_length`, EOS settings / tokenizer).
+    python src/main.py --validate --config config/tests/clm_training_packing_smoke.yaml
+    python src/main.py --validate --config config/tests/clm_training_packing_mixture_smoke.yaml
 
 Acceptance:
-- A unit test can create two fake in-memory splits and build per-source packing indices without errors.
 
-### Milestone 3: MixturePackedDataset + deterministic mapping
+- single-source training configs still validate unchanged,
+- invalid mixture configs fail with explicit messages (missing `sources`, duplicate `dataset_id`, non-positive `weight`, missing `total_blocks`).
 
-Scope:
-- Implement `MixturePackedDataset` in `src/tasks/training/data/mixture.py`.
-- Ensure `__getitem__` is deterministic and does not allocate proportional to `total_blocks`.
+### Milestone 2: Red tests for mixture semantics
 
-Acceptance:
-- Unit tests prove:
-  - exact counts per dataset across `total_blocks`,
-  - determinism for a fixed seed,
-  - DDP sharding does not hang and does not silently pad/duplicate indices (we enforce divisibility).
+Before implementation, add failing tests in `tests/unit/training/test_mixture_packing.py` for:
 
-### Milestone 4: Accounting + persisted report
-
-Scope:
-- Add per-dataset counters and write `mixture_report.json` at end-of-run on rank 0.
-- Report must include:
-  - config summary (dataset ids, weights, total_blocks, sequence_length),
-  - realized blocks and tokens per dataset,
-  - realized ratios.
+- deterministic exact allocation (`weights -> target_blocks`) with deterministic remainder handling,
+- no `O(total_blocks)` schedule materialization in dataset state,
+- deterministic mapping for fixed seed,
+- distributed invariant failures (non-divisible budgets),
+- compatibility failures for mismatched tokenizer/eos metadata.
 
 Acceptance:
-- Smoke run produces `mixture_report.json` with correct totals.
 
-### Milestone 5: Tests + configs + SLURM evidence
+- tests fail initially for missing implementation (red state is explicit and expected).
 
-Scope:
-- Unit tests (no HF datasets dependency required):
-  - allocation exactness + deterministic remainder rule,
-  - permutation is bijective for N,
-  - local index draw bounded by num_blocks.
-- Add smoke config(s) under `config/tests/`:
-  - `clm_training_packing_mixture_smoke.yaml` (single-node),
-  - `clm_training_packing_mixture_multinode_smoke.yaml` (multi-node).
-- Add a `task: testing` integration config that runs:
-  - tokenization doc-level for two tiny sources (or reuse existing small tutorial dataset twice),
-  - training mixture smoke.
-- Run SLURM multi-node smoke via `slurm/tests/run_tests.sh` and record job ID/log paths in `issues/43-token-budget-mixture-replay.md`.
+### Milestone 3: Implement mixture runtime
+
+Implement:
+
+- `src/tasks/training/data/mixture.py`,
+- orchestration hooks in `src/tasks/training/orchestrator.py`,
+- trainer integration and accounting in `src/tasks/training/fabric/trainer/base.py`.
+
+Required runtime behavior:
+
+- exact deterministic target allocation per source over configured budget,
+- local block selection with replacement: `local_idx = hash(seed, global_idx, dataset_id) % source_num_blocks`,
+- no token mixing inside blocks,
+- fail-fast on incompatible distributed/optimizer settings.
 
 Acceptance:
-- Unit tests pass locally.
-- SLURM jobs exit 0 and report file exists on shared filesystem.
 
-## Concrete Steps (commands)
+- red tests from Milestone 2 pass (green),
+- existing packing tests still pass.
 
-Local unit tests:
+### Milestone 4: Auditable report and smoke configs
+
+Add:
+
+- `config/tests/clm_training_packing_mixture_smoke.yaml`,
+- `config/tests/clm_training_packing_mixture_multinode_smoke.yaml`,
+- `config/tests/mixture_packing_integration_smoke.yaml` (`task: testing`) that runs tokenization + mixture smoke.
+
+The report file (rank 0) must include:
+
+- config summary (`dataset_id`, weight, sequence_length, total_blocks, effective_total_blocks, seed/schedule_seed),
+- runtime context (world_size, global batch settings, drop policies),
+- `target_blocks_per_dataset`,
+- `realized_blocks_per_dataset`,
+- `realized_tokens_per_dataset`,
+- `realized_ratios`,
+- `deviation_from_target_blocks`.
+
+Acceptance:
+
+- smoke run produces report with internally consistent totals.
+
+### Milestone 5: SLURM validation and evidence capture
+
+Use the existing SLURM test runner path:
+
+- `slurm/tests/run_tests.sh`,
+- `slurm/tests/slurm_test.env`,
+- optional secrets from `slurm/tests/test_secrets.env`.
+
+Ensure submitter guard is satisfied (`ALLOWED_SUBMITTERS` in `slurm/tests/slurm_test.env`).
+
+Acceptance:
+
+- SLURM job exits successfully,
+- job ID, log paths, exact command, and report path are recorded in `issues/43-token-budget-mixture-replay.md`.
+
+## Plan of Work
+
+1. Update `config/schemas/training/components/data.schema.yaml` with mutually exclusive single-source vs multi-source support and strict validation rules.
+2. Add failing unit tests in `tests/unit/training/test_mixture_packing.py` for allocation, determinism, distributed invariants, and compatibility guards.
+3. Implement `src/tasks/training/data/mixture.py` with deterministic index mapping and no full schedule array.
+4. Extend `src/tasks/training/orchestrator.py` to load sources for mixture mode while preserving existing code path for `dataset.nameOrPath`.
+5. Extend `src/tasks/training/fabric/trainer/base.py` to build mixture dataloaders, enforce fail-fast invariants, aggregate counters, and write report.
+6. Add/update smoke configs under `config/tests/` using the tiny-model defaults currently used by test configs.
+7. Execute local tests/validation first, then SLURM smoke, then record evidence in issue 43.
+
+## Concrete Steps
+
+Run from repository root (`/home/gplsi/GPLSI/codigos/LMTK`).
+
+1. Run focused red tests:
 
     python3 -m pytest -q tests/unit/training/test_mixture_packing.py
 
-Config validation:
+2. Run existing packing regression tests:
+
+    python3 -m pytest -q tests/unit/training/test_packing_index.py tests/unit/training/test_packing_sampler.py tests/test_packed_sequence_dataset.py
+
+3. Validate configs:
 
     python src/main.py --validate --config config/tests/clm_training_packing_mixture_smoke.yaml
+    python src/main.py --validate --config config/tests/mixture_packing_integration_smoke.yaml
 
-SLURM (example):
+4. Run local integration smoke:
+
+    python src/main.py --config config/tests/mixture_packing_integration_smoke.yaml
+
+5. Run SLURM multi-node smoke:
 
     ./slurm/tests/run_tests.sh --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml --nodes 2 --ntasks-per-node 1
 
+Expected observable outputs:
+
+- schema validation prints `Configuration is valid!`,
+- local smoke writes `mixture_report.json` under configured output dir,
+- SLURM runner prints `Submitted batch job <ID>`, followed by resolved stdout/stderr log paths.
+
 ## Validation and Acceptance
 
-The feature is accepted when:
-- A mixture smoke run completes under DP and DDP/FSDP without hangs.
-- `mixture_report.json` exists and totals match `total_blocks`:
-  - `sum(blocks_per_dataset) == total_blocks`
-  - `sum(tokens_per_dataset) == total_blocks * sequence_length`
-- The observed per-dataset ratios match configured weights within expected rounding error.
+A change is accepted only when all are true:
+
+1. Determinism:
+   - same config + seed + world size produces the same `target_blocks_per_dataset` and same deterministic schedule mapping.
+
+2. Budget/accounting:
+   - `sum(realized_blocks_per_dataset) == effective_total_blocks`,
+   - `sum(realized_tokens_per_dataset) == effective_total_blocks * sequence_length`,
+   - each dataset’s deviation from deterministic target is exactly explained by documented distributed constraints (no unexplained drift).
+
+3. Safety:
+   - incompatible source/tokenizer/eos configs fail fast,
+   - incompatible distributed step budgets fail fast,
+   - no rank hangs when artifact/index build fails.
+
+4. Regression:
+   - existing online-packing tests continue to pass.
 
 ## Idempotence and Recovery
 
-- Index artifacts are reused (same semantics as issue 42). If you need to rebuild, delete the relevant `.packing_index/` directories.
-- If a mixture run fails, ensure `BUILD_FAILED.json` and `LOCK` files are cleaned up only after confirming no active job is running.
+- Re-running schema validation/tests is idempotent.
+- Packing index artifacts remain reusable. Rebuild only when intentionally invalidating caches (delete source `.packing_index` directories).
+- If a run fails during artifact creation, retry only after confirming no active job holds the relevant lock.
+- Do not add fallback paths that silently alter budgets or compatibility outcomes.
 
+## Artifacts and Notes
+
+Minimal expected `mixture_report.json` structure:
+
+    {
+      "sequence_length": 128,
+      "total_blocks": 1000,
+      "effective_total_blocks": 1000,
+      "world_size": 2,
+      "sources": [{"dataset_id": "A", "weight": 2.0}, {"dataset_id": "B", "weight": 1.0}],
+      "target_blocks_per_dataset": {"A": 667, "B": 333},
+      "realized_blocks_per_dataset": {"A": 667, "B": 333},
+      "realized_tokens_per_dataset": {"A": 85376, "B": 42624},
+      "realized_ratios": {"A": 0.667, "B": 0.333}
+    }
+
+## Revision Note (2026-02-06)
+
+Reworked this ExecPlan to be implementation-ready for a junior developer by removing ambiguity around validation cadence, adding explicit distributed budget invariants, defining exact report/accounting requirements, adding test-first sequencing, and including SLURM runbook details required by AGENTS.md and PLANS.md.
