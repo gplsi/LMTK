@@ -69,7 +69,7 @@ dataset:
       tokenizer_name: "BSC-LT/salamandra-2b"
       index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc47"
     - dataset_id: "dc48"
-      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc48_doclevel_salamandra2b"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc48"
       tokenizer_name: "BSC-LT/salamandra-2b"
       index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc48"
   packing:
