@@ -1,5 +1,6 @@
 import os
-from typing import Optional, Union
+import math
+from typing import Any, Optional, Union
 
 from box import Box
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
@@ -8,7 +9,11 @@ from transformers.models.gpt2.modeling_gpt2 import GPT2Block
 import torch
 import numpy as np
 import random
-from datasets import Dataset as HFDataset
+
+try:
+    from datasets import Dataset as HFDataset
+except ImportError:  # pragma: no cover - used in lightweight test envs without datasets installed
+    HFDataset = Any
 
 # TODO: Add more wrappers for other models, and make clear the keys for the wrappers
 
@@ -37,6 +42,9 @@ def select_scheduler(
     batch_size: int,
     train_dataset: HFDataset,
     warmup_proportion: float,
+    base_lr: Optional[float] = None,
+    min_lr: float = 0.0,
+    max_lr: Optional[float] = None,
     gradient_accumulation_steps: int = None,
     total_steps: Optional[int] = None,
 ) -> torch.optim.lr_scheduler.LambdaLR:
@@ -71,6 +79,13 @@ def select_scheduler(
         ValueError: If the scheduler type provided does not match any of the supported schedulers.
     """
     
+    if min_lr < 0:
+        raise ValueError("min_lr must be >= 0.")
+
+    if max_lr is not None and float(max_lr) < 0:
+        raise ValueError("max_lr must be >= 0 when provided.")
+    bounded_requested = bool(min_lr != 0.0 or max_lr is not None)
+
     def calculate_warmup_steps(
         number_epochs,
         world_size,
@@ -118,6 +133,70 @@ def select_scheduler(
         warmup_steps = int(total_steps_value * warmup_proportion)
         return warmup_steps, total_steps_value
 
+    # Backward-compatible path for configs that do not request bounded LR behavior.
+    if not bounded_requested:
+        if lr_scheduler == 'fixed':
+            return get_constant_schedule(optimizer)
+
+        warmup_steps, total_steps = calculate_warmup_steps(
+            number_epochs,
+            world_size,
+            batch_size,
+            warmup_proportion,
+            train_dataset,
+            gradient_accumulation_steps,
+            total_steps_override=total_steps,
+        )
+
+        if total_steps <= 0:
+            raise ValueError(
+                "Computed total training steps is 0 for a non-fixed scheduler. "
+                "This usually indicates too little data for the configured batch/world_size, "
+                "or an incorrect scheduler sizing. Consider reducing batch_size, disabling drop_last, "
+                "or passing an explicit total_steps override."
+            )
+
+        if lr_scheduler == 'cosine':
+            # Pure cosine decay without any warmup phase
+            return torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_steps,
+                eta_min=0.0,
+                last_epoch=-1
+            )
+        
+        if lr_scheduler == 'warmup_constant':
+            return get_constant_schedule_with_warmup(
+                optimizer, 
+                num_warmup_steps=warmup_steps
+            )
+
+        if lr_scheduler == 'warmup_linear':
+            return get_linear_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps
+            )
+            
+        if lr_scheduler == 'warmup_cosine':
+            # Single-cycle cosine decay from initial LR to 0
+            return get_cosine_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+            )
+
+        if lr_scheduler == 'warmup_cosine_restart':
+            # Multi-cycle cosine with hard restarts (default 1 restart cycle)
+            return get_cosine_with_hard_restarts_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=warmup_steps,
+                num_training_steps=total_steps,
+                num_cycles=1
+            )
+
+        raise ValueError("Scheduler type not recognized.")
+
     if lr_scheduler == 'fixed':
         return get_constant_schedule(optimizer)
 
@@ -138,48 +217,70 @@ def select_scheduler(
             "or an incorrect scheduler sizing. Consider reducing batch_size, disabling drop_last, "
             "or passing an explicit total_steps override."
         )
-        
-    if lr_scheduler == 'cosine':
-        # Pure cosine decay without any warmup phase
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=total_steps,
-            eta_min=0.0,
-            last_epoch=-1
-        )
-    
-    if lr_scheduler == 'warmup_constant':
-        return get_constant_schedule_with_warmup(
-            optimizer, 
-            num_warmup_steps=warmup_steps
-        )
 
-    if lr_scheduler == 'warmup_linear':
-        return get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps
-        )
-        
-    if lr_scheduler == 'warmup_cosine':
-        # Single-cycle cosine decay from initial LR to 0
-        return get_cosine_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps,
-        )
+    warmup_steps = max(0, min(int(warmup_steps), int(total_steps)))
+    # Keep cosine semantics consistent with the unbounded path: pure cosine decay without warmup.
+    if lr_scheduler == "cosine":
+        warmup_steps = 0
 
-    if lr_scheduler == 'warmup_cosine_restart':
-        # Multi-cycle cosine with hard restarts (default 1 restart cycle)
-        return get_cosine_with_hard_restarts_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps,
-            num_cycles=1
-        )
-        
-    else:
-        raise ValueError("Scheduler type not recognized.")
+    peak_lrs: list[float] = []
+    for group in optimizer.param_groups:
+        base_group_lr = float(group.get("lr", 0.0))
+        if base_group_lr < 0:
+            raise ValueError("Optimizer param-group lr must be >= 0.")
+        peak_group_lr = float(max_lr) if max_lr is not None else base_group_lr
+        if min_lr > peak_group_lr:
+            raise ValueError(
+                "Invalid LR bounds for optimizer param group: "
+                f"min_lr ({min_lr}) must be <= peak_lr ({peak_group_lr})."
+            )
+        peak_lrs.append(peak_group_lr)
+
+    # LambdaLR uses param-group lrs as the multiplicative base; set them to per-group peak values.
+    for group, peak in zip(optimizer.param_groups, peak_lrs, strict=True):
+        group["lr"] = float(peak)
+
+    def _factor_for_step(step_idx: int, *, min_ratio: float) -> float:
+        # step_idx corresponds to optimizer step index used to update weights.
+        step = max(0, int(step_idx))
+
+        if warmup_steps > 0 and step < warmup_steps:
+            if warmup_steps == 1:
+                # Single warmup step still starts from the configured floor.
+                warm = 0.0
+            else:
+                warm = float(step) / float(warmup_steps - 1)
+            return float(min_ratio) + (1.0 - float(min_ratio)) * warm
+
+        if lr_scheduler == "warmup_constant":
+            return 1.0
+
+        if lr_scheduler not in {"warmup_linear", "warmup_cosine", "warmup_cosine_restart", "cosine"}:
+            raise ValueError("Scheduler type not recognized.")
+
+        decay_start = warmup_steps if lr_scheduler != "cosine" else 0
+        if step < decay_start:
+            return 1.0
+
+        decay_span = max(1, int(total_steps) - decay_start)
+        if decay_span <= 1:
+            progress = 1.0
+        else:
+            progress = min(1.0, max(0.0, float(step - decay_start) / float(decay_span - 1)))
+
+        if lr_scheduler in {"warmup_linear"}:
+            unit = 1.0 - progress
+        else:
+            # With num_cycles=1, warmup_cosine_restart matches a single cosine cycle in [0, 1].
+            unit = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return float(min_ratio) + (1.0 - float(min_ratio)) * float(unit)
+
+    lrs = []
+    for peak in peak_lrs:
+        ratio = float(min_lr / peak) if peak > 0 else 0.0
+        lrs.append(lambda current_step, r=ratio: _factor_for_step(int(current_step), min_ratio=r))
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lrs)
 
 
 def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:float, beta2:float) -> torch.optim.Optimizer:

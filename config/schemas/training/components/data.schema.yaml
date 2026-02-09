@@ -14,6 +14,63 @@ properties:
       nameOrPath:
         type: string
         description: "Dataset name for HuggingFace or local path"
+      sources:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        description: "Optional multi-source dataset configuration for mixture training."
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            dataset_id:
+              type: string
+              minLength: 1
+              description: "Stable source identifier used for reporting and deterministic allocation."
+            nameOrPath:
+              type: string
+              description: "Dataset local path for this source."
+            weight:
+              type: [number, "null"]
+              exclusiveMinimum: 0
+              description: "Optional source weight (>0). In mixture mode, set for all sources or omit for all."
+            tokenizer_name:
+              type: [string, "null"]
+              description: "Optional tokenizer compatibility metadata for fail-fast checks."
+            eos_token_id:
+              type: [integer, "null"]
+              minimum: 0
+              description: "Optional EOS compatibility metadata for fail-fast checks."
+            index_cache_dir:
+              type: [string, "null"]
+              description: "Optional source-specific index cache directory."
+          required:
+            - dataset_id
+            - nameOrPath
+      mixture:
+        type: object
+        description: "Mixture scheduling and budget controls for dataset.sources mode."
+        additionalProperties: false
+        properties:
+          enabled:
+            type: boolean
+            description: "Must be true when dataset.sources is used."
+          budget_mode:
+            type: string
+            enum: ["anchor_epochs", "explicit_blocks"]
+            default: "anchor_epochs"
+          anchor_epochs:
+            type: integer
+            minimum: 1
+          anchor_dataset_id:
+            type: [string, "null"]
+          total_blocks:
+            type: integer
+            minimum: 1
+          schedule_seed:
+            type: [integer, "null"]
+          report_path:
+            type: [string, "null"]
       format:
         type: string
         enum: ["dataset", "files", "hf"]
@@ -54,7 +111,15 @@ properties:
             description: "Optional directory to store/reuse the persisted packing index. Defaults in code to <dataset.nameOrPath>/.packing_index."
         additionalProperties: false
     allOf:
+      - oneOf:
+          - required: ["nameOrPath"]
+            not:
+              required: ["sources"]
+          - required: ["sources", "mixture"]
+            not:
+              required: ["nameOrPath"]
       - if:
+          required: ["packing"]
           properties:
             packing:
               type: object
@@ -66,9 +131,58 @@ properties:
           properties:
             packing:
               required: ["sequence_length"]
+      - if:
+          required: ["sources"]
+        then:
+          required: ["mixture"]
+          properties:
+            mixture:
+              required: ["enabled"]
+              properties:
+                enabled:
+                  const: true
+      - if:
+          required: ["mixture"]
+        then:
+          required: ["sources"]
+      - if:
+          required: ["mixture"]
+          properties:
+            mixture:
+              type: object
+              properties:
+                budget_mode:
+                  const: "anchor_epochs"
+        then:
+          properties:
+            mixture:
+              required: ["anchor_epochs"]
+      - if:
+          required: ["mixture"]
+          properties:
+            mixture:
+              type: object
+              not:
+                required: ["budget_mode"]
+        then:
+          properties:
+            mixture:
+              required: ["anchor_epochs"]
+      - if:
+          required: ["mixture"]
+          properties:
+            mixture:
+              type: object
+              properties:
+                budget_mode:
+                  const: "explicit_blocks"
+              required: ["budget_mode"]
+        then:
+          properties:
+            mixture:
+              required: ["total_blocks"]
     required:
       - source
-      - nameOrPath
   validation_split:
     type: object
     additionalProperties: false

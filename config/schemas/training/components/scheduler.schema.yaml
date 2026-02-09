@@ -15,6 +15,18 @@ properties:
     default: 0.06
     description: "Proportion of training steps to warm up the learning rate"
 
+  min_lr:
+    type: number
+    minimum: 0
+    default: 0.0
+    description: "Lower learning-rate bound. Warmup starts from this value and decays are clamped to stay above it."
+
+  max_lr:
+    type: [number, "null"]
+    minimum: 0
+    default: null
+    description: "Optional peak learning rate. When null, the optimizer lr value is used as peak."
+
 required:
   - lr_scheduler
   - warmup_proportion

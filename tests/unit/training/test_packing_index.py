@@ -125,3 +125,59 @@ def test_packing_index_ends_with_eos_mismatch_fails_fast(tmp_path: Path) -> None
             eos_token_id=0,
             cache_dir=tmp_path,
         )
+
+
+def test_packing_index_length_mismatch_fails_fast(tmp_path: Path) -> None:
+    split = _FakeSplit(
+        rows=[
+            {"input_ids": [1, 2, 3], "length": 2},
+        ],
+        column_names=["input_ids", "length"],
+    )
+
+    with pytest.raises(ValueError, match="row\\['length'\\] does not match len\\(row\\['input_ids'\\]\\)"):
+        PackingIndex.load_or_build(
+            hf_split=split,
+            split="train",
+            sequence_length=4,
+            insert_eos=False,
+            eos_token_id=None,
+            cache_dir=tmp_path,
+        )
+
+
+def test_packing_index_rebuilds_on_dataset_fingerprint_change(tmp_path: Path) -> None:
+    split_v1 = _FakeSplit(
+        rows=[
+            {"input_ids": [1, 2, 3], "length": 3, "ends_with_eos": False},
+        ],
+        column_names=["input_ids", "length", "ends_with_eos"],
+        _fingerprint="fp-v1",
+    )
+    split_v2 = _FakeSplit(
+        rows=[
+            {"input_ids": [1, 2, 3], "length": 3, "ends_with_eos": False},
+        ],
+        column_names=["input_ids", "length", "ends_with_eos"],
+        _fingerprint="fp-v2",
+    )
+
+    idx1 = PackingIndex.load_or_build(
+        hf_split=split_v1,
+        split="train",
+        sequence_length=4,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+    )
+    idx2 = PackingIndex.load_or_build(
+        hf_split=split_v2,
+        split="train",
+        sequence_length=4,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+    )
+
+    assert idx1.meta.dataset_fingerprint == "fp-v1"
+    assert idx2.meta.dataset_fingerprint == "fp-v2"

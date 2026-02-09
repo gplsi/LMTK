@@ -10,13 +10,14 @@ import json
 from pathlib import Path
 import time
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader
 from datasets import load_from_disk, DatasetDict
 from datasets import Dataset as HFDataset
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 import itertools
-from typing import Tuple, Union, Optional
+from typing import Any, Mapping, Tuple, Union, Optional
 from box import Box
 from transformers import AutoTokenizer
 import lightning as L
@@ -38,6 +39,13 @@ from src.tasks.training.fabric.model.mlm import FabricMLM
 from src.tasks.training.fabric.model.instruction import FabricInstruction
 from src.tasks.training.data.packing import PackedSequenceDataset, build_packing_dataloader
 from src.tasks.training.data.packing_index import INDEX_VERSION, PackingIndex
+from src.tasks.training.data.mixture import (
+    MixturePackedDataset,
+    MixturePlan,
+    blake2b_u64,
+    resolve_effective_total_blocks,
+    resolve_mixture_plan,
+)
 
 MODEL_CLASS_MAP = {
     "clm_training": FabricCLM,
@@ -46,6 +54,10 @@ MODEL_CLASS_MAP = {
 }
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+MIXTURE_META_VERSION = "v2"
+MIXTURE_RUNTIME_VERSION = "v1"
+RUN_METADATA_VERSION = "v1"
 
 class FabricTrainerBase(ABC):
     """
@@ -96,9 +108,27 @@ class FabricTrainerBase(ABC):
         self.devices_per_node = devices_per_node
         self.config = config
         self._packing_enabled = False
+        self._mixture_enabled = False
         self.checkpoint_path = checkpoint_path
         self.state = {}
         self.dataset = dataset
+        self._mixture_plan: MixturePlan | None = None
+        self._mixture_source_configs: dict[str, Box] = {}
+        self._mixture_source_split_metadata: dict[str, dict[str, Any]] = {}
+        self._mixture_dataset_idx_to_id: dict[int, str] = {}
+        self._mixture_dataset_id_to_idx: dict[str, int] = {}
+        self._mixture_val_dataloaders: dict[str, DataLoader] = {}
+        self._mixture_realized_blocks_local: dict[str, int] = {}
+        self._mixture_realized_blocks_local_tensor: torch.Tensor | None = None
+        self._mixture_last_val_losses: dict[str, float] = {}
+        self._mixture_last_val_weighted: float | None = None
+        self._mixture_requested_total_blocks: int | None = None
+        self._mixture_effective_total_blocks: int | None = None
+        self._mixture_report_path: Path | None = None
+        self._mixture_schedule_seed: int = 0
+        self._mixture_configured_weights_by_id: dict[str, float | None] = {}
+        self._mixture_source_blocks_by_id: dict[str, int] = {}
+        self._training_schedule_metadata: dict[str, Any] = {}
         
         # Load datasets and create dataloaders
         result = self._load_fabric_datasets_dataloaders(self.config, self.dataset)
@@ -161,9 +191,16 @@ class FabricTrainerBase(ABC):
         self.cli_logger.info(f"Precision {self.config.precision}")
 
         self.hparams = {
-            k: v
-            for k, v in locals().items()
-            if isinstance(v, (int, float, str)) and not k.startswith("_")
+            "task": str(self.config.get("task", "")),
+            "experiment_name": str(self.config.get("experiment_name", "")),
+            "model_name": str(self.config.get("model_name", "")),
+            "precision": str(self.config.get("precision", "")),
+            "seed": int(self.config.get("seed", 0) or 0),
+            "devices": str(self.devices),
+            "num_nodes": int(self.num_nodes),
+            "devices_per_node": (
+                int(self.devices_per_node) if self.devices_per_node is not None else None
+            ),
         }
         self.cli_logger.debug(self.hparams)
 
@@ -205,6 +242,112 @@ class FabricTrainerBase(ABC):
     def _is_packing_enabled(self) -> bool:
         packing = self._get_packing_config()
         return bool(packing and packing.get("enabled", False))
+
+    def _get_mixture_config(self) -> Optional[Box]:
+        dataset_cfg = getattr(self.config, "dataset", None)
+        if dataset_cfg is None:
+            return None
+        mixture = dataset_cfg.get("mixture", None) if hasattr(dataset_cfg, "get") else getattr(dataset_cfg, "mixture", None)
+        if mixture is None:
+            return None
+        if isinstance(mixture, Box):
+            return mixture
+        if isinstance(mixture, dict):
+            return Box(mixture, box_dots=True)
+        raise TypeError(f"Unsupported dataset.mixture type: {type(mixture)}")
+
+    def _get_sources_config(self) -> list[Box]:
+        dataset_cfg = getattr(self.config, "dataset", None)
+        if dataset_cfg is None:
+            return []
+        sources = dataset_cfg.get("sources", None) if hasattr(dataset_cfg, "get") else getattr(dataset_cfg, "sources", None)
+        if not sources:
+            return []
+
+        out: list[Box] = []
+        for source in sources:
+            if isinstance(source, Box):
+                out.append(source)
+            elif isinstance(source, dict):
+                out.append(Box(source, box_dots=True))
+            else:
+                raise TypeError(f"Unsupported dataset.sources item type: {type(source)}")
+        return out
+
+    def _is_mixture_enabled(self) -> bool:
+        mixture = self._get_mixture_config()
+        sources = self._get_sources_config()
+        return bool(mixture and mixture.get("enabled", False) and sources)
+
+    def _derive_validation_split_seed(self, dataset_id: str) -> int:
+        base_seed_raw = self.config.get("seed", 0)
+        base_seed = int(base_seed_raw) if base_seed_raw is not None else 0
+        return int(blake2b_u64(f"valsplit|{base_seed}|{dataset_id}") % 2147483647)
+
+    def _collect_source_config_map(self) -> dict[str, Box]:
+        source_configs = self._get_sources_config()
+        if not source_configs:
+            raise ValueError("Mixture mode requires dataset.sources.")
+
+        out: dict[str, Box] = {}
+        for source in source_configs:
+            dataset_id = source.get("dataset_id", None)
+            if not dataset_id:
+                raise ValueError("Each dataset.sources entry must define dataset_id.")
+            dataset_id = str(dataset_id)
+            if dataset_id in out:
+                raise ValueError(f"Duplicate dataset_id in dataset.sources: {dataset_id!r}")
+            out[dataset_id] = source
+        return out
+
+    def _validate_mixture_source_compatibility(self, source_config_map: Mapping[str, Box]) -> None:
+        tokenizer_names = {
+            dataset_id: source_cfg.get("tokenizer_name", None)
+            for dataset_id, source_cfg in source_config_map.items()
+            if source_cfg.get("tokenizer_name", None) is not None
+        }
+        if tokenizer_names:
+            unique_tokenizers = sorted({str(v) for v in tokenizer_names.values()})
+            if len(unique_tokenizers) > 1:
+                raise ValueError(
+                    "Incompatible source tokenizers in dataset.sources: "
+                    f"{tokenizer_names}. Expected all tokenizer_name values to match."
+                )
+
+        eos_ids = {
+            dataset_id: int(source_cfg.get("eos_token_id"))
+            for dataset_id, source_cfg in source_config_map.items()
+            if source_cfg.get("eos_token_id", None) is not None
+        }
+        if eos_ids:
+            unique_eos_ids = sorted(set(eos_ids.values()))
+            if len(unique_eos_ids) > 1:
+                raise ValueError(
+                    "Incompatible source eos_token_id values in dataset.sources: "
+                    f"{eos_ids}. Expected all eos_token_id values to match."
+                )
+
+        packing = self._get_packing_config()
+        if packing is None:
+            return
+
+        packing_tokenizer = packing.get("tokenizer_name", None)
+        if packing_tokenizer is not None and tokenizer_names:
+            source_tokenizer = next(iter(tokenizer_names.values()))
+            if str(source_tokenizer) != str(packing_tokenizer):
+                raise ValueError(
+                    "Incompatible tokenizer configuration: dataset.packing.tokenizer_name does not match "
+                    f"dataset.sources tokenizer_name values ({packing_tokenizer!r} vs {source_tokenizer!r})."
+                )
+
+        packing_eos = packing.get("eos_token_id", None)
+        if packing_eos is not None and eos_ids:
+            first_eos = next(iter(eos_ids.values()))
+            if int(first_eos) != int(packing_eos):
+                raise ValueError(
+                    "Incompatible eos configuration: dataset.packing.eos_token_id does not match "
+                    f"dataset.sources eos_token_id values ({packing_eos!r} vs {first_eos!r})."
+                )
 
     def _resolve_eos_token_id(self, packing: Box) -> int:
         insert_eos = packing.get("insert_eos", None)
@@ -395,7 +538,276 @@ class FabricTrainerBase(ABC):
 
         return dataloaders
 
-    def _ensure_validation_split(self, dataset: Union[DatasetDict, HFDataset]) -> DatasetDict:
+    def _build_mixture_packing_dataloaders(self, fabric: L.Fabric) -> dict[str, Any]:
+        packing = self._get_packing_config()
+        mixture = self._get_mixture_config()
+        if not packing or not packing.get("enabled", False):
+            raise RuntimeError("_build_mixture_packing_dataloaders called but packing is not enabled.")
+        if not mixture or not mixture.get("enabled", False):
+            raise RuntimeError("_build_mixture_packing_dataloaders called but mixture is not enabled.")
+
+        sequence_length = packing.get("sequence_length", None)
+        if sequence_length is None:
+            raise ValueError("Mixture mode requires packing.sequence_length.")
+        sequence_length = int(sequence_length)
+        if sequence_length <= 0:
+            raise ValueError("packing.sequence_length must be a positive integer.")
+
+        insert_eos = packing.get("insert_eos", None)
+        if insert_eos is None:
+            insert_eos = True
+        insert_eos = bool(insert_eos)
+
+        eos_token_id: Optional[int] = None
+        if insert_eos:
+            eos_token_id = self._resolve_eos_token_id(packing)
+
+        seed = self.config.get("seed", None)
+        seed_value = int(seed) if seed is not None else 0
+        schedule_seed_raw = mixture.get("schedule_seed", None)
+        schedule_seed = int(schedule_seed_raw) if schedule_seed_raw is not None else seed_value
+
+        source_config_map = self._mixture_source_configs
+        if not source_config_map:
+            raise ValueError("Mixture source configuration is missing.")
+
+        slurm_nnodes = os.getenv("SLURM_NNODES")
+        nnodes = 1
+        if slurm_nnodes is not None:
+            try:
+                nnodes = int(slurm_nnodes)
+            except ValueError:
+                nnodes = 1
+
+        train_packed_by_id: dict[str, PackedSequenceDataset] = {}
+        valid_packed_by_id: dict[str, PackedSequenceDataset] = {}
+        source_blocks: dict[str, int] = {}
+        configured_weights: dict[str, float | None] = {}
+
+        for dataset_id in sorted(source_config_map):
+            source_cfg = source_config_map[dataset_id]
+            source_dataset = self.datasets.get(dataset_id)
+            if source_dataset is None:
+                raise ValueError(f"Source dataset {dataset_id!r} is missing from loaded datasets.")
+            if not isinstance(source_dataset, DatasetDict):
+                source_dataset = DatasetDict(source_dataset)
+            if "train" not in source_dataset or "valid" not in source_dataset:
+                raise ValueError(f"Source dataset {dataset_id!r} must contain train and valid splits.")
+
+            dataset_path_value = source_cfg.get("nameOrPath", None)
+            if not dataset_path_value:
+                raise ValueError(f"Source dataset {dataset_id!r} is missing nameOrPath.")
+            dataset_path = Path(str(dataset_path_value))
+
+            index_cache_dir_value = source_cfg.get("index_cache_dir", None)
+            index_cache_dir = Path(str(index_cache_dir_value)) if index_cache_dir_value else (dataset_path / ".packing_index")
+
+            if nnodes > 1:
+                for path in (dataset_path, index_cache_dir):
+                    if not path.is_absolute():
+                        raise ValueError(
+                            "Multi-node SLURM mixture packing requires absolute dataset/index paths on a shared filesystem. "
+                            f"Got non-absolute path for source {dataset_id!r}: {path}"
+                        )
+                    if str(path).startswith("/tmp") or str(path).startswith("/dev/shm"):
+                        raise ValueError(
+                            "Multi-node SLURM mixture packing requires shared filesystem paths. "
+                            f"Got node-local path for source {dataset_id!r}: {path}"
+                        )
+
+            indices: dict[str, PackingIndex] = {}
+            build_failed_path = index_cache_dir / f"v{INDEX_VERSION}" / "BUILD_FAILED.json"
+            if fabric.global_rank == 0:
+                try:
+                    build_failed_path.parent.mkdir(parents=True, exist_ok=True)
+                    build_failed_path.unlink(missing_ok=True)
+                    for split_name in ("train", "valid"):
+                        indices[split_name] = PackingIndex.load_or_build(
+                            hf_split=source_dataset[split_name],
+                            split=split_name,
+                            sequence_length=sequence_length,
+                            insert_eos=insert_eos,
+                            eos_token_id=eos_token_id,
+                            cache_dir=index_cache_dir,
+                        )
+                except Exception as exc:
+                    payload = {
+                        "dataset_id": dataset_id,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                        "created_at_unix": time.time(),
+                        "pid": os.getpid(),
+                        "host": os.getenv("SLURMD_NODENAME") or os.uname().nodename,
+                    }
+                    try:
+                        build_failed_path.parent.mkdir(parents=True, exist_ok=True)
+                    except Exception:
+                        pass
+                    try:
+                        build_failed_path.write_text(
+                            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
+
+            fabric.barrier()
+            if build_failed_path.exists():
+                details = build_failed_path.read_text(encoding="utf-8", errors="replace").strip()
+                raise RuntimeError(
+                    "Packing index build failed on rank 0 for mixture source "
+                    f"{dataset_id!r}. See {build_failed_path} for details: {details}"
+                )
+
+            if fabric.global_rank != 0:
+                for split_name in ("train", "valid"):
+                    indices[split_name] = PackingIndex.load_or_build(
+                        hf_split=source_dataset[split_name],
+                        split=split_name,
+                        sequence_length=sequence_length,
+                        insert_eos=insert_eos,
+                        eos_token_id=eos_token_id,
+                        cache_dir=index_cache_dir,
+                        allow_build=False,
+                    )
+
+            train_packed = PackedSequenceDataset(
+                hf_dataset=source_dataset["train"],
+                index=indices["train"],
+                eos_token_id=eos_token_id,
+            )
+            valid_packed = PackedSequenceDataset(
+                hf_dataset=source_dataset["valid"],
+                index=indices["valid"],
+                eos_token_id=eos_token_id,
+            )
+            train_packed_by_id[dataset_id] = train_packed
+            valid_packed_by_id[dataset_id] = valid_packed
+            source_blocks[dataset_id] = len(train_packed)
+            configured_weights[dataset_id] = source_cfg.get("weight", None)
+
+            if fabric.global_rank == 0:
+                self.cli_logger.info(
+                    "Mixture source=%s train_blocks=%s valid_blocks=%s sequence_length=%s index_cache_dir=%s",
+                    dataset_id,
+                    len(train_packed),
+                    len(valid_packed),
+                    sequence_length,
+                    index_cache_dir,
+                )
+
+        budget_mode = str(mixture.get("budget_mode", "anchor_epochs"))
+        anchor_epochs = mixture.get("anchor_epochs", None)
+        anchor_dataset_id = mixture.get("anchor_dataset_id", None)
+        explicit_total_blocks = mixture.get("total_blocks", None)
+
+        plan = resolve_mixture_plan(
+            source_blocks=source_blocks,
+            configured_weights_by_id=configured_weights,
+            budget_mode=budget_mode,
+            anchor_epochs=anchor_epochs,
+            anchor_dataset_id=anchor_dataset_id,
+            explicit_total_blocks=explicit_total_blocks,
+        )
+        requested_total_blocks = int(plan.requested_total_blocks)
+
+        mixture_train_dataset = MixturePackedDataset(
+            datasets_by_id=train_packed_by_id,
+            counts_by_id=plan.target_blocks_per_dataset,
+            schedule_seed=schedule_seed,
+        )
+        if len(mixture_train_dataset) != requested_total_blocks:
+            raise RuntimeError(
+                "Mixture dataset length mismatch with requested budget: "
+                f"{len(mixture_train_dataset)} != {requested_total_blocks}"
+            )
+
+        shuffle = packing.get("shuffle", None)
+        if shuffle is None:
+            shuffle = True
+        shuffle = bool(shuffle)
+
+        sampler_drop_last = packing.get("sampler_drop_last", None)
+        if sampler_drop_last is None:
+            sampler_drop_last = fabric.world_size > 1
+        sampler_drop_last = bool(sampler_drop_last)
+
+        drop_last_batch = packing.get("drop_last_batch", None)
+        if drop_last_batch is None:
+            drop_last_batch = fabric.world_size > 1
+        drop_last_batch = bool(drop_last_batch)
+
+        effective_total_blocks = resolve_effective_total_blocks(
+            requested_total_blocks=requested_total_blocks,
+            world_size=int(fabric.world_size),
+            batch_size=int(self.config.batch_size),
+            sampler_drop_last=sampler_drop_last,
+            drop_last_batch=drop_last_batch,
+        )
+
+        train_loader = build_packing_dataloader(
+            dataset=mixture_train_dataset,
+            split="train",
+            batch_size=int(self.config.batch_size),
+            num_workers=int(self.config.num_workers),
+            shuffle=shuffle,
+            sampler_drop_last=sampler_drop_last,
+            drop_last_batch=drop_last_batch,
+            seed=seed_value,
+            rank=int(fabric.global_rank),
+            world_size=int(fabric.world_size),
+        )
+
+        valid_by_source: dict[str, DataLoader] = {}
+        for dataset_id in sorted(valid_packed_by_id):
+            valid_loader = build_packing_dataloader(
+                dataset=valid_packed_by_id[dataset_id],
+                split="valid",
+                batch_size=int(self.config.batch_size),
+                num_workers=int(self.config.num_workers),
+                shuffle=False,
+                sampler_drop_last=False,
+                drop_last_batch=False,
+                seed=seed_value,
+                rank=int(fabric.global_rank),
+                world_size=int(fabric.world_size),
+            )
+            if len(valid_loader) <= 0:
+                raise ValueError(
+                    f"Validation dataloader for source {dataset_id!r} has zero batches after setup."
+                )
+            valid_by_source[dataset_id] = valid_loader
+
+        self._mixture_plan = plan
+        self._mixture_requested_total_blocks = requested_total_blocks
+        self._mixture_effective_total_blocks = effective_total_blocks
+        self._mixture_schedule_seed = schedule_seed
+        self._mixture_dataset_id_to_idx = dict(mixture_train_dataset.dataset_id_to_idx)
+        self._mixture_dataset_idx_to_id = dict(mixture_train_dataset.dataset_idx_to_id)
+        self._mixture_realized_blocks_local = {dataset_id: 0 for dataset_id in sorted(source_blocks)}
+        self._mixture_realized_blocks_local_tensor = None
+        self._mixture_configured_weights_by_id = configured_weights
+        self._mixture_source_blocks_by_id = source_blocks
+
+        report_path_raw = mixture.get("report_path", None)
+        if report_path_raw:
+            self._mixture_report_path = Path(str(report_path_raw))
+        else:
+            self._mixture_report_path = Path(self.config.output_dir) / "mixture_report.json"
+
+        return {
+            "train": train_loader,
+            "valid_by_source": valid_by_source,
+        }
+
+    def _ensure_validation_split(
+        self,
+        dataset: Union[DatasetDict, HFDataset],
+        *,
+        split_seed_override: int | None = None,
+        require_valid: bool = False,
+        source_id: str | None = None,
+    ) -> DatasetDict:
         """
         Ensure the dataset provides a 'valid' split for validation.
 
@@ -412,8 +824,10 @@ class FabricTrainerBase(ABC):
                 when configured, a 'valid' split.
         """
 
+        source_label = f"source={source_id!r} " if source_id is not None else ""
+
         if isinstance(dataset, HFDataset):
-            self.cli_logger.info("Single dataset provided, wrapping as training data only")
+            self.cli_logger.info("%sSingle dataset provided, wrapping as training data only", source_label)
             dataset = DatasetDict({"train": dataset})
         else:
             dataset = DatasetDict(dataset)
@@ -422,7 +836,7 @@ class FabricTrainerBase(ABC):
             return dataset
 
         if "validation" in dataset:
-            self.cli_logger.info("Found 'validation' split; reusing it as 'valid'.")
+            self.cli_logger.info("%sFound 'validation' split; reusing it as 'valid'.", source_label)
             validation_dataset = dataset["validation"]
             del dataset["validation"]
             dataset["valid"] = validation_dataset
@@ -430,56 +844,67 @@ class FabricTrainerBase(ABC):
 
         split_config = getattr(self.config, "validation_split", None)
         if not split_config:
+            if require_valid:
+                raise ValueError(
+                    f"{source_label}Missing validation data: source has no 'valid'/'validation' split "
+                    "and no validation_split configuration was provided."
+                )
             return dataset
 
         if isinstance(split_config, Box):
             split_config = split_config.to_dict()
 
         shuffle = bool(split_config.get("shuffle", True))
-        seed = split_config.get("seed", getattr(self.config, "seed", None))
+        seed = split_seed_override if split_seed_override is not None else split_config.get("seed", getattr(self.config, "seed", None))
 
         proportion = split_config.get("proportion")
         count = split_config.get("count")
 
         if proportion is None and count is None:
-            raise ValueError("validation_split configuration must include 'proportion' or 'count'.")
+            raise ValueError(
+                f"{source_label}validation_split configuration must include 'proportion' or 'count'."
+            )
 
         train_dataset = dataset.get("train")
         if train_dataset is None:
-            raise ValueError("Training split 'train' is required to derive a validation split.")
+            raise ValueError(f"{source_label}Training split 'train' is required to derive a validation split.")
 
         total_examples = len(train_dataset)
         if total_examples < 2:
-            raise ValueError("Not enough training examples to create a validation split (need at least 2).")
+            raise ValueError(
+                f"{source_label}Not enough training examples to create a validation split (need at least 2)."
+            )
 
         candidate_sizes: list[int] = []
         if proportion is not None:
             if not isinstance(proportion, (int, float)):
-                raise TypeError("validation_split.proportion must be a numeric value between 0 and 1.")
+                raise TypeError(
+                    f"{source_label}validation_split.proportion must be a numeric value between 0 and 1."
+                )
             proportion_value = float(proportion)
             if not 0 < proportion_value < 1:
-                raise ValueError("validation_split.proportion must be between 0 and 1.")
+                raise ValueError(f"{source_label}validation_split.proportion must be between 0 and 1.")
             candidate_sizes.append(max(1, int(round(total_examples * proportion_value))))
 
         if count is not None:
             if not isinstance(count, int):
-                raise TypeError("validation_split.count must be an integer.")
+                raise TypeError(f"{source_label}validation_split.count must be an integer.")
             if count <= 0:
-                raise ValueError("validation_split.count must be greater than 0.")
+                raise ValueError(f"{source_label}validation_split.count must be greater than 0.")
             candidate_sizes.append(count)
 
         if not candidate_sizes:
-            raise ValueError("Unable to determine validation split size from configuration.")
+            raise ValueError(f"{source_label}Unable to determine validation split size from configuration.")
 
         val_count = min(candidate_sizes)
         if val_count >= total_examples:
             adjusted_val_count = total_examples - 1
             if adjusted_val_count <= 0:
                 raise ValueError(
-                    f"Requested validation size {val_count} is incompatible with training size {total_examples}."
+                    f"{source_label}Requested validation size {val_count} is incompatible with training size {total_examples}."
                 )
             self.cli_logger.warning(
-                f"Requested validation size {val_count} >= training size {total_examples}. "
+                f"{source_label}Requested validation size {val_count} >= training size {total_examples}. "
                 f"Reducing validation size to {adjusted_val_count}."
             )
             val_count = adjusted_val_count
@@ -494,7 +919,7 @@ class FabricTrainerBase(ABC):
         dataset["valid"] = split["test"]
 
         self.cli_logger.info(
-            f"Created validation split with {len(dataset['valid'])} examples "
+            f"{source_label}Created validation split with {len(dataset['valid'])} examples "
             f"({len(dataset['valid']) / total_examples:.2%} of the original training data)."
         )
 
@@ -517,6 +942,11 @@ class FabricTrainerBase(ABC):
             return
         
         try:
+            self.state["run_metadata"] = self._build_run_metadata(fabric)
+            if self._mixture_enabled:
+                self.state["mixture_meta"] = self._build_mixture_resume_meta(fabric)
+                self.state["mixture_runtime"] = self._build_mixture_runtime_state()
+
             # Generate checkpoint name using consistent nomenclature: epoch-<epoch>-<global_iteration>
             current_epoch = self.state.get('current_epoch', 0)
             global_iteration = self.state.get('step_count', 0)
@@ -580,8 +1010,429 @@ class FabricTrainerBase(ABC):
             return itertools.islice(iterator, resume_iter, None), 0
         else:
             return iterator, resume_iter
+
+    def _resolved_gradient_accumulation_steps(self) -> int:
+        grad_accum = self.config.get("gradient_accumulation_steps", 1)
+        if grad_accum is None or int(grad_accum) <= 0:
+            return 1
+        return int(grad_accum)
+
+    def _build_run_metadata(self, fabric: L.Fabric) -> dict[str, Any]:
+        lr_raw = self.config.get("lr", None)
+        warmup_raw = self.config.get("warmup_proportion", None)
+        min_lr_raw = self.config.get("min_lr", None)
+        max_lr_raw = self.config.get("max_lr", None)
+        state_obj = getattr(self, "state", {})
+        metadata: dict[str, Any] = {
+            "run_metadata_version": RUN_METADATA_VERSION,
+            "task": str(self.config.get("task", "")),
+            "experiment_name": str(self.config.get("experiment_name", "")),
+            "model_name": str(self.config.get("model_name", "")),
+            "precision": str(self.config.get("precision", "")),
+            "seed": int(self.config.get("seed", 0) or 0),
+            "batch_size": int(self.config.batch_size),
+            "gradient_accumulation_steps": self._resolved_gradient_accumulation_steps(),
+            "number_epochs": int(self.config.number_epochs),
+            "world_size": int(fabric.world_size),
+            "num_nodes": int(self.num_nodes),
+            "devices_per_node": (
+                int(self.devices_per_node) if self.devices_per_node is not None else None
+            ),
+            "output_dir": str(self.config.output_dir),
+            "mixture_enabled": bool(self._mixture_enabled),
+            "lr": float(lr_raw) if lr_raw is not None else None,
+            "lr_scheduler": str(self.config.get("lr_scheduler", "")),
+            "warmup_proportion": float(warmup_raw) if warmup_raw is not None else None,
+            "min_lr": float(min_lr_raw) if min_lr_raw is not None else 0.0,
+            "max_lr": float(max_lr_raw) if max_lr_raw is not None else None,
+            "iter_num": int(state_obj.get("iter_num", 0)) if isinstance(state_obj, dict) else 0,
+            "step_count": int(state_obj.get("step_count", 0)) if isinstance(state_obj, dict) else 0,
+        }
+        schedule_meta = getattr(self, "_training_schedule_metadata", {})
+        if isinstance(schedule_meta, dict) and schedule_meta:
+            metadata["training_schedule"] = dict(schedule_meta)
+        if self._mixture_enabled and self._mixture_plan is not None:
+            metadata.update(
+                {
+                    "budget_mode": self._mixture_plan.budget_mode,
+                    "anchor_dataset_id": self._mixture_plan.anchor_dataset_id,
+                    "requested_total_blocks": int(self._mixture_requested_total_blocks or 0),
+                    "effective_total_blocks": int(self._mixture_effective_total_blocks or 0),
+                    "hash_algorithm": "blake2b_u64_v1",
+                    "allocation_algorithm": "hamilton_lr_lexicographic_v1",
+                    "split_seed_algorithm": "blake2b_u64_mod_2147483647_v1",
+                }
+            )
+        return metadata
+
+    def _ensure_mixture_realized_counter_tensor(self, device: torch.device) -> torch.Tensor:
+        size = len(self._mixture_dataset_idx_to_id)
+        if size <= 0:
+            raise RuntimeError("Mixture source mapping is not initialized; cannot build realized-block counters.")
+
+        local_tensor = self._mixture_realized_blocks_local_tensor
+        if (
+            local_tensor is None
+            or local_tensor.numel() != size
+            or local_tensor.device != device
+        ):
+            rebuilt = torch.zeros(size, dtype=torch.long, device=device)
+            for dataset_idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items()):
+                idx = int(dataset_idx)
+                if 0 <= idx < size:
+                    rebuilt[idx] = int(self._mixture_realized_blocks_local.get(dataset_id, 0))
+            self._mixture_realized_blocks_local_tensor = rebuilt
+
+        return self._mixture_realized_blocks_local_tensor
+
+    def _sync_mixture_realized_blocks_local_from_tensor(self) -> None:
+        if not self._mixture_enabled:
+            return
+        local_tensor = self._mixture_realized_blocks_local_tensor
+        if local_tensor is None:
+            return
+
+        values = local_tensor.detach().to(device="cpu", dtype=torch.long).tolist()
+        synced: dict[str, int] = {}
+        for dataset_idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items()):
+            idx = int(dataset_idx)
+            count = int(values[idx]) if 0 <= idx < len(values) else 0
+            synced[dataset_id] = max(0, count)
+        if synced:
+            self._mixture_realized_blocks_local = synced
+
+    def _build_mixture_runtime_state(self) -> dict[str, Any]:
+        if not self._mixture_enabled:
+            return {}
+        self._sync_mixture_realized_blocks_local_from_tensor()
+        return {
+            "mixture_runtime_version": MIXTURE_RUNTIME_VERSION,
+            "realized_blocks_local": {
+                dataset_id: int(v)
+                for dataset_id, v in sorted(self._mixture_realized_blocks_local.items())
+            },
+            "last_val_losses": {
+                dataset_id: float(v)
+                for dataset_id, v in sorted(self._mixture_last_val_losses.items())
+            },
+            "last_val_weighted": (
+                float(self._mixture_last_val_weighted)
+                if self._mixture_last_val_weighted is not None
+                else None
+            ),
+        }
+
+    def _restore_mixture_runtime_state(self, runtime_state: dict[str, Any] | None, *, strict: bool) -> None:
+        if not self._mixture_enabled:
+            return
+        if not runtime_state:
+            if strict:
+                raise ValueError(
+                    "Mixture resume requires checkpoint key 'mixture_runtime' for mixture_meta_version='v2'."
+                )
+            self.cli_logger.warning(
+                "Mixture resume checkpoint is missing 'mixture_runtime'; "
+                "continuing with zeroed local counters for this rank."
+            )
+            return
+        if not isinstance(runtime_state, dict):
+            if strict:
+                raise ValueError(
+                    "Mixture resume requires 'mixture_runtime' to be a dictionary for mixture_meta_version='v2'."
+                )
+            self.cli_logger.warning(
+                "Mixture resume checkpoint has invalid 'mixture_runtime' type (%s); "
+                "continuing with zeroed local counters for this rank.",
+                type(runtime_state).__name__,
+            )
+            return
+
+        loaded_counts = runtime_state.get("realized_blocks_local", {})
+        if strict and not isinstance(loaded_counts, dict):
+            raise ValueError(
+                "Mixture resume requires 'mixture_runtime.realized_blocks_local' to be a dictionary."
+            )
+        if isinstance(loaded_counts, dict):
+            restored: dict[str, int] = {}
+            for dataset_id in sorted(self._mixture_realized_blocks_local):
+                if strict and dataset_id not in loaded_counts:
+                    raise ValueError(
+                        f"Mixture resume requires realized_blocks_local entry for dataset_id={dataset_id!r}."
+                    )
+                raw = loaded_counts.get(dataset_id, 0)
+                try:
+                    restored[dataset_id] = max(0, int(raw))
+                except (TypeError, ValueError):
+                    if strict:
+                        raise ValueError(
+                            f"Mixture resume has non-integer realized_blocks_local value for dataset_id={dataset_id!r}: {raw!r}."
+                        )
+                    restored[dataset_id] = 0
+            self._mixture_realized_blocks_local = restored
+            self._mixture_realized_blocks_local_tensor = None
+
+        loaded_losses = runtime_state.get("last_val_losses", {})
+        if strict and not isinstance(loaded_losses, dict):
+            raise ValueError("Mixture resume requires 'mixture_runtime.last_val_losses' to be a dictionary.")
+        if isinstance(loaded_losses, dict):
+            restored_losses: dict[str, float] = {}
+            for dataset_id, value in loaded_losses.items():
+                try:
+                    restored_losses[str(dataset_id)] = float(value)
+                except (TypeError, ValueError):
+                    if strict:
+                        raise ValueError(
+                            f"Mixture resume has invalid last_val_losses value for dataset_id={dataset_id!r}: {value!r}."
+                        )
+                    continue
+            self._mixture_last_val_losses = restored_losses
+
+        loaded_weighted = runtime_state.get("last_val_weighted", None)
+        if loaded_weighted is None:
+            self._mixture_last_val_weighted = None
+        else:
+            try:
+                self._mixture_last_val_weighted = float(loaded_weighted)
+            except (TypeError, ValueError):
+                if strict:
+                    raise ValueError(
+                        f"Mixture resume has invalid last_val_weighted value: {loaded_weighted!r}."
+                    )
+                self._mixture_last_val_weighted = None
+
+    def _build_mixture_resume_meta(self, fabric: L.Fabric) -> dict[str, Any]:
+        if not self._mixture_enabled or self._mixture_plan is None:
+            return {}
+        grad_accum = self._resolved_gradient_accumulation_steps()
+
+        return {
+            "mixture_meta_version": MIXTURE_META_VERSION,
+            "weight_mode": self._mixture_plan.weight_mode,
+            "sources": [
+                {
+                    "dataset_id": dataset_id,
+                    "configured_weight": self._mixture_configured_weights_by_id.get(dataset_id),
+                    "effective_weight": float(self._mixture_plan.effective_weights_by_id[dataset_id]),
+                }
+                for dataset_id in sorted(self._mixture_plan.effective_weights_by_id)
+            ],
+            "budget_mode": self._mixture_plan.budget_mode,
+            "anchor_dataset_id": self._mixture_plan.anchor_dataset_id,
+            "requested_total_blocks": int(self._mixture_requested_total_blocks or 0),
+            "effective_total_blocks": int(self._mixture_effective_total_blocks or 0),
+            "world_size": int(fabric.world_size),
+            "batch_size": int(self.config.batch_size),
+            "gradient_accumulation_steps": grad_accum,
+            "dataset_index_map": {
+                str(idx): dataset_id
+                for idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items())
+            },
+            "schedule_seed": int(self._mixture_schedule_seed),
+            "hash_algorithm": "blake2b_u64_v1",
+            "allocation_algorithm": "hamilton_lr_lexicographic_v1",
+            "split_seed_algorithm": "blake2b_u64_mod_2147483647_v1",
+        }
+
+    def _validate_mixture_resume_compatibility(self, expected_meta: dict[str, Any]) -> None:
+        loaded_meta = self.state.get("mixture_meta")
+        if loaded_meta is None:
+            raise ValueError(
+                "Mixture resume requires checkpoint metadata key 'mixture_meta', but it was not found."
+            )
+        if not isinstance(loaded_meta, dict):
+            raise ValueError(
+                "Mixture resume requires checkpoint key 'mixture_meta' to be a dictionary, "
+                f"got {type(loaded_meta).__name__}."
+            )
+
+        loaded_version = loaded_meta.get("mixture_meta_version", None)
+        expected_version = expected_meta.get("mixture_meta_version", None)
+
+        # Backward-compatible mode for checkpoints created before metadata v2.
+        if loaded_version is None:
+            legacy_keys = [
+                "weight_mode",
+                "sources",
+                "budget_mode",
+                "anchor_dataset_id",
+                "requested_total_blocks",
+                "world_size",
+                "batch_size",
+                "gradient_accumulation_steps",
+                "schedule_seed",
+                "hash_algorithm",
+                "allocation_algorithm",
+                "split_seed_algorithm",
+            ]
+            loaded_legacy = {k: loaded_meta.get(k) for k in legacy_keys}
+            expected_legacy = {k: expected_meta.get(k) for k in legacy_keys}
+            if loaded_legacy != expected_legacy:
+                raise ValueError(
+                    "Mixture resume compatibility check failed for legacy checkpoint metadata.\n"
+                    f"Expected (legacy keys): {json.dumps(expected_legacy, sort_keys=True)}\n"
+                    f"Loaded: {json.dumps(loaded_legacy, sort_keys=True)}"
+                )
+            self.cli_logger.warning(
+                "Loaded legacy mixture metadata without version tag; "
+                "continuing with compatibility checks on the legacy field subset only."
+            )
+            return
+
+        if loaded_version != expected_version:
+            raise ValueError(
+                "Mixture resume compatibility check failed: mixture_meta_version mismatch "
+                f"(expected={expected_version!r}, loaded={loaded_version!r})."
+            )
+
+        dataset_index_map = loaded_meta.get("dataset_index_map", None)
+        if not isinstance(dataset_index_map, dict):
+            raise ValueError(
+                "Mixture resume compatibility check failed: 'dataset_index_map' is missing or invalid."
+            )
+        mapped_ids = [str(v) for v in dataset_index_map.values()]
+        if len(set(mapped_ids)) != len(mapped_ids):
+            raise ValueError(
+                "Mixture resume compatibility check failed: 'dataset_index_map' contains duplicate dataset_id values."
+            )
+
+        if loaded_meta != expected_meta:
+            raise ValueError(
+                "Mixture resume compatibility check failed: checkpoint mixture_meta does not match current "
+                f"configuration.\nExpected: {json.dumps(expected_meta, sort_keys=True)}\n"
+                f"Loaded: {json.dumps(loaded_meta, sort_keys=True)}"
+            )
+
+    def _reduce_mixture_realized_blocks(self, fabric: L.Fabric) -> dict[str, int]:
+        if not self._mixture_enabled or self._mixture_plan is None:
+            return {}
+        ids = sorted(self._mixture_plan.target_blocks_per_dataset)
+        local_tensor = self._mixture_realized_blocks_local_tensor
+        if local_tensor is not None and local_tensor.numel() >= len(self._mixture_dataset_idx_to_id):
+            source = local_tensor.to(device=fabric.device, dtype=torch.long)
+            local = torch.zeros(len(ids), dtype=torch.long, device=fabric.device)
+            for out_idx, dataset_id in enumerate(ids):
+                dataset_idx = self._mixture_dataset_id_to_idx.get(dataset_id)
+                if dataset_idx is None:
+                    local[out_idx] = int(self._mixture_realized_blocks_local.get(dataset_id, 0))
+                    continue
+                ds_idx = int(dataset_idx)
+                if 0 <= ds_idx < source.numel():
+                    local[out_idx] = source[ds_idx]
+                else:
+                    local[out_idx] = int(self._mixture_realized_blocks_local.get(dataset_id, 0))
+        else:
+            local = torch.tensor(
+                [int(self._mixture_realized_blocks_local.get(dataset_id, 0)) for dataset_id in ids],
+                dtype=torch.long,
+                device=fabric.device,
+            )
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(local, op=dist.ReduceOp.SUM)
+        return {dataset_id: int(local[idx].item()) for idx, dataset_id in enumerate(ids)}
+
+    def _write_mixture_report(self, fabric: L.Fabric) -> None:
+        if not self._mixture_enabled or self._mixture_plan is None:
+            return
+
+        resolved_blocks = self._reduce_mixture_realized_blocks(fabric)
+        if fabric.global_rank != 0:
+            return
+
+        report_path = self._mixture_report_path or (Path(self.config.output_dir) / "mixture_report.json")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        target_blocks = {
+            dataset_id: int(v) for dataset_id, v in self._mixture_plan.target_blocks_per_dataset.items()
+        }
+        requested_total_blocks = int(self._mixture_requested_total_blocks or 0)
+        effective_total_blocks = int(self._mixture_effective_total_blocks or 0)
+
+        packing = self._get_packing_config()
+        if not packing:
+            raise RuntimeError("Mixture report generation requires packing configuration.")
+        sequence_length = int(packing.sequence_length)
+
+        realized_tokens = {
+            dataset_id: int(blocks) * sequence_length for dataset_id, blocks in resolved_blocks.items()
+        }
+        realized_ratios = {
+            dataset_id: (float(blocks) / float(effective_total_blocks) if effective_total_blocks > 0 else 0.0)
+            for dataset_id, blocks in resolved_blocks.items()
+        }
+        target_ratios = {
+            dataset_id: (float(blocks) / float(effective_total_blocks) if effective_total_blocks > 0 else 0.0)
+            for dataset_id, blocks in target_blocks.items()
+        }
+        deviation_from_target_blocks = {
+            dataset_id: int(resolved_blocks.get(dataset_id, 0)) - int(target_blocks.get(dataset_id, 0))
+            for dataset_id in sorted(target_blocks)
+        }
+
+        grad_accum = self._resolved_gradient_accumulation_steps()
+
+        source_entries = []
+        for dataset_id in sorted(self._mixture_plan.effective_weights_by_id):
+            source_cfg = self._mixture_source_configs.get(dataset_id, {})
+            train_split = self.datasets.get(dataset_id, {}).get("train") if isinstance(self.datasets, dict) else None
+            dataset_fingerprint = getattr(train_split, "_fingerprint", None) if train_split is not None else None
+            source_entries.append(
+                {
+                    "dataset_id": dataset_id,
+                    "nameOrPath": source_cfg.get("nameOrPath", None) if hasattr(source_cfg, "get") else None,
+                    "configured_weight": self._mixture_configured_weights_by_id.get(dataset_id),
+                    "effective_weight": float(self._mixture_plan.effective_weights_by_id[dataset_id]),
+                    "dataset_fingerprint": dataset_fingerprint,
+                }
+            )
+
+        report = {
+            "sequence_length": sequence_length,
+            "weight_mode": self._mixture_plan.weight_mode,
+            "budget_mode": self._mixture_plan.budget_mode,
+            "anchor_dataset_id": self._mixture_plan.anchor_dataset_id,
+            "source_blocks_available": {
+                dataset_id: int(v) for dataset_id, v in self._mixture_plan.source_blocks_by_id.items()
+            },
+            "requested_total_blocks": requested_total_blocks,
+            "effective_total_blocks": effective_total_blocks,
+            "world_size": int(fabric.world_size),
+            "batch_size": int(self.config.batch_size),
+            "gradient_accumulation_steps": grad_accum,
+            "dataset_index_map": {str(idx): dataset_id for idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items())},
+            "sources": source_entries,
+            "target_blocks_per_dataset": target_blocks,
+            "realized_blocks_per_dataset": resolved_blocks,
+            "realized_tokens_per_dataset": realized_tokens,
+            "realized_ratios": realized_ratios,
+            "deviation_from_target_blocks": deviation_from_target_blocks,
+            "validation_sources": self._mixture_source_split_metadata,
+            "val_loss_per_dataset": self._mixture_last_val_losses,
+            "val_loss_weighted": self._mixture_last_val_weighted,
+            "seed": int(self.config.seed) if self.config.get("seed", None) is not None else 0,
+            "schedule_seed": int(self._mixture_schedule_seed),
+            "hash_algorithm": "blake2b_u64_v1",
+            "allocation_algorithm": "hamilton_lr_lexicographic_v1",
+            "split_seed_algorithm": "blake2b_u64_mod_2147483647_v1",
+            "run_metadata": self.state.get("run_metadata", {}),
+        }
+
+        report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        summary_metrics: dict[str, float] = {
+            "mixture/requested_total_blocks": float(requested_total_blocks),
+            "mixture/effective_total_blocks": float(effective_total_blocks),
+        }
+        if self._mixture_last_val_weighted is not None:
+            summary_metrics["mixture/val_loss_weighted"] = float(self._mixture_last_val_weighted)
+        for dataset_id in sorted(target_blocks):
+            summary_metrics[f"mixture/target_ratio_{dataset_id}"] = float(target_ratios.get(dataset_id, 0.0))
+            summary_metrics[f"mixture/realized_ratio_{dataset_id}"] = float(realized_ratios.get(dataset_id, 0.0))
+            summary_metrics[f"mixture/deviation_blocks_{dataset_id}"] = float(
+                deviation_from_target_blocks.get(dataset_id, 0)
+            )
+        fabric.log_dict(summary_metrics, int(self.state.get("step_count", 0)))
+        self.cli_logger.info("Wrote mixture report to %s", report_path)
     
-    def _load_from_checkpoint(self, fabric: L.Fabric) -> None:
+    def _load_from_checkpoint(self, fabric: L.Fabric, expected_mixture_meta: dict[str, Any] | None = None) -> None:
         """
         Load model and optimizer state from a checkpoint if a checkpoint path is provided.
 
@@ -590,6 +1441,9 @@ class FabricTrainerBase(ABC):
         """
         if self.checkpoint_path is not None:
             self.cli_logger.info(f"Resuming training from '{self.checkpoint_path}'")
+            if self._mixture_enabled:
+                self.state.pop("mixture_meta", None)
+                self.state.pop("mixture_runtime", None)
             # Use strict=False to allow loading checkpoints that may not have all current state keys
             fabric.load(self.checkpoint_path, self.state, strict=False)
             
@@ -605,6 +1459,23 @@ class FabricTrainerBase(ABC):
             if 'step_count' not in self.state:
                 self.state['step_count'] = 0
                 self.cli_logger.info("'step_count' not found in checkpoint, defaulting to 0")
+
+            if self._mixture_enabled:
+                if not expected_mixture_meta:
+                    raise ValueError("Mixture resume requires expected mixture metadata but none was provided.")
+                self._validate_mixture_resume_compatibility(expected_mixture_meta)
+                loaded_meta = self.state.get("mixture_meta", {})
+                strict_runtime = isinstance(loaded_meta, dict) and loaded_meta.get("mixture_meta_version") == MIXTURE_META_VERSION
+                self._restore_mixture_runtime_state(
+                    self.state.get("mixture_runtime"),
+                    strict=bool(strict_runtime),
+                )
+
+            if "run_metadata" not in self.state:
+                self.state["run_metadata"] = self._build_run_metadata(fabric)
+                self.cli_logger.warning(
+                    "Checkpoint is missing 'run_metadata'; generated run metadata from current configuration."
+                )
             
             # Log the loaded state for debugging
             self.cli_logger.info(f"Loaded state keys: {list(self.state.keys())}")
@@ -835,12 +1706,11 @@ class FabricTrainerBase(ABC):
         # Validation/save logic during epoch based on step count
         else:
             # Safety check: ensure we have the required data structures
-            if not hasattr(self, "datasets") or not hasattr(self, "dataloaders") or "train" not in self.datasets:
+            if not hasattr(self, "dataloaders") or "train" not in self.dataloaders:
                 self.cli_logger.warning("Cannot perform intra-epoch validation/checkpoint scheduling: missing dataset or dataloader structure")
                 return
 
             current_epoch = self.state.get("current_epoch", 1)
-            train_dataset = self.datasets["train"]
             batch_size = max(1, int(self.config.batch_size))
             world_size = max(1, int(fabric.world_size))
             gradient_accumulation_steps = self.config.get("gradient_accumulation_steps", 1)
@@ -860,6 +1730,12 @@ class FabricTrainerBase(ABC):
                 train_num_batches = len(train_dataloader)
                 steps_per_epoch = max(1, train_num_batches // gradient_accumulation_steps)
             else:
+                if not hasattr(self, "datasets") or "train" not in self.datasets:
+                    self.cli_logger.warning(
+                        "Cannot schedule intra-epoch validation/checkpoints: missing train dataset in non-packing mode"
+                    )
+                    return
+                train_dataset = self.datasets["train"]
                 total_batches = math.ceil(len(train_dataset) / (batch_size * world_size))
                 steps_per_epoch = max(1, math.ceil(total_batches / gradient_accumulation_steps))
 
@@ -915,7 +1791,7 @@ class FabricTrainerBase(ABC):
 
             fabric.barrier()
 
-            if "valid" in getattr(self, "dataloaders", {}):
+            if self._mixture_enabled or "valid" in getattr(self, "dataloaders", {}):
                 try:
                     self._validate(fabric)
                     validation_completed = True
@@ -1035,12 +1911,94 @@ class FabricTrainerBase(ABC):
                 else:
                     _, loss = self._normal_training(fabric, model, batch, step)
                 self.total_lengths += batch["input_ids"].size(1)
+                if self._mixture_enabled and "dataset_idx" in batch:
+                    dataset_idx_tensor = batch["dataset_idx"].reshape(-1).to(torch.long)
+                    local_counter = self._ensure_mixture_realized_counter_tensor(dataset_idx_tensor.device)
+                    local_counts = torch.bincount(
+                        dataset_idx_tensor,
+                        minlength=local_counter.numel(),
+                    )
+                    local_counter.add_(local_counts)
                 self.train_t1 = time.perf_counter()
                 self._train_logs(fabric, loss)
                 
             self._try_validate(fabric, epochFinished=True)
         self._try_validate(fabric, trainingFinished=True)
     
+    @torch.no_grad()
+    def _validate_mixture(self, fabric: L.Fabric) -> None:
+        if not self._mixture_val_dataloaders:
+            raise RuntimeError("Mixture validation called but no per-source validation dataloaders are available.")
+        if self._mixture_plan is None:
+            raise RuntimeError("Mixture validation called but mixture plan metadata is missing.")
+
+        t0 = time.perf_counter()
+        self.model.eval()
+        losses_by_source: dict[str, float] = {}
+
+        try:
+            for dataset_id in sorted(self._mixture_val_dataloaders):
+                dataloader = self._mixture_val_dataloaders[dataset_id]
+                local_sum = torch.zeros((), dtype=torch.float32, device=fabric.device)
+                local_count = torch.zeros((), dtype=torch.long, device=fabric.device)
+
+                iterator = tqdm(
+                    dataloader,
+                    desc=f"Validating {dataset_id}...",
+                    mininterval=0,
+                    colour="green",
+                ) if fabric.global_rank == 0 else dataloader
+
+                for batch_idx, batch in enumerate(iterator):
+                    validation_output = self.model.validation_step(batch, batch_idx)
+                    loss = validation_output["loss"].detach().to(torch.float32)
+                    local_sum += loss
+                    local_count += 1
+
+                if dist.is_available() and dist.is_initialized():
+                    dist.all_reduce(local_sum, op=dist.ReduceOp.SUM)
+                    dist.all_reduce(local_count, op=dist.ReduceOp.SUM)
+
+                if int(local_count.item()) <= 0:
+                    raise RuntimeError(
+                        f"Validation dataloader for source {dataset_id!r} produced zero batches."
+                    )
+
+                mean_loss = float((local_sum / local_count).item())
+                losses_by_source[dataset_id] = mean_loss
+                fabric.log_dict(
+                    {f"metric/val_loss_{dataset_id}": mean_loss},
+                    self.state["step_count"],
+                )
+
+            weights = self._mixture_plan.effective_weights_by_id
+            z = sum(float(weights[dataset_id]) for dataset_id in losses_by_source)
+            if z <= 0:
+                raise RuntimeError("Mixture validation weights sum to zero.")
+            val_loss_weighted = sum(
+                (float(weights[dataset_id]) / z) * float(losses_by_source[dataset_id])
+                for dataset_id in losses_by_source
+            )
+
+            fabric.log_dict({"metric/val_loss_weighted": val_loss_weighted}, self.state["step_count"])
+            if math.isfinite(val_loss_weighted):
+                fabric.log_dict({"metric/val_ppl_weighted": math.exp(val_loss_weighted)}, self.state["step_count"])
+
+            self._mixture_last_val_losses = {k: float(v) for k, v in losses_by_source.items()}
+            self._mixture_last_val_weighted = float(val_loss_weighted)
+
+            elapsed_time = (time.perf_counter() - t0) * 1000.0
+            self.cli_logger.info(
+                "step %s: val_loss_weighted %.4f, per-source=%s, val time: %.2fms",
+                self.state.get("iter_num", 0),
+                val_loss_weighted,
+                self._mixture_last_val_losses,
+                elapsed_time,
+            )
+            fabric.barrier()
+        finally:
+            self.model.train()
+
     @torch.no_grad()
     def _validate(self, fabric: L.Fabric) -> None:
         """
@@ -1056,6 +2014,10 @@ class FabricTrainerBase(ABC):
         - RuntimeError: If validation fails due to data or model issues.
         """       
         
+        if self._mixture_enabled:
+            self._validate_mixture(fabric)
+            return
+
         if 'valid' not in self.dataloaders:
             raise RuntimeError("Validation called but no validation dataloader available")
         
@@ -1100,7 +2062,11 @@ class FabricTrainerBase(ABC):
         fabric_eval_log(out)
         fabric.barrier()
       
-    def _load_fabric_datasets_dataloaders(self, config: Box, dataset: Union[HFDataset, DatasetDict]) -> dict[DatasetDict, Union[dict[str, DataLoader], DataLoader]]:
+    def _load_fabric_datasets_dataloaders(
+        self,
+        config: Box,
+        dataset: Union[HFDataset, DatasetDict, dict[str, Union[HFDataset, DatasetDict]]],
+    ) -> dict[str, Any]:
         """
         Load datasets and create dataloaders from the given dataset and configuration.
 
@@ -1118,8 +2084,97 @@ class FabricTrainerBase(ABC):
         - TypeError: If the dataset is not a DatasetDict or HFDataset.
         - ValueError: If required config parameters or dataset splits/columns are missing, or if train_data_ratio results in empty training set.
         - RuntimeError: If setting the format or creating a DataLoader fails.
-        """        
-        
+        """
+        mixture_cfg = self._get_mixture_config()
+        sources_cfg = self._get_sources_config()
+        mixture_requested = bool(mixture_cfg and mixture_cfg.get("enabled", False))
+        if mixture_requested and not sources_cfg:
+            raise ValueError("dataset.mixture.enabled is true but dataset.sources is missing or empty.")
+        self._mixture_enabled = bool(mixture_requested and sources_cfg)
+
+        if self._mixture_enabled:
+            if config.get("task", None) != "clm_training":
+                raise ValueError("dataset.mixture is enabled but is only supported for task='clm_training'.")
+            if not self._is_packing_enabled():
+                raise ValueError("dataset.mixture is enabled but dataset.packing.enabled is false.")
+            if int(config.number_epochs) != 1:
+                raise ValueError("Mixture mode requires number_epochs == 1.")
+            if not isinstance(dataset, dict):
+                raise TypeError("Mixture mode expects a mapping dataset_id -> DatasetDict/Dataset from the orchestrator.")
+            if not hasattr(config, "num_workers") or not isinstance(config.num_workers, int) or config.num_workers < 0:
+                raise ValueError("config.num_workers must be a non-negative integer")
+            if not hasattr(config, "batch_size") or not isinstance(config.batch_size, int) or config.batch_size <= 0:
+                raise ValueError("config.batch_size must be a positive integer")
+
+            source_config_map = self._collect_source_config_map()
+            self._validate_mixture_source_compatibility(source_config_map)
+            self._mixture_source_configs = source_config_map
+
+            dataset_ids = sorted(source_config_map)
+            if set(dataset.keys()) != set(dataset_ids):
+                raise ValueError(
+                    "Loaded source datasets do not match dataset.sources entries. "
+                    f"Expected {dataset_ids}, got {sorted(dataset.keys())}."
+                )
+
+            train_data_ratio = getattr(config, "train_data_ratio", 1.0)
+            if train_data_ratio < 1.0:
+                raise ValueError("train_data_ratio is not supported in mixture mode.")
+
+            required_columns = ["input_ids", "length"]
+            processed_sources: dict[str, DatasetDict] = {}
+            self._mixture_source_split_metadata = {}
+
+            for dataset_id in dataset_ids:
+                source_dataset = dataset[dataset_id]
+                if not isinstance(source_dataset, (DatasetDict, HFDataset)):
+                    raise TypeError(
+                        f"Source dataset {dataset_id!r} must be a DatasetDict or Dataset, got {type(source_dataset)}."
+                    )
+
+                had_existing_valid = False
+                if isinstance(source_dataset, DatasetDict):
+                    had_existing_valid = "valid" in source_dataset or "validation" in source_dataset
+
+                split_seed_i = self._derive_validation_split_seed(dataset_id)
+                source_dataset = self._ensure_validation_split(
+                    source_dataset,
+                    split_seed_override=split_seed_i,
+                    require_valid=True,
+                    source_id=dataset_id,
+                )
+
+                for split_name in ("train", "valid"):
+                    if split_name not in source_dataset:
+                        raise ValueError(
+                            f"Source {dataset_id!r} is missing required split {split_name!r} in mixture mode."
+                        )
+                    missing_columns = [
+                        col for col in required_columns if col not in source_dataset[split_name].column_names
+                    ]
+                    if missing_columns:
+                        raise ValueError(
+                            f"Source {dataset_id!r} split {split_name!r} is missing required columns "
+                            f"{missing_columns} for packing mode."
+                        )
+
+                processed_sources[dataset_id] = source_dataset
+                if had_existing_valid:
+                    self._mixture_source_split_metadata[dataset_id] = {
+                        "mode": "existing_valid",
+                    }
+                else:
+                    self._mixture_source_split_metadata[dataset_id] = {
+                        "mode": "auto_generated_valid",
+                        "seed": split_seed_i,
+                    }
+
+            self._packing_enabled = True
+            return {
+                "datasets": processed_sources,
+                "dataloaders": {},
+            }
+
         if not isinstance(dataset, (DatasetDict, HFDataset)):
             raise TypeError("Expected dataset to be a DatasetDict or Dataset")
         if not hasattr(config, 'batch_size') or not isinstance(config.batch_size, int) or config.batch_size <= 0:
@@ -1243,7 +2298,16 @@ class FabricTrainerBase(ABC):
         fabric.barrier()
 
         # FABRIC DATALOADERS SETUP
-        if self._packing_enabled:
+        if self._mixture_enabled:
+            raw = self._build_mixture_packing_dataloaders(fabric)
+            self.dataloaders = {
+                "train": fabric.setup_dataloaders(raw["train"], use_distributed_sampler=False),
+            }
+            self._mixture_val_dataloaders = {
+                dataset_id: fabric.setup_dataloaders(dl, use_distributed_sampler=False)
+                for dataset_id, dl in raw["valid_by_source"].items()
+            }
+        elif self._packing_enabled:
             raw_dataloaders = self._build_packing_dataloaders(fabric)
             self.dataloaders = {
                 k: fabric.setup_dataloaders(v, use_distributed_sampler=False)
@@ -1312,6 +2376,20 @@ class FabricTrainerBase(ABC):
         optimizer_steps_per_epoch = train_num_batches // gradient_accumulation_steps
         total_optimizer_steps = int(self.config.number_epochs) * optimizer_steps_per_epoch
 
+        min_lr_value = float(self.config.get("min_lr", 0.0) or 0.0)
+        max_lr_raw = self.config.get("max_lr", None)
+        max_lr_value = float(max_lr_raw) if max_lr_raw is not None else None
+        peak_lr_value = max_lr_value if max_lr_value is not None else float(self.config.lr)
+        warmup_steps_value = int(max(0, total_optimizer_steps * float(self.config.warmup_proportion)))
+        self._training_schedule_metadata = {
+            "optimizer_steps_per_epoch": int(optimizer_steps_per_epoch),
+            "total_optimizer_steps": int(total_optimizer_steps),
+            "warmup_steps": int(warmup_steps_value),
+            "min_lr": float(min_lr_value),
+            "peak_lr": float(peak_lr_value),
+            "peak_lr_source": "max_lr" if max_lr_value is not None else "lr",
+        }
+
         scheduler = select_scheduler(
             optimizer, 
             self.config.lr_scheduler, 
@@ -1320,29 +2398,60 @@ class FabricTrainerBase(ABC):
             self.config.batch_size, 
             train_dataloader.dataset,
             self.config.warmup_proportion, 
-            gradient_accumulation_steps,
+            base_lr=float(self.config.lr),
+            min_lr=min_lr_value,
+            max_lr=max_lr_value,
+            gradient_accumulation_steps=gradient_accumulation_steps,
             total_steps=total_optimizer_steps,
-        )        
+        )
+        self.cli_logger.info(
+            "Scheduler config: type=%s total_steps=%s warmup_steps=%s min_lr=%.8g peak_lr=%.8g peak_source=%s",
+            self.config.lr_scheduler,
+            total_optimizer_steps,
+            warmup_steps_value,
+            min_lr_value,
+            peak_lr_value,
+            "max_lr" if max_lr_value is not None else "lr",
+        )
         
         # STATE
+        expected_mixture_meta = self._build_mixture_resume_meta(fabric) if self._mixture_enabled else None
+        run_metadata = self._build_run_metadata(fabric)
         self.state = {
             "model": self.model, 
             "optimizer": optimizer, 
-            "hparams": self.hparams, 
+            "hparams": dict(self.hparams),
+            "run_metadata": run_metadata,
             "iter_num": 0, 
             "step_count": 0, 
             "current_epoch": 0,
             "scheduler": scheduler
         }
+        if expected_mixture_meta is not None:
+            self.state["mixture_meta"] = expected_mixture_meta
+            self.state["mixture_runtime"] = self._build_mixture_runtime_state()
         # LOAD INITIAL WEIGHTS (for continual training learning)
         self._load_initial_weights(fabric)
         
         # RESUME (for continuing training)
-        self._load_from_checkpoint(fabric)
+        self._load_from_checkpoint(fabric, expected_mixture_meta=expected_mixture_meta)
+        fabric.log_dict(
+            {
+                "train/optimizer_steps_per_epoch": float(optimizer_steps_per_epoch),
+                "train/total_optimizer_steps": float(total_optimizer_steps),
+                "train/warmup_steps": float(warmup_steps_value),
+                "train/lr_min": float(min_lr_value),
+                "train/lr_peak": float(peak_lr_value),
+            },
+            int(self.state.get("step_count", 0)),
+        )
         
         # TRAINING
         train_time = time.perf_counter()
         self._train(fabric)
+        self.state["run_metadata"] = self._build_run_metadata(fabric)
+        if self._mixture_enabled:
+            self._write_mixture_report(fabric)
         self.cli_logger.info(f"Training time: {(time.perf_counter() - train_time):.2f}s")
         if fabric.device.type == "cuda":
             self.cli_logger.info(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")

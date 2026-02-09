@@ -20,13 +20,18 @@ After this change, a novice can run one config and get:
 
 ## Progress
 
-- [ ] (2026-02-06 00:00Z) Add schema support for `dataset.sources` and `dataset.mixture`.
-- [ ] (2026-02-06 00:00Z) Add red tests for deterministic allocation and distributed invariants.
-- [ ] (2026-02-06 00:00Z) Implement mixture dataset and trainer integration.
-- [ ] (2026-02-06 00:00Z) Implement per-source compatibility checks and fail-fast guards.
-- [ ] (2026-02-06 00:00Z) Implement rank-safe accounting and `mixture_report.json`.
-- [ ] (2026-02-06 00:00Z) Add smoke configs and integration testing config.
-- [ ] (2026-02-06 00:00Z) Run local validation + SLURM smoke; record job IDs/logs in issue 43.
+- [x] (2026-02-06 12:20Z) Add schema support for `dataset.sources` and `dataset.mixture`.
+- [x] (2026-02-06 12:20Z) Add red tests for deterministic allocation and distributed invariants.
+- [x] (2026-02-06 12:20Z) Implement mixture dataset and trainer integration.
+- [x] (2026-02-06 12:20Z) Implement per-source compatibility checks and fail-fast guards.
+- [x] (2026-02-06 12:20Z) Implement rank-safe accounting and `mixture_report.json`.
+- [x] (2026-02-06 12:20Z) Add smoke configs and integration testing config.
+- [x] (2026-02-09 10:40Z) Implement hardening pass 2 for resume integrity and metadata auditability (`mixture_runtime` checkpointing, `mixture_meta` v2, run metadata persistence, and end-of-run mixture summary logging).
+- [x] (2026-02-09 12:15Z) Implement hardening pass 3 for scheduler LR bounds + metadata observability (`min_lr`/`max_lr`, bounded scheduler behavior, preserved default param-group LR semantics, and run-metadata/WandB scheduler-step logging).
+- [x] (2026-02-09 13:05Z) Implement hardening pass 4 for release readiness (multi-node smoke config absolute paths, final run metadata refresh before report write, and on-device mixture realized-block accounting in the training hot path).
+- [x] (2026-02-09 14:05Z) Implement hardening pass 5 for bounded-scheduler correctness on short runs (`warmup_steps == 1` now starts at `min_lr`) with regression test coverage.
+- [x] (2026-02-09 15:15Z) Implement hardening pass 6 for review-closure fail-fast contracts (`dataset.mixture -> dataset.sources` schema/runtime enforcement and malformed `mixture_meta` dictionary validation), with regression tests.
+- [ ] (2026-02-06 12:20Z) Run local validation + SLURM smoke; record job IDs/logs in issue 43. (completed: local pytest + schema validation + strict-budget/config fail-fast follow-up including pass 6 guardrails; remaining: SLURM smoke run and evidence capture)
 
 ## Surprises & Discoveries
 
@@ -35,6 +40,30 @@ After this change, a novice can run one config and get:
 
 - Observation: `src/tasks/training/orchestrator.py` currently loads exactly one source via `dataset.nameOrPath`.
   Evidence: `load_dataset` in `src/tasks/training/orchestrator.py`.
+
+- Observation: `.agent/PLANS.md` is not present in this repository, so execution follows `PLANS.md` at repo root.
+  Evidence: `sed: can't read .agent/PLANS.md: No such file or directory` during preflight.
+
+- Observation: local config validation via `src/main.py` required `PYTHONPATH=.` in this environment.
+  Evidence: `ModuleNotFoundError: No module named 'src'` without `PYTHONPATH=.`.
+
+- Observation: JSON Schema Draft7 cannot enforce uniqueness of a property within array objects (`dataset.sources[].dataset_id`) without custom extensions.
+  Evidence: Schema-level constraints can enforce shape but not field-level uniqueness in standard Draft7.
+
+- Observation: the initial budget-mode conditional schema required both `anchor_epochs` and `total_blocks` when `budget_mode` was omitted, which contradicted the intended default-anchor behavior.
+  Evidence: local validation raised both required-property errors for `dataset.mixture: { enabled: true }` before schema conditional fix.
+
+- Observation: local environment lacks the `datasets` package for trainer/orchestrator unit imports, so new contract tests are dependency-gated and skip locally unless training dependencies are installed.
+  Evidence: `ModuleNotFoundError: No module named 'datasets'` during initial collection before adding `importorskip`.
+
+- Observation: pre-hardened mixture resume checkpoints preserved optimizer/model iteration counters but not source-attributed realized accounting state, which made resumed `mixture_report.json` totals incomplete.
+  Evidence: `_mixture_realized_blocks_local` was runtime-only and absent from checkpoint state before pass 2.
+
+- Observation: scheduler pass 3 initially rewrote optimizer param-group learning rates even when no LR bounds were requested, which could silently alter multi-group optimizer behavior.
+  Evidence: `select_scheduler` set every param-group LR to `peak_lr` unconditionally before the bounded/default path split.
+
+- Observation: multi-node smoke configs fail early when source dataset paths are relative, because the mixture trainer enforces absolute/shared filesystem paths under `SLURM_NNODES>1`.
+  Evidence: explicit guard in `FabricTrainerBase._build_mixture_packing_dataloaders` rejects non-absolute or `/tmp`/`/dev/shm` paths.
 
 ## Decision Log
 
@@ -74,9 +103,70 @@ After this change, a novice can run one config and get:
   Rationale: a zero-capacity source makes deterministic sampling invalid and would otherwise create hidden fallback behavior.
   Date/Author: 2026-02-06 / Codex
 
+- Decision: deterministic mixture primitives are implemented in `src/tasks/training/data/mixture.py` and reused by trainer integration.
+  Rationale: centralizes math-heavy allocation/scheduling logic in one testable module and keeps trainer changes focused on orchestration.
+  Date/Author: 2026-02-06 / Codex
+
+- Decision: strict budget execution is enforced through explicit executable-block resolution (`resolve_effective_total_blocks`) before dataloader construction.
+  Rationale: this prevents silent block drops from `drop_last_batch` while preserving the `effective_total_blocks == requested_total_blocks` contract.
+  Date/Author: 2026-02-06 / Codex
+
+- Decision: config-time fail-fast for duplicate `dataset_id` and mixed source `weight` presence is implemented in `ConfigValidator` custom constraints.
+  Rationale: Draft7 schema cannot encode these two mixture semantics robustly; validation must fail before runtime.
+  Date/Author: 2026-02-06 / Codex
+
+- Decision: schema conditionals now treat omitted `budget_mode` as anchor mode for validation purposes, requiring only `anchor_epochs` by default while `explicit_blocks` requires `total_blocks` only when explicitly selected.
+  Rationale: restores contract consistency between issue semantics, runtime defaults, and `--validate` behavior.
+  Date/Author: 2026-02-06 / Codex
+
+- Decision: mixture checkpoint metadata is versioned (`mixture_meta_version=v2`) and includes `effective_total_blocks` and `dataset_index_map`, while legacy checkpoints without a version are still accepted via subset compatibility checks plus warning.
+  Rationale: preserves backward compatibility without giving up strict resume guarantees for new checkpoints.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: persist run-level metadata and mixture runtime accounting into checkpoint state and report summary metrics at end-of-run.
+  Rationale: closes auditability gaps for resume scenarios and ensures CSV/WandB backends capture final realized-vs-target mixture behavior.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: bounded scheduler controls are implemented with explicit `min_lr`/`max_lr` fields and fail-fast validation, while preserving legacy scheduler semantics when bounds are not configured.
+  Rationale: enables deterministic start/end LR control without changing existing training behavior by default.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: optimizer param-group learning rates are preserved unless `max_lr` is explicitly provided.
+  Rationale: avoids hidden regressions for multi-group optimizers and keeps blast radius low in HPC runs.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: scheduler step/bound metadata is persisted in run metadata and logged once via Fabric metrics.
+  Rationale: guarantees auditable checkpoint metadata and visibility in CSV/WandB backends without per-step overhead.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: refresh `run_metadata` immediately before writing `mixture_report.json`.
+  Rationale: prevents stale end-of-run counters when no final checkpoint save occurs.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: keep mixture realized-block counters on device during training, with dict synchronization only at checkpoint/report boundaries.
+  Rationale: removes unnecessary per-step CPU synchronization from the training hot path while preserving existing checkpoint/report contracts.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: mixture configuration is now treated as invalid unless `dataset.sources` is present whenever `dataset.mixture.enabled` is true.
+  Rationale: prevents silent fallback to single-source behavior and preserves auditable mixture intent.
+  Date/Author: 2026-02-09 / Codex
+
+- Decision: resume compatibility checks fail fast when checkpoint `mixture_meta` is not a dictionary.
+  Rationale: malformed metadata must not crash with implicit attribute errors or continue in an unsafe state.
+  Date/Author: 2026-02-09 / Codex
+
 ## Outcomes & Retrospective
 
-- Pending implementation.
+- Implemented schema, runtime, tests, and local validation for mixture mode with all-or-none source weights, zero-capacity fail-fast guards, and strict executable-budget enforcement.
+- Added config-time fail-fast for duplicate source IDs and mixed manual/omitted weights.
+- Fixed schema budget-mode default semantics and added regression tests for omitted `budget_mode`.
+- Added trainer/orchestrator contract tests that validate moving parts without running full training loops.
+- Added hardening pass 2: checkpointed mixture runtime accounting for resume integrity, versioned mixture metadata with dataset index mapping, run metadata persistence, and final mixture summary logging.
+- Added hardening pass 3: bounded LR scheduler support (`min_lr`/`max_lr`), config fail-fast validation for LR bounds, preserved default optimizer-group LR semantics, and persisted/logged scheduler step metadata for auditability.
+- Added hardening pass 4: fixed multi-node smoke config path compliance, refreshed final run metadata before report emission, and moved mixture realized-block accounting to on-device counters for better HPC runtime efficiency.
+- Added hardening pass 5: corrected bounded scheduler behavior for the `warmup_steps == 1` edge case so LR starts from `min_lr`, with targeted regression coverage.
+- Added hardening pass 6: enforced `dataset.mixture -> dataset.sources` fail-fast behavior across schema/trainer/orchestrator and hardened resume metadata dictionary validation with targeted regression tests.
+- Remaining work from this plan is operational validation on SLURM and recording job/log/report evidence in issue 43.
 
 ## Context and Orientation
 
@@ -526,3 +616,27 @@ Added the all-or-none source-weight contract: manual weights remain supported, a
 ## Revision Note (2026-02-06, update 8)
 
 Added an explicit zero-capacity guard: mixture runs must fail fast when any source has zero train packed blocks after per-source validation splitting, and the failing `dataset_id` must be surfaced in tests and runtime behavior.
+
+## Revision Note (2026-02-06, update 9)
+
+Implemented milestones 1-4 in code: added schema/config surface for `dataset.sources` + `dataset.mixture`, introduced deterministic mixture primitives and `MixturePackedDataset`, integrated orchestrator/trainer mixture flows (including per-source validation construction, strict budget guards, resume metadata checks, and rank-0 report writing), and added local unit/schema validation evidence. SLURM evidence capture remains pending.
+
+## Revision Note (2026-02-09, update 10)
+
+Implemented resume/accounting hardening requested by review findings: persisted and restored `mixture_runtime` counters, versioned and expanded `mixture_meta` (`effective_total_blocks`, `dataset_index_map`), added backward-compatible legacy checkpoint handling, hardened rank-0 index build failure propagation to prevent hangs, persisted explicit `run_metadata`, and logged end-of-run per-source mixture summary metrics for CSV/WandB observability. SLURM evidence capture remains pending.
+
+## Revision Note (2026-02-09, update 11)
+
+Implemented scheduler/metadata hardening requested after follow-up review: added `min_lr`/`max_lr` training controls, fail-fast LR bound validation, bounded scheduler behavior that preserves legacy defaults when bounds are unset, fixed the default-path optimizer param-group LR rewrite regression risk, and persisted/logged scheduler step metadata (`optimizer_steps_per_epoch`, `total_optimizer_steps`, `warmup_steps`, min/peak LR) for checkpoint + CSV/WandB auditability.
+
+## Revision Note (2026-02-09, update 12)
+
+Implemented full-sweep release hardening: corrected multi-node smoke config to use absolute dataset paths compatible with strict SLURM path guards, refreshed `run_metadata` immediately before final mixture report generation to avoid stale counters, and moved mixture realized-block accounting to device-resident counters in the training loop (with checkpoint/report-time sync back to dict state) to reduce HPC hot-path CPU overhead.
+
+## Revision Note (2026-02-09, update 13)
+
+Fixed bounded scheduler short-run behavior by making single-step warmup (`warmup_steps == 1`) start at `min_lr` rather than peak LR, and added a dedicated scheduler regression test to prevent recurrence.
+
+## Revision Note (2026-02-09, update 14)
+
+Closed remaining code-level review findings by making mixture configuration fail fast when `dataset.mixture` is enabled without `dataset.sources` (schema + trainer + orchestrator) and by hardening resume compatibility checks to raise explicit errors when checkpoint `mixture_meta` is malformed (non-dict). Added focused regression coverage for both paths and updated issue tracking with a SLURM evidence closure checklist.

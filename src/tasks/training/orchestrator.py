@@ -19,6 +19,7 @@ from src.tasks.training.utils import resolve_distributed_settings
 from src.utils import inherit_init_params
 from src.utils.orchestrator import BaseOrchestrator
 from datasets import Dataset as HFDataset
+from typing import Union
 
 
 class ContinualOrchestrator(BaseOrchestrator):
@@ -196,7 +197,7 @@ class ContinualOrchestrator(BaseOrchestrator):
         self.logger.info("Deep Speed training finished")
 
 
-    def load_dataset(self) -> HFDataset:
+    def load_dataset(self) -> Union[HFDataset, dict[str, HFDataset]]:
         """
         Load the dataset based on the provided configuration.
         
@@ -222,8 +223,32 @@ class ContinualOrchestrator(BaseOrchestrator):
         self._validate_dataset_config()
         
         if self.config.dataset.source == "local":
+            sources_cfg = self.config.dataset.get("sources", None)
+            mixture_cfg = self.config.dataset.get("mixture", None)
+            mixture_enabled = bool(mixture_cfg and mixture_cfg.get("enabled", False))
+            if mixture_enabled and not sources_cfg:
+                raise ValueError("dataset.mixture.enabled is true but dataset.sources is missing or empty.")
+            if sources_cfg and not mixture_enabled:
+                raise ValueError("dataset.sources is set but dataset.mixture.enabled is false.")
+
+            if sources_cfg and mixture_enabled:
+                source_datasets: dict[str, HFDataset] = {}
+                for source_cfg in sources_cfg:
+                    dataset_id = source_cfg.get("dataset_id")
+                    dataset_path = source_cfg.get("nameOrPath")
+                    if not dataset_id:
+                        raise ValueError("Each dataset.sources entry must define dataset_id.")
+                    if not dataset_path:
+                        raise ValueError(f"dataset.sources entry {dataset_id!r} is missing nameOrPath.")
+
+                    self.logger.info("Loading source dataset %r from path '%s'", dataset_id, dataset_path)
+                    dataset = dataset_handler.load_from_disk(dataset_path)
+                    if isinstance(dataset, HFDataset):
+                        dataset = DatasetDict({"train": dataset})
+                    source_datasets[str(dataset_id)] = dataset
+                return source_datasets
+
             self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")
-            
             dataset = dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
             # TODO: IMPROVE THIS FOR MAINTAINABILITY
             if isinstance(dataset, HFDataset):

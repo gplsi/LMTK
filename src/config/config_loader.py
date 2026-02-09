@@ -193,4 +193,62 @@ class ConfigValidator:
                 "\n".join(error_messages)
             )
 
+        self._validate_custom_training_constraints(config_data, schema_name)
         return Box(config_data, box_dots=True)
+
+    def _validate_custom_training_constraints(self, config_data: dict, schema_name: str) -> None:
+        if schema_name in {"clm_training", "mlm_training", "instruction"}:
+            lr_raw = config_data.get("lr", None)
+            min_lr_raw = config_data.get("min_lr", 0.0)
+            max_lr_raw = config_data.get("max_lr", None)
+            if lr_raw is not None:
+                lr_value = float(lr_raw)
+                min_lr = float(min_lr_raw) if min_lr_raw is not None else 0.0
+                peak_lr = float(max_lr_raw) if max_lr_raw is not None else lr_value
+                if min_lr < 0:
+                    raise ValueError(
+                        "Configuration validation failed using custom constraints:\n"
+                        "[min_lr] must be >= 0."
+                    )
+                if peak_lr < 0:
+                    raise ValueError(
+                        "Configuration validation failed using custom constraints:\n"
+                        "[max_lr] must be >= 0 when provided."
+                    )
+                if min_lr > peak_lr:
+                    raise ValueError(
+                        "Configuration validation failed using custom constraints:\n"
+                        f"[min_lr] ({min_lr}) must be <= effective peak LR ({peak_lr})."
+                    )
+
+        if schema_name != "clm_training":
+            return
+
+        dataset_cfg = config_data.get("dataset", {})
+        if not isinstance(dataset_cfg, dict):
+            return
+
+        sources = dataset_cfg.get("sources", None)
+        if not isinstance(sources, list) or len(sources) == 0:
+            return
+
+        seen_ids: set[str] = set()
+        has_weight: list[bool] = []
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            dataset_id = source.get("dataset_id", None)
+            if isinstance(dataset_id, str):
+                if dataset_id in seen_ids:
+                    raise ValueError(
+                        "Configuration validation failed using custom constraints:\n"
+                        f"[dataset.sources] duplicate dataset_id '{dataset_id}' is not allowed."
+                    )
+                seen_ids.add(dataset_id)
+            has_weight.append(source.get("weight", None) is not None)
+
+        if has_weight and any(has_weight) and not all(has_weight):
+            raise ValueError(
+                "Configuration validation failed using custom constraints:\n"
+                "[dataset.sources] all sources must either set weight or omit weight."
+            )

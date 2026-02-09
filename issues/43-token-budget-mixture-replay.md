@@ -575,3 +575,166 @@ Required evidence to record in this issue:
 ## ExecPlan
 
 - `issues/execPlans/43-token-budget-mixture-replay.execplan.md`
+
+## Implementation Update (2026-02-06)
+
+- Implemented schema/runtime/tests for milestones 1-4:
+  - schema support for `dataset.sources` + `dataset.mixture`,
+  - deterministic mixture primitives and `MixturePackedDataset`,
+  - orchestrator multi-source loading path,
+  - trainer mixture integration (budget resolution, fail-fast invariants, per-source validation, resume metadata guard, and rank-0 `mixture_report.json` writing),
+  - smoke configs for mixture and integration.
+- Local validation completed:
+  - `python3 -m pytest -q tests/unit/training/test_mixture_packing.py tests/unit/config/test_online_packing_schema.py` (pass),
+  - `python3 -m pytest -q tests/unit/training/test_packing_index.py tests/unit/training/test_packing_sampler.py tests/test_packed_sequence_dataset.py` (pass),
+  - `PYTHONPATH=. python3 src/main.py --validate --config config/tests/clm_training_packing_smoke.yaml` (valid),
+  - `PYTHONPATH=. python3 src/main.py --validate --config config/tests/clm_training_packing_mixture_smoke.yaml` (valid),
+  - `PYTHONPATH=. python3 src/main.py --validate --config config/tests/mixture_packing_integration_smoke.yaml` (valid).
+- Remaining: SLURM smoke run and evidence capture (job ID, stdout/stderr paths, and produced report path) per this issue + ExecPlan.
+
+### Follow-up hardening after implementation review (2026-02-06)
+
+- Added strict executable-budget enforcement for mixture training:
+  - introduced `resolve_effective_total_blocks(...)` in `src/tasks/training/data/mixture.py`,
+  - trainer now fails fast if dataloader/sampler settings would execute fewer blocks than requested (for example `drop_last_batch` truncation),
+  - `effective_total_blocks` is now computed from execution constraints, not assumed equal.
+- Added config-time fail-fast checks in `ConfigValidator` for mixture semantics that Draft7 schema cannot fully express:
+  - duplicate `dataset.sources[].dataset_id` is rejected,
+  - mixed source weight presence (some set, some omitted) is rejected.
+- Added targeted tests:
+  - strict-budget execution checks in `tests/unit/training/test_mixture_packing.py`,
+  - duplicate/mixed-weight config validation checks in `tests/unit/config/test_online_packing_schema.py`.
+- Fixed schema conditional logic for `dataset.mixture.budget_mode` defaults:
+  - omitted `budget_mode` now follows default anchor semantics and requires `anchor_epochs`,
+  - `total_blocks` is required only when `budget_mode: explicit_blocks`.
+- Added regression tests for budget-mode default behavior in `tests/unit/config/test_online_packing_schema.py`.
+- Added trainer/orchestrator contract tests (no real training loop) to cover moving parts:
+  - `tests/unit/training/test_mixture_trainer_contracts.py`
+  - `tests/unit/training/test_orchestrator_mixture_loading.py`
+- Re-ran local validation after hardening:
+  - `python3 -m pytest -q tests/unit/training/test_mixture_packing.py` (pass),
+  - `python3 -m pytest -q tests/unit/config/test_online_packing_schema.py` (pass),
+  - `python3 -m pytest -q tests/unit/training/test_packing_index.py tests/unit/training/test_packing_sampler.py tests/test_packed_sequence_dataset.py` (pass),
+  - `PYTHONPATH=. python3 src/main.py --validate --config config/tests/clm_training_packing_mixture_smoke.yaml` (valid),
+  - `PYTHONPATH=. python3 src/main.py --validate --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml` (valid),
+  - `PYTHONPATH=. python3 src/main.py --validate --config config/tests/mixture_packing_integration_smoke.yaml` (valid).
+  - Note: in this local environment the new trainer/orchestrator contract tests are dependency-gated and currently skip because `datasets` is not installed (`1 skipped` each). They run in environments with the training dependencies installed.
+
+### Follow-up hardening pass 2 (2026-02-09)
+
+- Fixed resume accounting integrity for mixture runs in `src/tasks/training/fabric/trainer/base.py`:
+  - added checkpointed `mixture_runtime` state (`realized_blocks_local`, last per-source validation losses, weighted validation loss),
+  - restore path now recovers those values on resume,
+  - rank-0 `mixture_report.json` now remains auditable across resume boundaries.
+- Hardened mixture checkpoint metadata:
+  - introduced metadata versioning (`mixture_meta_version: v2`),
+  - added `effective_total_blocks` and `dataset_index_map` to persisted `mixture_meta`,
+  - resume compatibility now supports backward-compatible legacy checkpoint loading (subset check + warning) and strict v2 matching.
+- Fixed remaining distributed hang risk during mixture index build:
+  - rank-0 pre-build filesystem operations are now inside the guarded failure path that writes the shared `BUILD_FAILED.json` sentinel,
+  - all ranks still synchronize and fail fast with a consistent error payload.
+- Improved checkpoint/run observability:
+  - replaced weak local-variable hyperparameter capture with explicit run metadata (`run_metadata`) persisted in checkpoint state,
+  - mixture report now embeds `run_metadata` for auditability.
+- Added final mixture summary metrics logging (captured by CSV/WandB backends when enabled):
+  - `mixture/requested_total_blocks`,
+  - `mixture/effective_total_blocks`,
+  - `mixture/val_loss_weighted`,
+  - per-source `mixture/target_ratio_<dataset_id>`, `mixture/realized_ratio_<dataset_id>`, and `mixture/deviation_blocks_<dataset_id>`.
+- Added/updated contract tests:
+  - `tests/unit/training/test_mixture_trainer_contracts.py` now covers metadata v2 fields, legacy compatibility behavior, invalid `dataset_index_map`, runtime-state restore, and stable run metadata.
+- Local validation run after pass 2:
+  - `python3 -m py_compile src/tasks/training/fabric/trainer/base.py` (pass),
+  - `python3 -m pytest -q tests/unit/training/test_mixture_packing.py` (pass),
+  - `python3 -m pytest -q tests/unit/config/test_online_packing_schema.py` (pass),
+  - `python3 -m pytest -q tests/unit/training/test_packing_index.py tests/test_packed_sequence_dataset.py` (pass; includes one pre-existing skip),
+  - `python3 -m pytest -q tests/unit/training/test_mixture_trainer_contracts.py` (dependency-gated skip in this environment; exits skipped because `datasets`/training stack is unavailable locally).
+- Remaining: SLURM smoke run and evidence capture (job ID, stdout/stderr log paths, report path) are still pending for final operational closure.
+
+### Follow-up hardening pass 3 (2026-02-09)
+
+- Added bounded scheduler controls for training:
+  - new config fields `min_lr` and `max_lr` in `config/schemas/training/components/scheduler.schema.yaml`,
+  - trainer now wires LR bounds into scheduler construction and logs resolved scheduler settings (`total_steps`, `warmup_steps`, min/peak LR),
+  - scheduler supports bounded warmup/decay semantics while preserving existing default behavior when bounds are not configured.
+- Added config-time LR bounds validation in `src/config/config_loader.py` for `clm_training`, `mlm_training`, and `instruction`:
+  - fail-fast for negative bounds and `min_lr > effective_peak_lr`.
+- Fixed an optimizer regression risk in `src/tasks/training/utils.py`:
+  - default scheduler path no longer rewrites optimizer param-group learning rates,
+  - explicit `max_lr` still sets the intended peak LR.
+- Strengthened run metadata + observability:
+  - checkpointed `run_metadata` now includes LR/scheduler fields and current step counters,
+  - scheduler plan metadata (`optimizer_steps_per_epoch`, `total_optimizer_steps`, `warmup_steps`, min/peak LR) is persisted,
+  - trainer logs static scheduler/training-step metrics via `fabric.log_dict`, making them visible in CSV/WandB backends.
+- Tightened v2 mixture resume runtime safety:
+  - strict-mode restore now hard-fails when required `mixture_runtime` payload is missing or malformed for v2 checkpoints.
+- Added/updated tests:
+  - scheduler bounds behavior tests in `tests/unit/training/test_scheduler.py`,
+  - regression test ensuring default scheduler path preserves optimizer param-group LRs,
+  - run metadata/schedule metadata assertions in `tests/unit/training/test_mixture_trainer_contracts.py`,
+  - schema validation tests for `min_lr`/`max_lr` in `tests/unit/config/test_online_packing_schema.py`.
+- Local validation run after pass 3:
+  - `python3 -m py_compile src/tasks/training/utils.py src/tasks/training/fabric/trainer/base.py src/config/config_loader.py` (pass),
+  - `python3 -m pytest -q tests/unit/training/test_scheduler.py` (pass, `6 passed`),
+  - `python3 -m pytest -q tests/unit/config/test_online_packing_schema.py` (pass, `11 passed`),
+  - `python3 -m pytest -q tests/unit/training/test_mixture_packing.py` (pass, `12 passed`),
+  - `python3 -m pytest -q tests/unit/training/test_mixture_trainer_contracts.py` (dependency-gated skip in this environment; exits skipped because `datasets`/training stack is unavailable locally).
+- Remaining: SLURM smoke run and evidence capture (job ID, stdout/stderr log paths, report path) are still pending for final operational closure.
+
+### Follow-up hardening pass 4 (2026-02-09)
+
+- Closed review blocker for multi-node smoke config:
+  - updated `config/tests/clm_training_packing_mixture_multinode_smoke.yaml` to use absolute shared dataset paths so it satisfies strict multi-node path guards in mixture packing.
+- Improved end-of-run metadata correctness:
+  - trainer now refreshes `state["run_metadata"]` after training and before writing `mixture_report.json`, ensuring final `iter_num`/`step_count` are reported.
+- Reduced hot-path overhead in HPC training:
+  - mixture realized-block counters now accumulate on-device each step (no per-step `.cpu()`/`.tolist()` conversion),
+  - counters are synchronized back to dict form only at checkpoint/report boundaries,
+  - report reduction path now consumes tensor counters directly when available.
+- Resume/runtime consistency:
+  - restoring mixture runtime counters now resets the cached tensor counters, forcing deterministic reconstruction from restored checkpoint values.
+- Local validation run after pass 4:
+  - `python3 -m py_compile src/tasks/training/fabric/trainer/base.py src/tasks/training/utils.py src/config/config_loader.py` (pass),
+  - `python3 -m pytest -q tests/unit/training/test_scheduler.py tests/unit/config/test_online_packing_schema.py` (pass, `17 passed`),
+  - `python3 -m pytest -q tests/unit/training/test_mixture_packing.py` (pass, `12 passed`),
+  - `python3 -m pytest -q tests/unit/training/test_mixture_trainer_contracts.py` (dependency-gated skip in this environment; exits skipped because `datasets`/training stack is unavailable locally),
+  - `PYTHONPATH=. python3 src/main.py --validate --config config/tests/clm_training_packing_mixture_multinode_smoke.yaml` (valid).
+- Remaining: SLURM smoke run and evidence capture (job ID, stdout/stderr log paths, report path) are still pending for final operational closure.
+
+### Follow-up hardening pass 5 (2026-02-09)
+
+- Fixed bounded-scheduler edge case for short runs:
+  - when `warmup_steps == 1`, bounded schedulers now start from `min_lr` instead of immediately jumping to peak LR.
+- Added regression coverage:
+  - `test_single_warmup_step_starts_from_min_lr` in `tests/unit/training/test_scheduler.py`.
+- Local validation run after pass 5:
+  - `python3 -m pytest -q tests/unit/training/test_scheduler.py` (pass, `7 passed`).
+
+### Follow-up hardening pass 6 (2026-02-09)
+
+- Closed review finding for silent mixture misconfiguration:
+  - schema now fails fast when `dataset.mixture` is present but `dataset.sources` is missing,
+  - trainer and orchestrator now fail fast with explicit errors when `dataset.mixture.enabled: true` is set without sources.
+- Closed review finding for malformed resume metadata handling:
+  - `FabricTrainerBase._validate_mixture_resume_compatibility` now validates that checkpoint `mixture_meta` is a dictionary before field access, raising a clear `ValueError` when malformed.
+- Added regression coverage:
+  - `tests/unit/config/test_online_packing_schema.py`:
+    - `test_training_mixture_schema_rejects_mixture_without_sources`
+  - `tests/unit/training/test_orchestrator_mixture_loading.py`:
+    - `test_load_dataset_rejects_mixture_enabled_without_sources`
+  - `tests/unit/training/test_mixture_trainer_contracts.py`:
+    - `test_mixture_resume_meta_requires_dict_shape`
+    - `test_load_fabric_datasets_rejects_mixture_enabled_without_sources`
+- Local validation run after pass 6:
+  - `python3 -m pytest -q tests/unit/config/test_online_packing_schema.py tests/unit/training/test_orchestrator_mixture_loading.py tests/unit/training/test_mixture_trainer_contracts.py tests/unit/training/test_mixture_packing.py` (pass, `24 passed, 2 skipped`).
+
+### SLURM evidence closure checklist (still pending)
+
+- [ ] Exact submit command captured in this issue.
+- [ ] SLURM job ID captured.
+- [ ] Stdout/stderr log paths captured.
+- [ ] Produced `mixture_report.json` path captured.
+- [ ] Evidence snippet captured for:
+  - requested/effective block equality,
+  - realized blocks/ratios per source,
+  - per-source validation provenance and `val_loss_weighted`.

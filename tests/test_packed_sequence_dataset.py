@@ -74,6 +74,27 @@ def test_empty_docs_are_skipped(tmp_path: Path) -> None:
     assert ds[0]["input_ids"].tolist() == [1, 2, 3, 4]
 
 
+def test_packing_does_not_double_insert_eos(tmp_path: Path) -> None:
+    hf = Dataset.from_dict(
+        {
+            "input_ids": [[1, 2, 0], [3, 4, 5]],
+            "length": [3, 3],
+            "ends_with_eos": [True, False],
+        }
+    )
+    index = PackingIndex.load_or_build(
+        hf_split=hf,
+        split="train",
+        sequence_length=4,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+    )
+    ds = PackedSequenceDataset(hf_dataset=hf, index=index, eos_token_id=0)
+    assert len(ds) == 1
+    assert ds[0]["input_ids"].tolist() == [1, 2, 0, 3]
+
+
 def test_distributed_sampler_drop_last_is_enforced_in_packing_mode() -> None:
     base = torch.utils.data.TensorDataset(torch.arange(10))
 
@@ -91,6 +112,42 @@ def test_distributed_sampler_drop_last_is_enforced_in_packing_mode() -> None:
         world_size=2,
     )
     assert len(dl_rank0) == 2
+
+
+def test_validation_split_uses_distributed_sampler_without_shuffle_when_distributed() -> None:
+    base = torch.utils.data.TensorDataset(torch.arange(10))
+    dl = build_packing_dataloader(
+        dataset=base,
+        split="valid",
+        batch_size=2,
+        num_workers=0,
+        shuffle=False,
+        sampler_drop_last=False,
+        drop_last_batch=False,
+        seed=123,
+        rank=0,
+        world_size=2,
+    )
+    assert isinstance(dl.sampler, torch.utils.data.distributed.DistributedSampler)
+    assert dl.sampler.shuffle is False
+    assert dl.sampler.drop_last is False
+
+
+def test_build_packing_dataloader_rejects_invalid_rank() -> None:
+    base = torch.utils.data.TensorDataset(torch.arange(10))
+    with pytest.raises(ValueError, match="rank must satisfy 0 <= rank < world_size"):
+        build_packing_dataloader(
+            dataset=base,
+            split="train",
+            batch_size=2,
+            num_workers=0,
+            shuffle=True,
+            sampler_drop_last=True,
+            drop_last_batch=True,
+            seed=123,
+            rank=2,
+            world_size=2,
+        )
 
 
 def test_scheduler_steps_use_dataloader_len_not_floor_div_dataset_len() -> None:
