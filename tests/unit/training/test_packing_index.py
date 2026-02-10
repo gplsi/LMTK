@@ -17,8 +17,34 @@ class _FakeSplit:
     def __len__(self) -> int:  # pragma: no cover
         return len(self.rows)
 
-    def __getitem__(self, idx: int) -> dict:  # pragma: no cover
-        return self.rows[idx]
+    def __getitem__(self, idx):  # pragma: no cover
+        if isinstance(idx, int):
+            return self.rows[idx]
+        if isinstance(idx, str):
+            if idx not in self.column_names:
+                raise KeyError(idx)
+            return [row[idx] for row in self.rows]
+        raise TypeError(f"Unsupported index type: {type(idx)}")
+
+    def iter(self, batch_size: int = 1000):  # pragma: no cover
+        if batch_size <= 0:
+            raise ValueError("batch_size must be > 0")
+        for start in range(0, len(self.rows), batch_size):
+            chunk = self.rows[start : start + batch_size]
+            yield {name: [row[name] for row in chunk] for name in self.column_names}
+
+
+@dataclass
+class _NoRowAccessAfterValidationSplit(_FakeSplit):
+    allowed_row_accesses: int = 0
+    _row_reads: int = 0
+
+    def __getitem__(self, idx):  # pragma: no cover
+        if isinstance(idx, int):
+            if self._row_reads >= int(self.allowed_row_accesses):
+                raise AssertionError(f"Unexpected row-wise access at idx={idx}")
+            self._row_reads += 1
+        return super().__getitem__(idx)
 
 
 def test_packing_index_build_and_reuse(tmp_path: Path) -> None:
@@ -181,3 +207,76 @@ def test_packing_index_rebuilds_on_dataset_fingerprint_change(tmp_path: Path) ->
 
     assert idx1.meta.dataset_fingerprint == "fp-v1"
     assert idx2.meta.dataset_fingerprint == "fp-v2"
+
+
+def test_packing_index_fast_path_without_insert_eos_avoids_full_row_reads(tmp_path: Path) -> None:
+    split = _NoRowAccessAfterValidationSplit(
+        rows=[
+            {"input_ids": [1, 2, 3], "length": 3},
+            {"input_ids": [4, 5], "length": 2},
+            {"input_ids": [6, 7, 8, 9], "length": 4},
+        ],
+        column_names=["input_ids", "length"],
+        allowed_row_accesses=1,
+    )
+
+    idx = PackingIndex.load_or_build(
+        hf_split=split,
+        split="train",
+        sequence_length=4,
+        insert_eos=False,
+        eos_token_id=None,
+        cache_dir=tmp_path,
+        length_sample_validation=1,
+    )
+    assert idx.total_tokens == 9
+    assert idx.num_blocks == 2
+
+
+def test_packing_index_fast_path_with_ends_with_eos_avoids_full_row_reads(tmp_path: Path) -> None:
+    split = _NoRowAccessAfterValidationSplit(
+        rows=[
+            {"input_ids": [1, 2, 3], "length": 3, "ends_with_eos": False},
+            {"input_ids": [4, 5, 0], "length": 3, "ends_with_eos": True},
+            {"input_ids": [7], "length": 1, "ends_with_eos": False},
+        ],
+        column_names=["input_ids", "length", "ends_with_eos"],
+        allowed_row_accesses=1,
+    )
+
+    idx = PackingIndex.load_or_build(
+        hf_split=split,
+        split="train",
+        sequence_length=4,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+        length_sample_validation=1,
+    )
+    assert idx.total_tokens == 9
+    assert idx.num_blocks == 2
+
+
+def test_packing_index_fallback_without_ends_with_eos_keeps_row_path(tmp_path: Path) -> None:
+    split = _FakeSplit(
+        rows=[
+            {"input_ids": [10, 11], "length": 2},
+            {"input_ids": [12, 0], "length": 2},
+            {"input_ids": [], "length": 0},
+        ],
+        column_names=["input_ids", "length"],
+    )
+
+    idx = PackingIndex.load_or_build(
+        hf_split=split,
+        split="train",
+        sequence_length=4,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+        length_sample_validation=1,
+    )
+    # Row0 adds EOS, row1 already ends with EOS, row2 empty.
+    assert idx.meta.kept_docs == 2
+    assert idx.total_tokens == 5
+    assert idx.num_blocks == 1

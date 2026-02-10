@@ -7,7 +7,7 @@ import time
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 import numpy as np
 
@@ -274,53 +274,119 @@ class PackingIndex:
             doc_stream_lengths = np.memmap(p["doc_stream_lengths"], dtype=np.int32, mode="w+", shape=(num_rows,))
 
             offsets[0] = 0
-            kept_docs = 0
-            skipped_empty = 0
-            validated = 0
-
-            for row_idx in range(num_rows):
+            max_validated = min(int(length_sample_validation), num_rows)
+            for row_idx in range(max_validated):
                 row = hf_split[row_idx]
                 row_length = int(row["length"])
-                if row_length <= 0:
-                    skipped_empty += 1
-                    continue
-
-                if validated < int(length_sample_validation):
-                    input_ids = row["input_ids"]
-                    if row_length != len(input_ids):
+                input_ids = row["input_ids"]
+                if row_length != len(input_ids):
+                    raise ValueError(
+                        "Invalid packing input: row['length'] does not match len(row['input_ids']). "
+                        f"Row={row_idx} length={row_length} len(input_ids)={len(input_ids)}"
+                    )
+                if insert_eos and used_ends_with_eos:
+                    expected = bool(input_ids) and int(input_ids[-1]) == int(eos_token_id)
+                    if bool(row["ends_with_eos"]) != expected:
                         raise ValueError(
-                            "Invalid packing input: row['length'] does not match len(row['input_ids']). "
-                            f"Row={row_idx} length={row_length} len(input_ids)={len(input_ids)}"
+                            "Invalid packing input: row['ends_with_eos'] does not match the provided eos_token_id. "
+                            "This usually indicates the dataset was tokenized with a different tokenizer/eos id. "
+                            f"Row={row_idx} ends_with_eos={row['ends_with_eos']} expected={expected} eos_token_id={eos_token_id}"
                         )
-                    if insert_eos and used_ends_with_eos:
-                        expected = bool(input_ids) and int(input_ids[-1]) == int(eos_token_id)
-                        if bool(row["ends_with_eos"]) != expected:
-                            raise ValueError(
-                                "Invalid packing input: row['ends_with_eos'] does not match the provided eos_token_id. "
-                                "This usually indicates the dataset was tokenized with a different tokenizer/eos id. "
-                                f"Row={row_idx} ends_with_eos={row['ends_with_eos']} expected={expected} eos_token_id={eos_token_id}"
-                            )
-                    validated += 1
 
-                eos_extra = 0
-                if insert_eos:
-                    if used_ends_with_eos:
-                        ends_with_eos = bool(row["ends_with_eos"])
-                        eos_extra = 0 if ends_with_eos else 1
-                    else:
-                        input_ids = row["input_ids"]
-                        last_token = int(input_ids[-1])
-                        eos_extra = 0 if last_token == int(eos_token_id) else 1
+            def _iter_column_batches(batch_size: int = 65536) -> Iterator[dict[str, np.ndarray]]:
+                if hasattr(hf_split, "iter"):
+                    iterator = hf_split.iter(batch_size=batch_size)
+                    for batch in iterator:
+                        lengths = np.asarray(batch["length"], dtype=np.int64).reshape(-1)
+                        payload: dict[str, np.ndarray] = {"length": lengths}
+                        if used_ends_with_eos:
+                            payload["ends_with_eos"] = np.asarray(batch["ends_with_eos"], dtype=np.bool_).reshape(-1)
+                        yield payload
+                    return
 
-                stream_len = row_length + eos_extra
+                try:
+                    lengths_raw = hf_split["length"]
+                    ends_raw = hf_split["ends_with_eos"] if used_ends_with_eos else None
+                except Exception:
+                    lengths_raw = [int(hf_split[row_idx]["length"]) for row_idx in range(num_rows)]
+                    ends_raw = (
+                        [bool(hf_split[row_idx]["ends_with_eos"]) for row_idx in range(num_rows)]
+                        if used_ends_with_eos
+                        else None
+                    )
 
-                doc_indices[kept_docs] = int(row_idx)
-                doc_lengths[kept_docs] = int(row_length)
-                doc_stream_lengths[kept_docs] = int(stream_len)
-                offsets[kept_docs + 1] = offsets[kept_docs] + int(stream_len)
-                kept_docs += 1
+                lengths = np.asarray(lengths_raw, dtype=np.int64).reshape(-1)
+                payload: dict[str, np.ndarray] = {"length": lengths}
+                if used_ends_with_eos and ends_raw is not None:
+                    payload["ends_with_eos"] = np.asarray(ends_raw, dtype=np.bool_).reshape(-1)
+                yield payload
 
-            total_tokens = int(offsets[kept_docs])
+            kept_docs = 0
+            total_tokens = 0
+
+            # Fast path: avoid full-row `input_ids` reads when eos insertion can be derived from columns.
+            if not insert_eos or used_ends_with_eos:
+                row_cursor = 0
+                for batch in _iter_column_batches():
+                    lengths = batch["length"]
+                    count = int(lengths.size)
+                    if count <= 0:
+                        continue
+
+                    row_indices = np.arange(row_cursor, row_cursor + count, dtype=np.int64)
+                    keep_mask = lengths > 0
+                    kept_count = int(np.count_nonzero(keep_mask))
+                    if kept_count > 0:
+                        kept_rows = row_indices[keep_mask]
+                        kept_lengths = lengths[keep_mask]
+
+                        if insert_eos and used_ends_with_eos:
+                            ends = batch["ends_with_eos"][keep_mask]
+                            eos_extra = (~ends).astype(np.int64, copy=False)
+                        else:
+                            eos_extra = np.zeros((kept_count,), dtype=np.int64)
+
+                        stream_lengths = kept_lengths + eos_extra
+                        next_kept = kept_docs + kept_count
+
+                        doc_indices[kept_docs:next_kept] = kept_rows
+                        doc_lengths[kept_docs:next_kept] = kept_lengths.astype(np.int32, copy=False)
+                        doc_stream_lengths[kept_docs:next_kept] = stream_lengths.astype(np.int32, copy=False)
+
+                        cumulative = np.cumsum(stream_lengths, dtype=np.int64)
+                        offsets[kept_docs + 1 : next_kept + 1] = total_tokens + cumulative
+
+                        total_tokens += int(cumulative[-1])
+                        kept_docs = next_kept
+
+                    row_cursor += count
+
+                if row_cursor != num_rows:
+                    raise RuntimeError(
+                        "Packing index build internal error: processed row count does not match dataset size "
+                        f"({row_cursor} != {num_rows})."
+                    )
+            else:
+                # Fallback path for datasets without `ends_with_eos`: requires per-row `input_ids[-1]`.
+                for row_idx in range(num_rows):
+                    row = hf_split[row_idx]
+                    row_length = int(row["length"])
+                    if row_length <= 0:
+                        continue
+
+                    input_ids = row["input_ids"]
+                    last_token = int(input_ids[-1])
+                    eos_extra = 0 if last_token == int(eos_token_id) else 1
+
+                    stream_len = row_length + eos_extra
+                    doc_indices[kept_docs] = int(row_idx)
+                    doc_lengths[kept_docs] = int(row_length)
+                    doc_stream_lengths[kept_docs] = int(stream_len)
+                    offsets[kept_docs + 1] = offsets[kept_docs] + int(stream_len)
+                    total_tokens = int(offsets[kept_docs + 1])
+                    kept_docs += 1
+
+            skipped_empty = num_rows - kept_docs
             tail_tokens = total_tokens % int(sequence_length)
 
             offsets.flush()

@@ -512,6 +512,14 @@ class FabricTrainerBase(ABC):
 
             try:
                 for split_name, split_dataset in self.datasets.items():
+                    split_t0 = time.perf_counter()
+                    self.cli_logger.info(
+                        "Packing index start split=%s sequence_length=%s insert_eos=%s index_cache_dir=%s",
+                        split_name,
+                        sequence_length,
+                        insert_eos,
+                        index_cache_dir,
+                    )
                     indices[split_name] = PackingIndex.load_or_build(
                         hf_split=split_dataset,
                         split=split_name,
@@ -519,6 +527,13 @@ class FabricTrainerBase(ABC):
                         insert_eos=insert_eos,
                         eos_token_id=eos_token_id,
                         cache_dir=index_cache_dir,
+                    )
+                    self.cli_logger.info(
+                        "Packing index ready split=%s blocks=%s elapsed_s=%.2f index_cache_dir=%s",
+                        split_name,
+                        int(indices[split_name].num_blocks),
+                        time.perf_counter() - split_t0,
+                        index_cache_dir,
                     )
             except Exception as exc:
                 payload = {
@@ -699,6 +714,15 @@ class FabricTrainerBase(ABC):
                     build_failed_path.parent.mkdir(parents=True, exist_ok=True)
                     build_failed_path.unlink(missing_ok=True)
                     for split_name in ("train", "valid"):
+                        split_t0 = time.perf_counter()
+                        self.cli_logger.info(
+                            "Mixture index start source=%s split=%s sequence_length=%s insert_eos=%s index_cache_dir=%s",
+                            dataset_id,
+                            split_name,
+                            sequence_length,
+                            insert_eos,
+                            index_cache_dir,
+                        )
                         indices[split_name] = PackingIndex.load_or_build(
                             hf_split=source_dataset[split_name],
                             split=split_name,
@@ -706,6 +730,14 @@ class FabricTrainerBase(ABC):
                             insert_eos=insert_eos,
                             eos_token_id=eos_token_id,
                             cache_dir=index_cache_dir,
+                        )
+                        self.cli_logger.info(
+                            "Mixture index ready source=%s split=%s blocks=%s elapsed_s=%.2f index_cache_dir=%s",
+                            dataset_id,
+                            split_name,
+                            int(indices[split_name].num_blocks),
+                            time.perf_counter() - split_t0,
+                            index_cache_dir,
                         )
                 except Exception as exc:
                     payload = {
