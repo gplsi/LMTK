@@ -19,7 +19,6 @@ from abc import ABC, abstractmethod
 import itertools
 from typing import Any, Mapping, Tuple, Union, Optional
 from box import Box
-from transformers import AutoTokenizer
 import lightning as L
 import os
 
@@ -45,6 +44,11 @@ from src.tasks.training.data.mixture import (
     blake2b_u64,
     resolve_effective_total_blocks,
     resolve_mixture_plan,
+)
+from src.utils.dataset import (
+    TOKENIZATION_METADATA_FILENAME,
+    extract_eos_token_id,
+    read_tokenization_metadata,
 )
 
 MODEL_CLASS_MAP = {
@@ -358,17 +362,90 @@ class FabricTrainerBase(ABC):
 
         if packing.get("eos_token_id", None) is not None:
             return int(packing.eos_token_id)
-        tokenizer_name = packing.get("tokenizer_name", None)
-        if not tokenizer_name:
-            raise ValueError(
-                "Packing insert_eos is enabled but neither packing.eos_token_id nor packing.tokenizer_name was provided."
+
+        sources = self._get_sources_config()
+        if sources:
+            source_eos_by_id = {
+                str(source_cfg.get("dataset_id")): int(source_cfg.get("eos_token_id"))
+                for source_cfg in sources
+                if source_cfg.get("eos_token_id", None) is not None
+            }
+            if source_eos_by_id:
+                unique_source_eos = sorted(set(source_eos_by_id.values()))
+                if len(unique_source_eos) > 1:
+                    raise ValueError(
+                        "Incompatible source eos_token_id values in dataset.sources: "
+                        f"{source_eos_by_id}. Expected all eos_token_id values to match."
+                    )
+                return int(unique_source_eos[0])
+
+            metadata_eos_by_id: dict[str, int] = {}
+            for source_cfg in sources:
+                dataset_id = str(source_cfg.get("dataset_id", "<missing-dataset-id>"))
+                dataset_path = source_cfg.get("nameOrPath", None)
+                if not dataset_path:
+                    raise ValueError(f"Source {dataset_id!r} is missing nameOrPath.")
+                eos = self._read_eos_from_dataset_metadata(
+                    dataset_path=Path(str(dataset_path)),
+                    dataset_label=f"source {dataset_id!r}",
+                )
+                if eos is None:
+                    raise ValueError(
+                        "Packing insert_eos is enabled but eos_token_id could not be resolved for "
+                        f"{dataset_id!r}. Provide dataset.packing.eos_token_id, set "
+                        f"dataset.sources[{dataset_id!r}].eos_token_id, or add "
+                        f"{TOKENIZATION_METADATA_FILENAME} to {dataset_path!r}."
+                    )
+                metadata_eos_by_id[dataset_id] = eos
+
+            unique_metadata_eos = sorted(set(metadata_eos_by_id.values()))
+            if len(unique_metadata_eos) > 1:
+                raise ValueError(
+                    "Incompatible eos_token_id values found in source dataset metadata: "
+                    f"{metadata_eos_by_id}. Expected all sources to share the same eos_token_id."
+                )
+            return int(unique_metadata_eos[0])
+
+        dataset_cfg = getattr(self.config, "dataset", None)
+        dataset_path_value = None
+        if dataset_cfg is not None:
+            dataset_path_value = (
+                dataset_cfg.get("nameOrPath", None)
+                if hasattr(dataset_cfg, "get")
+                else getattr(dataset_cfg, "nameOrPath", None)
             )
-        tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_name), use_fast=True)
-        if tokenizer.eos_token_id is None:
-            raise ValueError(
-                f"Tokenizer {tokenizer_name!r} does not define eos_token_id; provide packing.eos_token_id explicitly."
+        if dataset_path_value:
+            eos_from_metadata = self._read_eos_from_dataset_metadata(
+                dataset_path=Path(str(dataset_path_value)),
+                dataset_label=f"dataset path {dataset_path_value!r}",
             )
-        return int(tokenizer.eos_token_id)
+            if eos_from_metadata is not None:
+                return int(eos_from_metadata)
+
+        raise ValueError(
+            "Packing insert_eos is enabled but eos_token_id could not be resolved without network access. "
+            "Provide dataset.packing.eos_token_id, set dataset.sources[*].eos_token_id, or add "
+            f"{TOKENIZATION_METADATA_FILENAME} to the tokenized dataset path."
+        )
+
+    def _read_eos_from_dataset_metadata(
+        self,
+        *,
+        dataset_path: Path,
+        dataset_label: str,
+    ) -> int | None:
+        metadata = read_tokenization_metadata(dataset_path)
+        if metadata is None:
+            self.cli_logger.debug(
+                "No tokenization metadata found for %s at %s",
+                dataset_label,
+                dataset_path,
+            )
+            return None
+        return extract_eos_token_id(
+            metadata,
+            source_label=f"{dataset_label} metadata ({dataset_path / TOKENIZATION_METADATA_FILENAME})",
+        )
 
     def _build_packing_dataloaders(self, fabric: L.Fabric) -> dict[str, DataLoader]:
         packing = self._get_packing_config()

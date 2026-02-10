@@ -6,9 +6,8 @@ implementation adheres to a common interface, aiding in scalability and maintain
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 import os
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from transformers import PreTrainedTokenizer, AutoTokenizer
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 from src.utils.logging import get_logger
@@ -89,6 +88,26 @@ class BaseTokenizer(ABC):
                 self.logger.debug(f"Added new pad_token: {self._tokenizer.pad_token}")
         else:
             self.logger.debug(f"Tokenizer already has pad_token: {self._tokenizer.pad_token}")
+
+    def get_tokenization_metadata(self, task: str | None = None) -> dict[str, Any]:
+        if self._tokenizer is None:
+            self._initialize_tokenizer()
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer is None after initialization.")
+
+        eos_token_id = getattr(self._tokenizer, "eos_token_id", None)
+        if eos_token_id is None:
+            raise ValueError(
+                "Tokenizer does not define eos_token_id; cannot persist tokenization metadata."
+            )
+
+        payload: dict[str, Any] = {
+            "tokenizer_name": str(self.config.tokenizer_name),
+            "eos_token_id": int(eos_token_id),
+        }
+        if task is not None:
+            payload["task"] = str(task)
+        return payload
         
     @abstractmethod
     def tokenize(self, dataset: Union[str, List[str]]) -> Dict[str, List[int]]:

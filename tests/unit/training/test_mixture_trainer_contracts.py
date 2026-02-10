@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from box import Box
@@ -11,6 +12,7 @@ from datasets import Dataset, DatasetDict
 
 from src.tasks.training.data.mixture import MixturePlan
 from src.tasks.training.fabric.trainer.base import FabricTrainerBase
+from src.utils.dataset import build_tokenization_metadata, write_tokenization_metadata
 
 
 class _NoopLogger:
@@ -66,6 +68,16 @@ def _make_trainer_for_contract_tests() -> _DummyTrainer:
     return trainer
 
 
+def _write_dataset_metadata(dataset_path: Path, eos_token_id: int) -> None:
+    payload = build_tokenization_metadata(
+        tokenizer_name="/models/local-tokenizer",
+        eos_token_id=eos_token_id,
+        task="clm_training",
+        created_by="unit-test",
+    )
+    write_tokenization_metadata(dataset_path, payload)
+
+
 def test_validate_mixture_source_compatibility_rejects_mismatched_tokenizer_name() -> None:
     trainer = _make_trainer_for_contract_tests()
     source_map = {
@@ -93,6 +105,74 @@ def test_validate_mixture_source_compatibility_rejects_packing_tokenizer_mismatc
     }
     with pytest.raises(ValueError, match="dataset.packing.tokenizer_name does not match"):
         trainer._validate_mixture_source_compatibility(source_map)
+
+
+def test_resolve_eos_token_id_uses_packing_value_first() -> None:
+    trainer = _make_trainer_for_contract_tests()
+    eos = trainer._resolve_eos_token_id(trainer.config.dataset.packing)
+    assert eos == 2
+
+
+def test_resolve_eos_token_id_uses_source_eos_when_packing_missing() -> None:
+    trainer = _make_trainer_for_contract_tests()
+    trainer.config.dataset.packing.eos_token_id = None
+    trainer.config.dataset.sources = [
+        {"dataset_id": "A", "nameOrPath": "/tmp/a", "eos_token_id": 7},
+        {"dataset_id": "B", "nameOrPath": "/tmp/b", "eos_token_id": 7},
+    ]
+    eos = trainer._resolve_eos_token_id(trainer.config.dataset.packing)
+    assert eos == 7
+
+
+def test_resolve_eos_token_id_uses_single_dataset_metadata(tmp_path: Path) -> None:
+    trainer = _make_trainer_for_contract_tests()
+    trainer.config.dataset = Box(
+        {
+            "source": "local",
+            "nameOrPath": str(tmp_path),
+            "packing": {
+                "enabled": True,
+                "sequence_length": 8,
+                "tokenizer_name": "tok-a",
+                "eos_token_id": None,
+            },
+        },
+        box_dots=True,
+    )
+    _write_dataset_metadata(tmp_path, eos_token_id=11)
+
+    eos = trainer._resolve_eos_token_id(trainer.config.dataset.packing)
+    assert eos == 11
+
+
+def test_resolve_eos_token_id_rejects_mixture_metadata_mismatch(tmp_path: Path) -> None:
+    trainer = _make_trainer_for_contract_tests()
+    trainer.config.dataset.packing.eos_token_id = None
+
+    ds_a = tmp_path / "A"
+    ds_b = tmp_path / "B"
+    ds_a.mkdir(parents=True, exist_ok=True)
+    ds_b.mkdir(parents=True, exist_ok=True)
+    _write_dataset_metadata(ds_a, eos_token_id=2)
+    _write_dataset_metadata(ds_b, eos_token_id=3)
+
+    trainer.config.dataset.sources = [
+        {"dataset_id": "A", "nameOrPath": str(ds_a)},
+        {"dataset_id": "B", "nameOrPath": str(ds_b)},
+    ]
+
+    with pytest.raises(ValueError, match="Incompatible eos_token_id values found in source dataset metadata"):
+        trainer._resolve_eos_token_id(trainer.config.dataset.packing)
+
+
+def test_resolve_eos_token_id_fails_when_unresolved_without_network() -> None:
+    trainer = _make_trainer_for_contract_tests()
+    trainer.config.dataset.packing.eos_token_id = None
+    trainer.config.dataset.sources = []
+    trainer.config.dataset.nameOrPath = "/tmp/does-not-exist"
+
+    with pytest.raises(ValueError, match="could not be resolved without network access"):
+        trainer._resolve_eos_token_id(trainer.config.dataset.packing)
 
 
 def test_mixture_resume_meta_roundtrip_and_mismatch_fail_fast() -> None:

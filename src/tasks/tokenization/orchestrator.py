@@ -15,7 +15,11 @@ from src.tasks.tokenization.tokenizer import CausalLMTokenizer
 from src.tasks.tokenization.tokenizer.instruction import InstructionTokenizer
 from src.tasks.tokenization.tokenizer.mlm import MaskedLMTokenizer
 from src.utils.logging import VerboseLevel
-from src.utils.dataset import DatasetStorage
+from src.utils.dataset import (
+    DatasetStorage,
+    build_tokenization_metadata,
+    write_tokenization_metadata,
+)
 from src.utils.orchestrator import BaseOrchestrator
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 from utils import inherit_init_params
@@ -135,8 +139,18 @@ class TokenizationOrchestrator(BaseOrchestrator):
         # TODO: add more tasks here like the mlm_training...
         else:
             raise ValueError(f"Unsupported tokenization task: {task}")
-        
-        return tokenizer.tokenize(dataset)
+        tokenized_dataset = tokenizer.tokenize(dataset)
+        self._last_tokenization_metadata = None
+        if task == "clm_training":
+            tokenizer_meta = tokenizer.get_tokenization_metadata(task=task)
+            self._last_tokenization_metadata = build_tokenization_metadata(
+                tokenizer_name=tokenizer_meta["tokenizer_name"],
+                eos_token_id=int(tokenizer_meta["eos_token_id"]),
+                task=tokenizer_meta.get("task", task),
+                created_by="lmtk-tokenization",
+            )
+
+        return tokenized_dataset
 
     def execute(self) -> None:
         """
@@ -168,6 +182,12 @@ class TokenizationOrchestrator(BaseOrchestrator):
 
             # 4. Save results
             self.storage.save_to_disk(tokenized_dataset, self.config.output.path)
+            if getattr(self, "_last_tokenization_metadata", None):
+                metadata_path = write_tokenization_metadata(
+                    self.config.output.path,
+                    self._last_tokenization_metadata,
+                )
+                self.logger.info("Saved tokenization metadata to '%s'", metadata_path)
 
             self.logger.info("Tokenization workflow completed successfully")
 
