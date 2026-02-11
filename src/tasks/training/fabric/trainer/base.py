@@ -21,6 +21,7 @@ from typing import Any, Mapping, Tuple, Union, Optional
 from box import Box
 import lightning as L
 import os
+import shutil
 
 # Import custom utilities
 from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
@@ -243,6 +244,220 @@ class FabricTrainerBase(ABC):
             return Box(packing, box_dots=True)
         raise TypeError(f"Unsupported dataset.packing type: {type(packing)}")
 
+    def _packing_index_lock_timeout_s(self, packing: Box) -> int:
+        value = packing.get("lock_timeout_s", None)
+        if value is None:
+            return 1800
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"dataset.packing.lock_timeout_s must be an integer, got {value!r}.")
+        if parsed <= 0:
+            raise ValueError("dataset.packing.lock_timeout_s must be > 0.")
+        return parsed
+
+    def _packing_index_stale_lock_age_s(self, packing: Box) -> int | None:
+        value = packing.get("stale_lock_age_s", None)
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"dataset.packing.stale_lock_age_s must be an integer, got {value!r}.")
+        if parsed <= 0:
+            raise ValueError("dataset.packing.stale_lock_age_s must be > 0 when set.")
+        return parsed
+
+    def _packing_index_lock_lease_heartbeat_s(self, packing: Box) -> int:
+        value = packing.get("lock_lease_heartbeat_s", None)
+        if value is None:
+            return 30
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"dataset.packing.lock_lease_heartbeat_s must be an integer, got {value!r}.")
+        if parsed <= 0:
+            raise ValueError("dataset.packing.lock_lease_heartbeat_s must be > 0.")
+        return parsed
+
+    def _allow_shared_cache_cleanup(self, packing: Box) -> bool:
+        return bool(packing.get("allow_shared_cache_cleanup", False))
+
+    def _clean_index_cache_on_start(self, packing: Box) -> bool:
+        return bool(packing.get("clean_index_cache_on_start", False))
+
+    def _clean_index_cache_on_success(self, packing: Box) -> bool:
+        return bool(packing.get("clean_index_cache_on_success", False))
+
+    def _read_json_file(self, path: Path) -> dict[str, Any] | None:
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace").strip()
+            if not raw:
+                return None
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                return payload
+        except Exception:
+            return None
+        return None
+
+    def _collect_lock_failure_context(
+        self,
+        *,
+        index_cache_dir: Path,
+        split_name: str | None,
+        lock_timeout_s: int,
+        stale_lock_age_s: int | None,
+        lock_lease_heartbeat_s: int,
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {
+            "lock_timeout_s": int(lock_timeout_s),
+            "stale_lock_age_s": int(stale_lock_age_s) if stale_lock_age_s is not None else None,
+            "lock_lease_heartbeat_s": int(lock_lease_heartbeat_s),
+            "index_cache_dir": str(index_cache_dir),
+            "split": split_name,
+        }
+        if split_name is None:
+            return context
+
+        root = index_cache_dir / f"v{INDEX_VERSION}" / str(split_name)
+        lock_path = root / "LOCK"
+        lease_path = root / "LEASE.json"
+        context["lock_path"] = str(lock_path)
+        context["lease_path"] = str(lease_path)
+        context["lock_payload"] = self._read_json_file(lock_path)
+        lease_payload = self._read_json_file(lease_path)
+        context["lease_payload"] = lease_payload
+
+        lease_updated = None
+        lease_age = None
+        if isinstance(lease_payload, dict):
+            candidate = lease_payload.get("updated_at_unix", lease_payload.get("created_at_unix", None))
+            try:
+                lease_updated = float(candidate) if candidate is not None else None
+            except Exception:
+                lease_updated = None
+            if lease_updated is not None:
+                lease_age = max(0.0, time.time() - lease_updated)
+        context["lease_updated_at_unix"] = lease_updated
+        context["lease_age_s"] = lease_age
+        return context
+
+    def _validate_packing_lock_timings(
+        self,
+        *,
+        lock_timeout_s: int,
+        stale_lock_age_s: int | None,
+        lock_lease_heartbeat_s: int,
+    ) -> None:
+        if lock_timeout_s <= 0:
+            raise ValueError("dataset.packing.lock_timeout_s must be > 0.")
+        if lock_lease_heartbeat_s <= 0:
+            raise ValueError("dataset.packing.lock_lease_heartbeat_s must be > 0.")
+        if stale_lock_age_s is not None and stale_lock_age_s <= lock_lease_heartbeat_s:
+            raise ValueError(
+                "dataset.packing.stale_lock_age_s must be greater than dataset.packing.lock_lease_heartbeat_s "
+                "to avoid breaking active builders."
+            )
+
+    def _is_run_scoped_index_cache_dir(self, index_cache_dir: Path) -> bool:
+        output_dir_value = self.config.get("output_dir", None)
+        if output_dir_value is None:
+            return False
+        try:
+            output_dir = Path(str(output_dir_value)).resolve()
+            cache_dir = index_cache_dir.resolve()
+        except Exception:
+            return False
+        return cache_dir == output_dir or output_dir in cache_dir.parents
+
+    def _maybe_clean_index_cache_version_dir(
+        self,
+        fabric: L.Fabric,
+        index_cache_dir: Path,
+        *,
+        packing: Box,
+        trigger: str,
+    ) -> None:
+        if fabric.global_rank != 0:
+            return
+
+        if not self._is_run_scoped_index_cache_dir(index_cache_dir) and not self._allow_shared_cache_cleanup(packing):
+            self.cli_logger.warning(
+                "Skipping packing index cache cleanup (%s) for shared cache dir %s. "
+                "Set dataset.packing.allow_shared_cache_cleanup=true to override.",
+                trigger,
+                index_cache_dir,
+            )
+            return
+
+        version_dir = index_cache_dir / f"v{INDEX_VERSION}"
+        if not version_dir.exists():
+            return
+        active_locks = [path for path in version_dir.rglob("LOCK") if path.exists()]
+        if active_locks:
+            self.cli_logger.warning(
+                "Skipping packing index cache cleanup (%s) for %s because active lock files exist: %s",
+                trigger,
+                version_dir,
+                [str(path) for path in active_locks],
+            )
+            return
+        try:
+            shutil.rmtree(version_dir)
+            self.cli_logger.info("Removed packing index cache version dir %s", version_dir)
+        except Exception as exc:
+            self.cli_logger.warning(
+                "Failed to remove packing index cache version dir %s: %s",
+                version_dir,
+                str(exc),
+            )
+
+    def _cleanup_index_caches_on_success(self, fabric: L.Fabric, packing: Box) -> None:
+        if not self._clean_index_cache_on_success(packing):
+            return
+        fabric.barrier()
+        if fabric.global_rank != 0:
+            return
+
+        cache_dirs: set[Path] = set()
+        if self._mixture_enabled:
+            for dataset_id in sorted(self._mixture_source_configs):
+                source_cfg = self._mixture_source_configs[dataset_id]
+                dataset_path_value = source_cfg.get("nameOrPath", None)
+                if not dataset_path_value:
+                    continue
+                dataset_path = Path(str(dataset_path_value))
+                index_cache_dir_value = source_cfg.get("index_cache_dir", None)
+                index_cache_dir = (
+                    Path(str(index_cache_dir_value)) if index_cache_dir_value else (dataset_path / ".packing_index")
+                )
+                cache_dirs.add(index_cache_dir)
+        else:
+            dataset_cfg = getattr(self.config, "dataset", None)
+            dataset_path_value = None
+            if dataset_cfg is not None:
+                dataset_path_value = (
+                    dataset_cfg.get("nameOrPath", None)
+                    if hasattr(dataset_cfg, "get")
+                    else getattr(dataset_cfg, "nameOrPath", None)
+                )
+            if dataset_path_value:
+                dataset_path = Path(str(dataset_path_value))
+                index_cache_dir_value = packing.get("index_cache_dir", None)
+                index_cache_dir = (
+                    Path(str(index_cache_dir_value)) if index_cache_dir_value else (dataset_path / ".packing_index")
+                )
+                cache_dirs.add(index_cache_dir)
+
+        for index_cache_dir in sorted(cache_dirs):
+            self._maybe_clean_index_cache_version_dir(
+                fabric,
+                index_cache_dir,
+                packing=packing,
+                trigger="success",
+            )
+
     def _is_packing_enabled(self) -> bool:
         packing = self._get_packing_config()
         return bool(packing and packing.get("enabled", False))
@@ -451,6 +666,14 @@ class FabricTrainerBase(ABC):
         packing = self._get_packing_config()
         if not packing or not packing.get("enabled", False):
             raise RuntimeError("_build_packing_dataloaders called but packing is not enabled.")
+        lock_timeout_s = self._packing_index_lock_timeout_s(packing)
+        stale_lock_age_s = self._packing_index_stale_lock_age_s(packing)
+        lock_lease_heartbeat_s = self._packing_index_lock_lease_heartbeat_s(packing)
+        self._validate_packing_lock_timings(
+            lock_timeout_s=lock_timeout_s,
+            stale_lock_age_s=stale_lock_age_s,
+            lock_lease_heartbeat_s=lock_lease_heartbeat_s,
+        )
 
         sequence_length = packing.get("sequence_length", None)
         if sequence_length is None:
@@ -478,6 +701,13 @@ class FabricTrainerBase(ABC):
 
         index_cache_dir_value = packing.get("index_cache_dir", None)
         index_cache_dir = Path(str(index_cache_dir_value)) if index_cache_dir_value else (dataset_path / ".packing_index")
+        if self._clean_index_cache_on_start(packing):
+            self._maybe_clean_index_cache_version_dir(
+                fabric,
+                index_cache_dir,
+                packing=packing,
+                trigger="start",
+            )
 
         slurm_nnodes = os.getenv("SLURM_NNODES")
         if slurm_nnodes is not None:
@@ -510,8 +740,10 @@ class FabricTrainerBase(ABC):
             except Exception:
                 pass
 
+            active_split_name: str | None = None
             try:
                 for split_name, split_dataset in self.datasets.items():
+                    active_split_name = split_name
                     split_t0 = time.perf_counter()
                     self.cli_logger.info(
                         "Packing index start split=%s sequence_length=%s insert_eos=%s index_cache_dir=%s",
@@ -527,12 +759,16 @@ class FabricTrainerBase(ABC):
                         insert_eos=insert_eos,
                         eos_token_id=eos_token_id,
                         cache_dir=index_cache_dir,
+                        lock_timeout_s=lock_timeout_s,
+                        stale_lock_age_s=stale_lock_age_s,
+                        lock_lease_heartbeat_s=lock_lease_heartbeat_s,
                     )
                     self.cli_logger.info(
-                        "Packing index ready split=%s blocks=%s elapsed_s=%.2f index_cache_dir=%s",
+                        "Packing index ready split=%s blocks=%s elapsed_s=%.2f cache_hit=%s index_cache_dir=%s",
                         split_name,
                         int(indices[split_name].num_blocks),
                         time.perf_counter() - split_t0,
+                        bool(getattr(indices[split_name], "cache_hit", False)),
                         index_cache_dir,
                     )
             except Exception as exc:
@@ -543,6 +779,14 @@ class FabricTrainerBase(ABC):
                     "pid": os.getpid(),
                     "host": os.getenv("SLURMD_NODENAME") or os.uname().nodename,
                 }
+                if isinstance(exc, TimeoutError):
+                    payload["lock_context"] = self._collect_lock_failure_context(
+                        index_cache_dir=index_cache_dir,
+                        split_name=active_split_name,
+                        lock_timeout_s=lock_timeout_s,
+                        stale_lock_age_s=stale_lock_age_s,
+                        lock_lease_heartbeat_s=lock_lease_heartbeat_s,
+                    )
                 try:
                     build_failed_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
                 except Exception:
@@ -570,6 +814,9 @@ class FabricTrainerBase(ABC):
                     eos_token_id=eos_token_id,
                     cache_dir=index_cache_dir,
                     allow_build=False,
+                    lock_timeout_s=lock_timeout_s,
+                    stale_lock_age_s=None,
+                    lock_lease_heartbeat_s=lock_lease_heartbeat_s,
                 )
 
         dataloaders: dict[str, DataLoader] = {}
@@ -637,6 +884,14 @@ class FabricTrainerBase(ABC):
             raise RuntimeError("_build_mixture_packing_dataloaders called but packing is not enabled.")
         if not mixture or not mixture.get("enabled", False):
             raise RuntimeError("_build_mixture_packing_dataloaders called but mixture is not enabled.")
+        lock_timeout_s = self._packing_index_lock_timeout_s(packing)
+        stale_lock_age_s = self._packing_index_stale_lock_age_s(packing)
+        lock_lease_heartbeat_s = self._packing_index_lock_lease_heartbeat_s(packing)
+        self._validate_packing_lock_timings(
+            lock_timeout_s=lock_timeout_s,
+            stale_lock_age_s=stale_lock_age_s,
+            lock_lease_heartbeat_s=lock_lease_heartbeat_s,
+        )
 
         sequence_length = packing.get("sequence_length", None)
         if sequence_length is None:
@@ -693,6 +948,13 @@ class FabricTrainerBase(ABC):
 
             index_cache_dir_value = source_cfg.get("index_cache_dir", None)
             index_cache_dir = Path(str(index_cache_dir_value)) if index_cache_dir_value else (dataset_path / ".packing_index")
+            if self._clean_index_cache_on_start(packing):
+                self._maybe_clean_index_cache_version_dir(
+                    fabric,
+                    index_cache_dir,
+                    packing=packing,
+                    trigger="start",
+                )
 
             if nnodes > 1:
                 for path in (dataset_path, index_cache_dir):
@@ -710,10 +972,12 @@ class FabricTrainerBase(ABC):
             indices: dict[str, PackingIndex] = {}
             build_failed_path = index_cache_dir / f"v{INDEX_VERSION}" / "BUILD_FAILED.json"
             if fabric.global_rank == 0:
+                active_split_name: str | None = None
                 try:
                     build_failed_path.parent.mkdir(parents=True, exist_ok=True)
                     build_failed_path.unlink(missing_ok=True)
                     for split_name in ("train", "valid"):
+                        active_split_name = split_name
                         split_t0 = time.perf_counter()
                         self.cli_logger.info(
                             "Mixture index start source=%s split=%s sequence_length=%s insert_eos=%s index_cache_dir=%s",
@@ -730,13 +994,17 @@ class FabricTrainerBase(ABC):
                             insert_eos=insert_eos,
                             eos_token_id=eos_token_id,
                             cache_dir=index_cache_dir,
+                            lock_timeout_s=lock_timeout_s,
+                            stale_lock_age_s=stale_lock_age_s,
+                            lock_lease_heartbeat_s=lock_lease_heartbeat_s,
                         )
                         self.cli_logger.info(
-                            "Mixture index ready source=%s split=%s blocks=%s elapsed_s=%.2f index_cache_dir=%s",
+                            "Mixture index ready source=%s split=%s blocks=%s elapsed_s=%.2f cache_hit=%s index_cache_dir=%s",
                             dataset_id,
                             split_name,
                             int(indices[split_name].num_blocks),
                             time.perf_counter() - split_t0,
+                            bool(getattr(indices[split_name], "cache_hit", False)),
                             index_cache_dir,
                         )
                 except Exception as exc:
@@ -748,6 +1016,14 @@ class FabricTrainerBase(ABC):
                         "pid": os.getpid(),
                         "host": os.getenv("SLURMD_NODENAME") or os.uname().nodename,
                     }
+                    if isinstance(exc, TimeoutError):
+                        payload["lock_context"] = self._collect_lock_failure_context(
+                            index_cache_dir=index_cache_dir,
+                            split_name=active_split_name,
+                            lock_timeout_s=lock_timeout_s,
+                            stale_lock_age_s=stale_lock_age_s,
+                            lock_lease_heartbeat_s=lock_lease_heartbeat_s,
+                        )
                     try:
                         build_failed_path.parent.mkdir(parents=True, exist_ok=True)
                     except Exception:
@@ -778,6 +1054,9 @@ class FabricTrainerBase(ABC):
                         eos_token_id=eos_token_id,
                         cache_dir=index_cache_dir,
                         allow_build=False,
+                        lock_timeout_s=lock_timeout_s,
+                        stale_lock_age_s=None,
+                        lock_lease_heartbeat_s=lock_lease_heartbeat_s,
                     )
 
             train_packed = PackedSequenceDataset(
@@ -2393,13 +2672,20 @@ class FabricTrainerBase(ABC):
         Parameters:
         - fabric (L.Fabric): The Fabric instance coordinating distributed training.
         """
+        packing = self._get_packing_config()
+        cleanup_on_success = bool(packing and self._clean_index_cache_on_success(packing))
         # DETERMINISTIC RESULTS
         if self.config.get("seed", None) is not None:
             deterministic(self.config.seed)
             fabric.seed_everything(self.config.seed)
 
         # MONITORING
-        self.monitor = Monitor(fabric, window_size=2, time_unit="seconds", log_iter_interval=self.config.get("log_iter_interval", 100))
+        self.monitor = Monitor(
+            fabric,
+            window_size=2,
+            time_unit="seconds",
+            log_iter_interval=self.config.get("log_iter_interval", 100),
+        )
 
         # OUTPUT DIR AND SYNC
         if fabric.global_rank == 0:
@@ -2564,3 +2850,6 @@ class FabricTrainerBase(ABC):
         self.cli_logger.info(f"Training time: {(time.perf_counter() - train_time):.2f}s")
         if fabric.device.type == "cuda":
             self.cli_logger.info(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
+
+        if cleanup_on_success and packing is not None:
+            self._cleanup_index_caches_on_success(fabric, packing)

@@ -76,6 +76,12 @@ dataset:
     enabled: true
     sequence_length: 8192
     tokenizer_name: "BSC-LT/salamandra-2b"
+    lock_timeout_s: 1800
+    stale_lock_age_s: 600
+    lock_lease_heartbeat_s: 30
+    clean_index_cache_on_start: false
+    clean_index_cache_on_success: true
+    allow_shared_cache_cleanup: false
     shuffle: true
     sampler_drop_last: true
     drop_last_batch: true
@@ -124,4 +130,3 @@ parallelization_config:
 
 # Logging: always writes CSV logs; set logging_config: wandb to enable WandB
 log_iter_interval: 10
-

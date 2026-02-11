@@ -109,6 +109,30 @@ properties:
           index_cache_dir:
             type: [string, "null"]
             description: "Optional directory to store/reuse the persisted packing index. Defaults in code to <dataset.nameOrPath>/.packing_index."
+          lock_timeout_s:
+            type: [integer, "null"]
+            minimum: 1
+            description: "Seconds to wait for the per-split packing index LOCK before failing. Defaults in code to 1800."
+          stale_lock_age_s:
+            type: [integer, "null"]
+            minimum: 1
+            description: "If set, a lock lease with no heartbeat update for this many seconds is treated as stale and removed before retrying. Default null (never auto-break)."
+          lock_lease_heartbeat_s:
+            type: [integer, "null"]
+            minimum: 1
+            description: "Seconds between lock lease heartbeats while building an index. Defaults in code to 30."
+          clean_index_cache_on_start:
+            type: boolean
+            default: false
+            description: "If true, removes <index_cache_dir>/v<version>/ before building so indexes are rebuilt from scratch."
+          clean_index_cache_on_success:
+            type: boolean
+            default: false
+            description: "If true, removes <index_cache_dir>/v<version>/ after successful training to avoid disk bloat."
+          allow_shared_cache_cleanup:
+            type: boolean
+            default: false
+            description: "If true, allows cleanup of cache dirs outside output_dir (shared caches). Use with caution when multiple jobs may run concurrently."
         additionalProperties: false
     allOf:
       - oneOf:

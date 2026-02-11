@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import socket
 import time
@@ -13,6 +14,7 @@ import numpy as np
 
 
 INDEX_VERSION = 1
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,7 @@ class PackingIndex:
     ) -> None:
         self.meta = meta
         self.stats = stats
+        self.cache_hit = False
 
         kept = int(meta.kept_docs)
         self.offsets = offsets[: kept + 1]
@@ -99,6 +102,7 @@ class PackingIndex:
         return {
             "meta": root / "meta.json",
             "lock": root / "LOCK",
+            "lease": root / "LEASE.json",
             "offsets": root / "offsets.int64",
             "doc_indices": root / "doc_indices.int64",
             "doc_lengths": root / "doc_lengths.int32",
@@ -117,14 +121,118 @@ class PackingIndex:
         os.replace(tmp, path)
 
     @staticmethod
+    def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+
+    @staticmethod
+    def _read_lease_updated_at(lease_path: Path) -> Optional[float]:
+        try:
+            raw = lease_path.read_text(encoding="utf-8", errors="replace").strip()
+            if not raw:
+                return None
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                return None
+            updated_at = payload.get("updated_at_unix", None)
+            if updated_at is not None:
+                return float(updated_at)
+            created_at = payload.get("created_at_unix", None)
+            if created_at is not None:
+                return float(created_at)
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _read_json_file(path: Path) -> Optional[dict[str, Any]]:
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace").strip()
+            if not raw:
+                return None
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                return payload
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _build_lock_diagnostics(
+        *,
+        lock_path: Path,
+        lease_path: Path | None,
+        stale_lock_age_s: int | None,
+        timeout_s: int,
+    ) -> dict[str, Any]:
+        now = time.time()
+        diagnostics: dict[str, Any] = {
+            "lock_path": str(lock_path),
+            "lease_path": str(lease_path) if lease_path is not None else None,
+            "timeout_s": int(timeout_s),
+            "stale_lock_age_s": (int(stale_lock_age_s) if stale_lock_age_s is not None else None),
+        }
+        lock_payload = PackingIndex._read_json_file(lock_path)
+        if lock_payload is not None:
+            diagnostics["lock_payload"] = lock_payload
+
+        lease_payload = PackingIndex._read_json_file(lease_path) if lease_path is not None else None
+        if lease_payload is not None:
+            diagnostics["lease_payload"] = lease_payload
+            updated = lease_payload.get("updated_at_unix", lease_payload.get("created_at_unix", None))
+            try:
+                updated_f = float(updated) if updated is not None else None
+            except Exception:
+                updated_f = None
+            diagnostics["lease_updated_at_unix"] = updated_f
+            diagnostics["lease_age_s"] = (now - updated_f) if updated_f is not None else None
+            diagnostics["lease_owner_host"] = lease_payload.get("owner_host", None)
+            diagnostics["lease_owner_pid"] = lease_payload.get("owner_pid", None)
+        else:
+            diagnostics["lease_payload"] = None
+            diagnostics["lease_updated_at_unix"] = None
+            diagnostics["lease_age_s"] = None
+            diagnostics["lease_owner_host"] = None
+            diagnostics["lease_owner_pid"] = None
+
+        return diagnostics
+
+    @staticmethod
+    def _refresh_lease(lease_path: Path, *, seed_payload: dict[str, Any] | None = None) -> None:
+        now = time.time()
+        payload: dict[str, Any] = {}
+        if seed_payload:
+            payload.update(seed_payload)
+        try:
+            existing_raw = lease_path.read_text(encoding="utf-8", errors="replace").strip()
+            if existing_raw:
+                existing = json.loads(existing_raw)
+                if isinstance(existing, dict):
+                    payload.update(existing)
+        except Exception:
+            pass
+        payload.setdefault("owner_pid", os.getpid())
+        payload.setdefault("owner_host", socket.gethostname())
+        payload.setdefault("created_at_unix", now)
+        payload["updated_at_unix"] = now
+        PackingIndex._write_json_atomic(lease_path, payload)
+
+    @staticmethod
     def _acquire_lock(
         lock_path: Path,
         *,
         timeout_s: int = 1800,
         poll_s: float = 0.5,
         lock_payload: dict[str, Any] | None = None,
+        stale_lock_age_s: int | None = None,
+        lease_path: Path | None = None,
+        allow_stale_lock_break: bool = True,
     ) -> int:
         deadline = time.time() + timeout_s
+        wait_started = time.time()
+        next_wait_log_at = wait_started
+        wait_logged_once = False
         while True:
             try:
                 fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
@@ -140,32 +248,166 @@ class PackingIndex:
                     except Exception:
                         # Best-effort: the lock itself is the safety mechanism.
                         pass
+                if lease_path is not None:
+                    try:
+                        cls_payload = dict(lock_payload or {})
+                        PackingIndex._refresh_lease(lease_path, seed_payload=cls_payload)
+                    except Exception:
+                        pass
                 return fd
             except FileExistsError:
-                if time.time() > deadline:
-                    lock_contents = None
-                    try:
-                        lock_contents = lock_path.read_text(encoding="utf-8", errors="replace").strip()
-                    except Exception:
-                        lock_contents = None
+                now = time.time()
+                if not wait_logged_once or now >= next_wait_log_at:
+                    diagnostics = PackingIndex._build_lock_diagnostics(
+                        lock_path=lock_path,
+                        lease_path=lease_path,
+                        stale_lock_age_s=stale_lock_age_s,
+                        timeout_s=timeout_s,
+                    )
+                    LOGGER.info(
+                        "Waiting for packing index lock: lock_path=%s wait_elapsed_s=%.1f timeout_s=%s "
+                        "stale_lock_age_s=%s lease_age_s=%s lease_owner_host=%s lease_owner_pid=%s",
+                        diagnostics["lock_path"],
+                        now - wait_started,
+                        diagnostics["timeout_s"],
+                        diagnostics["stale_lock_age_s"],
+                        diagnostics["lease_age_s"],
+                        diagnostics["lease_owner_host"],
+                        diagnostics["lease_owner_pid"],
+                    )
+                    wait_logged_once = True
+                    next_wait_log_at = now + 30.0
 
+                if allow_stale_lock_break and stale_lock_age_s is not None and int(stale_lock_age_s) > 0:
+                    created_at = None
+                    if lease_path is not None:
+                        created_at = PackingIndex._read_lease_updated_at(lease_path)
+
+                    if created_at is None:
+                        try:
+                            created_at = float(lock_path.stat().st_mtime)
+                        except Exception:
+                            created_at = None
+
+                    if created_at is not None and (now - created_at) >= float(stale_lock_age_s):
+                        # Re-read once to avoid racing with a freshly heartbeating builder.
+                        time.sleep(min(poll_s, 0.2))
+                        now_verify = time.time()
+                        verify_ts = (
+                            PackingIndex._read_lease_updated_at(lease_path)
+                            if lease_path is not None
+                            else None
+                        )
+                        if verify_ts is None:
+                            try:
+                                verify_ts = float(lock_path.stat().st_mtime)
+                            except Exception:
+                                verify_ts = None
+                        if verify_ts is not None and (now_verify - verify_ts) < float(stale_lock_age_s):
+                            continue
+
+                        diagnostics = PackingIndex._build_lock_diagnostics(
+                            lock_path=lock_path,
+                            lease_path=lease_path,
+                            stale_lock_age_s=stale_lock_age_s,
+                            timeout_s=timeout_s,
+                        )
+                        LOGGER.info(
+                            "Breaking stale packing index lock: lock_path=%s lease_age_s=%s stale_lock_age_s=%s "
+                            "lease_owner_host=%s lease_owner_pid=%s",
+                            diagnostics["lock_path"],
+                            diagnostics["lease_age_s"],
+                            diagnostics["stale_lock_age_s"],
+                            diagnostics["lease_owner_host"],
+                            diagnostics["lease_owner_pid"],
+                        )
+                        try:
+                            lock_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        if lease_path is not None:
+                            try:
+                                lease_path.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                        continue
+
+                if time.time() > deadline:
+                    diagnostics = PackingIndex._build_lock_diagnostics(
+                        lock_path=lock_path,
+                        lease_path=lease_path,
+                        stale_lock_age_s=stale_lock_age_s,
+                        timeout_s=timeout_s,
+                    )
+                    lock_contents = None
+                    if diagnostics.get("lock_payload", None) is not None:
+                        lock_contents = json.dumps(diagnostics["lock_payload"], sort_keys=True)
                     details = f" Existing LOCK contents: {lock_contents}" if lock_contents else ""
+                    owner_details = ""
+                    if diagnostics.get("lease_owner_host", None) is not None or diagnostics.get("lease_owner_pid", None) is not None:
+                        owner_details = (
+                            f" Lease owner host={diagnostics.get('lease_owner_host', None)!r} "
+                            f"pid={diagnostics.get('lease_owner_pid', None)!r}."
+                        )
+                    age_details = ""
+                    if diagnostics.get("lease_age_s", None) is not None:
+                        age_details = (
+                            f" Lease age={float(diagnostics['lease_age_s']):.1f}s "
+                            f"(stale threshold={diagnostics.get('stale_lock_age_s', None)!r})."
+                        )
+                    LOGGER.info(
+                        "Packing index lock timeout: lock_path=%s wait_elapsed_s=%.1f timeout_s=%s stale_lock_age_s=%s "
+                        "lease_age_s=%s lease_owner_host=%s lease_owner_pid=%s",
+                        diagnostics["lock_path"],
+                        time.time() - wait_started,
+                        diagnostics["timeout_s"],
+                        diagnostics["stale_lock_age_s"],
+                        diagnostics["lease_age_s"],
+                        diagnostics["lease_owner_host"],
+                        diagnostics["lease_owner_pid"],
+                    )
                     raise TimeoutError(
-                        f"Timed out waiting for packing index lock at {lock_path}.{details} "
+                        f"Timed out waiting for packing index lock at {lock_path}.{details}{owner_details}{age_details} "
+                        f"timeout_s={int(timeout_s)} stale_lock_age_s={int(stale_lock_age_s) if stale_lock_age_s is not None else None}. "
                         "If you are sure no training job is running, delete the LOCK file and retry."
                     )
                 time.sleep(poll_s)
 
     @staticmethod
-    def _release_lock(fd: int, lock_path: Path) -> None:
+    def _release_lock(fd: int, lock_path: Path, *, lease_path: Path | None = None) -> None:
+        held_dev = None
+        held_ino = None
+        try:
+            stat_result = os.fstat(fd)
+            held_dev = int(stat_result.st_dev)
+            held_ino = int(stat_result.st_ino)
+        except Exception:
+            held_dev = None
+            held_ino = None
+
         try:
             os.close(fd)
         finally:
+            should_unlink = False
             try:
-                lock_path.unlink(missing_ok=True)
+                current_stat = os.stat(lock_path)
+                if held_dev is not None and held_ino is not None:
+                    should_unlink = (
+                        int(current_stat.st_dev) == held_dev and int(current_stat.st_ino) == held_ino
+                    )
             except Exception:
-                # Best-effort; stale locks are handled by timeouts and user intervention.
-                pass
+                should_unlink = False
+
+            if should_unlink:
+                try:
+                    lock_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if lease_path is not None:
+                    try:
+                        lease_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
     @classmethod
     def load_or_build(
@@ -179,11 +421,20 @@ class PackingIndex:
         cache_dir: Path,
         length_sample_validation: int = 256,
         allow_build: bool = True,
+        lock_timeout_s: int = 1800,
+        stale_lock_age_s: int | None = None,
+        lock_lease_heartbeat_s: int = 30,
     ) -> "PackingIndex":
         if int(sequence_length) <= 0:
             raise ValueError("sequence_length must be a positive integer.")
         if insert_eos and eos_token_id is None:
             raise ValueError("insert_eos is true but eos_token_id is None.")
+        if int(lock_timeout_s) <= 0:
+            raise ValueError("lock_timeout_s must be a positive integer.")
+        if stale_lock_age_s is not None and int(stale_lock_age_s) <= 0:
+            raise ValueError("stale_lock_age_s must be a positive integer when set.")
+        if int(lock_lease_heartbeat_s) <= 0:
+            raise ValueError("lock_lease_heartbeat_s must be a positive integer.")
         if not hasattr(hf_split, "column_names"):
             raise TypeError("hf_split must be a Hugging Face Dataset split (has column_names).")
         if "input_ids" not in hf_split.column_names:
@@ -225,7 +476,7 @@ class PackingIndex:
             total_tokens = int(offsets[int(meta.kept_docs)])
             tail = total_tokens % int(meta.sequence_length)
             stats = PackingIndexStats(skipped_empty_docs=expected_rows - int(meta.kept_docs), tail_tokens_dropped=tail)
-            return cls(
+            idx = cls(
                 meta=meta,
                 stats=stats,
                 offsets=offsets,
@@ -233,6 +484,8 @@ class PackingIndex:
                 doc_lengths=doc_lengths,
                 doc_stream_lengths=doc_stream_lengths,
             )
+            idx.cache_hit = True
+            return idx
 
         if p["meta"].exists():
             try:
@@ -250,6 +503,7 @@ class PackingIndex:
 
         lock_fd = cls._acquire_lock(
             p["lock"],
+            timeout_s=int(lock_timeout_s),
             lock_payload={
                 "index_version": INDEX_VERSION,
                 "split": str(split),
@@ -258,14 +512,33 @@ class PackingIndex:
                 "eos_token_id": int(eos_token_id) if eos_token_id is not None else None,
                 "cache_dir": str(cache_dir),
             },
+            stale_lock_age_s=int(stale_lock_age_s) if stale_lock_age_s is not None else None,
+            lease_path=p["lease"],
+            allow_stale_lock_break=bool(stale_lock_age_s is not None),
         )
         try:
+            heartbeat_period_s = int(lock_lease_heartbeat_s)
+            next_heartbeat_at = time.time()
+
+            def maybe_heartbeat(force: bool = False) -> None:
+                nonlocal next_heartbeat_at
+                now = time.time()
+                if force or now >= next_heartbeat_at:
+                    try:
+                        cls._refresh_lease(p["lease"])
+                    except Exception:
+                        pass
+                    next_heartbeat_at = now + float(heartbeat_period_s)
+
+            maybe_heartbeat(force=True)
+
             if p["meta"].exists():
                 try:
                     meta = cls._read_meta(p["meta"])
                 except Exception:
                     meta = None
                 if meta is not None and meta_matches(meta):
+                    maybe_heartbeat(force=True)
                     return load_existing(meta)
 
             offsets = np.memmap(p["offsets"], dtype=np.int64, mode="w+", shape=(num_rows + 1,))
@@ -328,6 +601,7 @@ class PackingIndex:
             if not insert_eos or used_ends_with_eos:
                 row_cursor = 0
                 for batch in _iter_column_batches():
+                    maybe_heartbeat()
                     lengths = batch["length"]
                     count = int(lengths.size)
                     if count <= 0:
@@ -369,6 +643,8 @@ class PackingIndex:
             else:
                 # Fallback path for datasets without `ends_with_eos`: requires per-row `input_ids[-1]`.
                 for row_idx in range(num_rows):
+                    if row_idx % 1024 == 0:
+                        maybe_heartbeat()
                     row = hf_split[row_idx]
                     row_length = int(row["length"])
                     if row_length <= 0:
@@ -393,6 +669,7 @@ class PackingIndex:
             doc_indices.flush()
             doc_lengths.flush()
             doc_stream_lengths.flush()
+            maybe_heartbeat(force=True)
 
             meta = PackingIndexMeta(
                 version=INDEX_VERSION,
@@ -417,4 +694,4 @@ class PackingIndex:
                 doc_stream_lengths=doc_stream_lengths,
             )
         finally:
-            cls._release_lock(lock_fd, p["lock"])
+            cls._release_lock(lock_fd, p["lock"], lease_path=p["lease"])
