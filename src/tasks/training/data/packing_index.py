@@ -2,19 +2,34 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing as mp
 import os
+import signal
 import socket
 import time
+import traceback
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from queue import Empty
+from typing import Any, Callable, Iterator, Optional
 
 import numpy as np
+import psutil
 
 
 INDEX_VERSION = 1
 LOGGER = logging.getLogger(__name__)
+PROGRESS_EMIT_ROWS = 100_000
+PROGRESS_EMIT_SECONDS = 10.0
+PROGRESS_LOG_SECONDS = 30.0
+SUBPROCESS_POLL_SECONDS = 2.0
+
+
+class PackingIndexBuildError(RuntimeError):
+    def __init__(self, message: str, *, failure_context: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.failure_context = failure_context or {}
 
 
 @dataclass(frozen=True)
@@ -409,6 +424,426 @@ class PackingIndex:
                     except Exception:
                         pass
 
+    @staticmethod
+    def _safe_rss_bytes() -> int | None:
+        try:
+            return int(psutil.Process(os.getpid()).memory_info().rss)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _looks_like_oom(*, exitcode: int | None, failure_event: dict[str, Any] | None) -> bool:
+        if exitcode in (-int(signal.SIGKILL), 137):
+            return True
+        if not failure_event:
+            return False
+        if str(failure_event.get("error_type", "")) == "MemoryError":
+            return True
+        text = f"{failure_event.get('error', '')}\n{failure_event.get('traceback', '')}".lower()
+        return ("out of memory" in text) or ("oom" in text)
+
+    @classmethod
+    def _log_progress_event(
+        cls,
+        *,
+        progress_event: dict[str, Any],
+        cache_dir: Path,
+        force: bool = False,
+    ) -> None:
+        should_log = bool(force) or bool(progress_event.get("log_now", False))
+        if not should_log:
+            return
+        rows_total = int(progress_event.get("rows_total", 0))
+        rows_processed = int(progress_event.get("rows_processed", 0))
+        elapsed_s = float(progress_event.get("elapsed_s", 0.0))
+        rows_per_s = (rows_processed / elapsed_s) if elapsed_s > 0 else 0.0
+        pct = (100.0 * rows_processed / rows_total) if rows_total > 0 else 0.0
+        eta_s = ((rows_total - rows_processed) / rows_per_s) if rows_total > rows_processed and rows_per_s > 0 else None
+        rss_bytes = progress_event.get("rss_bytes", None)
+        rss_gb = (float(rss_bytes) / (1024 ** 3)) if rss_bytes is not None else None
+        LOGGER.info(
+            "Packing index progress split=%s rows=%s/%s pct=%.2f kept_docs=%s total_tokens=%s "
+            "elapsed_s=%.1f rows_per_s=%.1f eta_s=%s rss_gb=%s index_cache_dir=%s",
+            progress_event.get("split", None),
+            rows_processed,
+            rows_total,
+            pct,
+            int(progress_event.get("kept_docs", 0)),
+            int(progress_event.get("total_tokens", 0)),
+            elapsed_s,
+            rows_per_s,
+            (f"{eta_s:.1f}" if eta_s is not None else None),
+            (f"{rss_gb:.2f}" if rss_gb is not None else None),
+            cache_dir,
+        )
+
+    @classmethod
+    def _build_index_artifacts(
+        cls,
+        *,
+        hf_split: Any,
+        split: str,
+        sequence_length: int,
+        insert_eos: bool,
+        eos_token_id: int | None,
+        p: dict[str, Path],
+        dataset_fingerprint: str | None,
+        num_rows: int,
+        used_ends_with_eos: bool,
+        length_sample_validation: int,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        build_t0 = time.perf_counter()
+        last_emit_rows = -1
+        last_emit_ts = 0.0
+
+        def emit_progress(*, rows_processed: int, kept_docs: int, total_tokens: int, force: bool = False) -> None:
+            nonlocal last_emit_rows, last_emit_ts
+            if progress_callback is None:
+                return
+            now = time.perf_counter()
+            if not force:
+                rows_delta = rows_processed - last_emit_rows
+                if rows_delta < PROGRESS_EMIT_ROWS and (now - last_emit_ts) < PROGRESS_EMIT_SECONDS:
+                    return
+            payload = {
+                "event": "progress",
+                "split": str(split),
+                "rows_processed": int(rows_processed),
+                "rows_total": int(num_rows),
+                "kept_docs": int(kept_docs),
+                "total_tokens": int(total_tokens),
+                "elapsed_s": float(now - build_t0),
+                "rss_bytes": cls._safe_rss_bytes(),
+            }
+            if force:
+                payload["log_now"] = True
+            progress_callback(payload)
+            last_emit_rows = int(rows_processed)
+            last_emit_ts = float(now)
+
+        emit_progress(rows_processed=0, kept_docs=0, total_tokens=0, force=True)
+
+        offsets = np.memmap(p["offsets"], dtype=np.int64, mode="w+", shape=(num_rows + 1,))
+        doc_indices = np.memmap(p["doc_indices"], dtype=np.int64, mode="w+", shape=(num_rows,))
+        doc_lengths = np.memmap(p["doc_lengths"], dtype=np.int32, mode="w+", shape=(num_rows,))
+        doc_stream_lengths = np.memmap(p["doc_stream_lengths"], dtype=np.int32, mode="w+", shape=(num_rows,))
+
+        offsets[0] = 0
+        max_validated = min(int(length_sample_validation), num_rows)
+        for row_idx in range(max_validated):
+            row = hf_split[row_idx]
+            row_length = int(row["length"])
+            input_ids = row["input_ids"]
+            if row_length != len(input_ids):
+                raise ValueError(
+                    "Invalid packing input: row['length'] does not match len(row['input_ids']). "
+                    f"Row={row_idx} length={row_length} len(input_ids)={len(input_ids)}"
+                )
+            if insert_eos and used_ends_with_eos:
+                expected = bool(input_ids) and int(input_ids[-1]) == int(eos_token_id)
+                if bool(row["ends_with_eos"]) != expected:
+                    raise ValueError(
+                        "Invalid packing input: row['ends_with_eos'] does not match the provided eos_token_id. "
+                        "This usually indicates the dataset was tokenized with a different tokenizer/eos id. "
+                        f"Row={row_idx} ends_with_eos={row['ends_with_eos']} expected={expected} eos_token_id={eos_token_id}"
+                    )
+
+        def _iter_column_batches(batch_size: int = 65536) -> Iterator[dict[str, np.ndarray]]:
+            if hasattr(hf_split, "iter"):
+                iterator = hf_split.iter(batch_size=batch_size)
+                for batch in iterator:
+                    lengths = np.asarray(batch["length"], dtype=np.int64).reshape(-1)
+                    payload: dict[str, np.ndarray] = {"length": lengths}
+                    if used_ends_with_eos:
+                        payload["ends_with_eos"] = np.asarray(batch["ends_with_eos"], dtype=np.bool_).reshape(-1)
+                    yield payload
+                return
+
+            try:
+                lengths_raw = hf_split["length"]
+                ends_raw = hf_split["ends_with_eos"] if used_ends_with_eos else None
+            except Exception:
+                lengths_raw = [int(hf_split[row_idx]["length"]) for row_idx in range(num_rows)]
+                ends_raw = (
+                    [bool(hf_split[row_idx]["ends_with_eos"]) for row_idx in range(num_rows)]
+                    if used_ends_with_eos
+                    else None
+                )
+
+            lengths = np.asarray(lengths_raw, dtype=np.int64).reshape(-1)
+            payload: dict[str, np.ndarray] = {"length": lengths}
+            if used_ends_with_eos and ends_raw is not None:
+                payload["ends_with_eos"] = np.asarray(ends_raw, dtype=np.bool_).reshape(-1)
+            yield payload
+
+        kept_docs = 0
+        total_tokens = 0
+
+        # Fast path: avoid full-row `input_ids` reads when eos insertion can be derived from columns.
+        if not insert_eos or used_ends_with_eos:
+            row_cursor = 0
+            for batch in _iter_column_batches():
+                lengths = batch["length"]
+                count = int(lengths.size)
+                if count <= 0:
+                    continue
+
+                row_indices = np.arange(row_cursor, row_cursor + count, dtype=np.int64)
+                keep_mask = lengths > 0
+                kept_count = int(np.count_nonzero(keep_mask))
+                if kept_count > 0:
+                    kept_rows = row_indices[keep_mask]
+                    kept_lengths = lengths[keep_mask]
+
+                    if insert_eos and used_ends_with_eos:
+                        ends = batch["ends_with_eos"][keep_mask]
+                        eos_extra = (~ends).astype(np.int64, copy=False)
+                    else:
+                        eos_extra = np.zeros((kept_count,), dtype=np.int64)
+
+                    stream_lengths = kept_lengths + eos_extra
+                    next_kept = kept_docs + kept_count
+
+                    doc_indices[kept_docs:next_kept] = kept_rows
+                    doc_lengths[kept_docs:next_kept] = kept_lengths.astype(np.int32, copy=False)
+                    doc_stream_lengths[kept_docs:next_kept] = stream_lengths.astype(np.int32, copy=False)
+
+                    cumulative = np.cumsum(stream_lengths, dtype=np.int64)
+                    offsets[kept_docs + 1 : next_kept + 1] = total_tokens + cumulative
+
+                    total_tokens += int(cumulative[-1])
+                    kept_docs = next_kept
+
+                row_cursor += count
+                emit_progress(
+                    rows_processed=row_cursor,
+                    kept_docs=kept_docs,
+                    total_tokens=total_tokens,
+                )
+
+            if row_cursor != num_rows:
+                raise RuntimeError(
+                    "Packing index build internal error: processed row count does not match dataset size "
+                    f"({row_cursor} != {num_rows})."
+                )
+        else:
+            # Fallback path for datasets without `ends_with_eos`: requires per-row `input_ids[-1]`.
+            for row_idx in range(num_rows):
+                row = hf_split[row_idx]
+                row_length = int(row["length"])
+                if row_length <= 0:
+                    emit_progress(
+                        rows_processed=row_idx + 1,
+                        kept_docs=kept_docs,
+                        total_tokens=total_tokens,
+                    )
+                    continue
+
+                input_ids = row["input_ids"]
+                last_token = int(input_ids[-1])
+                eos_extra = 0 if last_token == int(eos_token_id) else 1
+
+                stream_len = row_length + eos_extra
+                doc_indices[kept_docs] = int(row_idx)
+                doc_lengths[kept_docs] = int(row_length)
+                doc_stream_lengths[kept_docs] = int(stream_len)
+                offsets[kept_docs + 1] = offsets[kept_docs] + int(stream_len)
+                total_tokens = int(offsets[kept_docs + 1])
+                kept_docs += 1
+
+                emit_progress(
+                    rows_processed=row_idx + 1,
+                    kept_docs=kept_docs,
+                    total_tokens=total_tokens,
+                )
+
+        skipped_empty = num_rows - kept_docs
+        tail_tokens = total_tokens % int(sequence_length)
+
+        offsets.flush()
+        doc_indices.flush()
+        doc_lengths.flush()
+        doc_stream_lengths.flush()
+
+        meta = PackingIndexMeta(
+            version=INDEX_VERSION,
+            split=str(split),
+            sequence_length=int(sequence_length),
+            insert_eos=bool(insert_eos),
+            eos_token_id=int(eos_token_id) if eos_token_id is not None else None,
+            dataset_fingerprint=dataset_fingerprint,
+            num_rows=num_rows,
+            kept_docs=kept_docs,
+            used_ends_with_eos=used_ends_with_eos,
+        )
+        cls._write_meta_atomic(p["meta"], meta)
+        emit_progress(rows_processed=num_rows, kept_docs=kept_docs, total_tokens=total_tokens, force=True)
+        return {
+            "split": str(split),
+            "kept_docs": int(kept_docs),
+            "skipped_empty_docs": int(skipped_empty),
+            "tail_tokens_dropped": int(tail_tokens),
+            "total_tokens": int(total_tokens),
+            "num_rows": int(num_rows),
+            "elapsed_s": float(time.perf_counter() - build_t0),
+            "rss_bytes": cls._safe_rss_bytes(),
+        }
+
+    @classmethod
+    def _build_index_via_subprocess(
+        cls,
+        *,
+        hf_split: Any,
+        split: str,
+        sequence_length: int,
+        insert_eos: bool,
+        eos_token_id: int | None,
+        p: dict[str, Path],
+        dataset_fingerprint: str | None,
+        num_rows: int,
+        used_ends_with_eos: bool,
+        cache_dir: Path,
+        length_sample_validation: int,
+        lock_lease_heartbeat_s: int,
+    ) -> dict[str, Any]:
+        if os.name != "posix":
+            return cls._build_index_artifacts(
+                hf_split=hf_split,
+                split=split,
+                sequence_length=sequence_length,
+                insert_eos=insert_eos,
+                eos_token_id=eos_token_id,
+                p=p,
+                dataset_fingerprint=dataset_fingerprint,
+                num_rows=num_rows,
+                used_ends_with_eos=used_ends_with_eos,
+                length_sample_validation=length_sample_validation,
+                progress_callback=lambda event: cls._log_progress_event(
+                    progress_event=event,
+                    cache_dir=cache_dir,
+                    force=bool(event.get("log_now", False)),
+                ),
+            )
+
+        ctx = mp.get_context("fork")
+        progress_queue: mp.Queue = ctx.Queue()
+        process = ctx.Process(
+            target=_packing_index_build_worker_main,
+            kwargs={
+                "hf_split": hf_split,
+                "split": str(split),
+                "sequence_length": int(sequence_length),
+                "insert_eos": bool(insert_eos),
+                "eos_token_id": (int(eos_token_id) if eos_token_id is not None else None),
+                "paths": p,
+                "dataset_fingerprint": dataset_fingerprint,
+                "num_rows": int(num_rows),
+                "used_ends_with_eos": bool(used_ends_with_eos),
+                "length_sample_validation": int(length_sample_validation),
+                "progress_queue": progress_queue,
+            },
+        )
+
+        start_ts = time.time()
+        last_progress: dict[str, Any] | None = None
+        finished_event: dict[str, Any] | None = None
+        failed_event: dict[str, Any] | None = None
+        next_log_at = start_ts
+        next_heartbeat_at = start_ts
+        process.start()
+        try:
+            while process.is_alive():
+                now = time.time()
+                while True:
+                    try:
+                        event = progress_queue.get_nowait()
+                    except Empty:
+                        break
+                    if not isinstance(event, dict):
+                        continue
+                    event_type = event.get("event", None)
+                    if event_type == "progress":
+                        last_progress = event
+                        if now >= next_log_at:
+                            cls._log_progress_event(progress_event=event, cache_dir=cache_dir, force=True)
+                            next_log_at = now + PROGRESS_LOG_SECONDS
+                    elif event_type == "finished":
+                        finished_event = event
+                    elif event_type == "failed":
+                        failed_event = event
+                if now >= next_heartbeat_at:
+                    cls._refresh_lease(p["lease"])
+                    next_heartbeat_at = now + float(lock_lease_heartbeat_s)
+                time.sleep(SUBPROCESS_POLL_SECONDS)
+
+            process.join()
+            while True:
+                try:
+                    event = progress_queue.get_nowait()
+                except Empty:
+                    break
+                if not isinstance(event, dict):
+                    continue
+                event_type = event.get("event", None)
+                if event_type == "progress":
+                    last_progress = event
+                    cls._log_progress_event(progress_event=event, cache_dir=cache_dir, force=True)
+                elif event_type == "finished":
+                    finished_event = event
+                elif event_type == "failed":
+                    failed_event = event
+        finally:
+            try:
+                progress_queue.close()
+            except Exception:
+                pass
+            try:
+                progress_queue.join_thread()
+            except Exception:
+                pass
+
+        exitcode = process.exitcode
+        oom_suspected = cls._looks_like_oom(exitcode=exitcode, failure_event=failed_event)
+        if exitcode != 0:
+            if failed_event is not None:
+                worker_error_type = str(failed_event.get("error_type", ""))
+                worker_error = str(failed_event.get("error", ""))
+                if worker_error_type == "ValueError":
+                    raise ValueError(worker_error)
+                if worker_error_type == "TypeError":
+                    raise TypeError(worker_error)
+            failure_context: dict[str, Any] = {
+                "mode": "subprocess",
+                "child_pid": int(process.pid) if process.pid is not None else None,
+                "child_exitcode": int(exitcode) if exitcode is not None else None,
+                "child_signal": (-int(exitcode) if exitcode is not None and exitcode < 0 else None),
+                "oom_suspected": bool(oom_suspected),
+                "elapsed_s": float(time.time() - start_ts),
+                "cache_dir": str(cache_dir),
+                "split": str(split),
+                "last_progress": last_progress,
+                "worker_failure": failed_event,
+            }
+            error_type = failed_event.get("error_type", None) if failed_event else None
+            error_message = failed_event.get("error", None) if failed_event else None
+            raise PackingIndexBuildError(
+                "Packing index subprocess failed "
+                f"(split={split}, cache_dir={cache_dir}, exitcode={exitcode}, "
+                f"oom_suspected={oom_suspected}, error_type={error_type}, error={error_message}).",
+                failure_context=failure_context,
+            )
+
+        summary = finished_event.get("summary", None) if finished_event else None
+        if isinstance(summary, dict):
+            return summary
+        return {
+            "mode": "subprocess",
+            "split": str(split),
+            "elapsed_s": float(time.time() - start_ts),
+            "cache_dir": str(cache_dir),
+        }
+
     @classmethod
     def load_or_build(
         cls,
@@ -517,20 +952,7 @@ class PackingIndex:
             allow_stale_lock_break=bool(stale_lock_age_s is not None),
         )
         try:
-            heartbeat_period_s = int(lock_lease_heartbeat_s)
-            next_heartbeat_at = time.time()
-
-            def maybe_heartbeat(force: bool = False) -> None:
-                nonlocal next_heartbeat_at
-                now = time.time()
-                if force or now >= next_heartbeat_at:
-                    try:
-                        cls._refresh_lease(p["lease"])
-                    except Exception:
-                        pass
-                    next_heartbeat_at = now + float(heartbeat_period_s)
-
-            maybe_heartbeat(force=True)
+            cls._refresh_lease(p["lease"])
 
             if p["meta"].exists():
                 try:
@@ -538,160 +960,104 @@ class PackingIndex:
                 except Exception:
                     meta = None
                 if meta is not None and meta_matches(meta):
-                    maybe_heartbeat(force=True)
                     return load_existing(meta)
 
-            offsets = np.memmap(p["offsets"], dtype=np.int64, mode="w+", shape=(num_rows + 1,))
-            doc_indices = np.memmap(p["doc_indices"], dtype=np.int64, mode="w+", shape=(num_rows,))
-            doc_lengths = np.memmap(p["doc_lengths"], dtype=np.int32, mode="w+", shape=(num_rows,))
-            doc_stream_lengths = np.memmap(p["doc_stream_lengths"], dtype=np.int32, mode="w+", shape=(num_rows,))
-
-            offsets[0] = 0
-            max_validated = min(int(length_sample_validation), num_rows)
-            for row_idx in range(max_validated):
-                row = hf_split[row_idx]
-                row_length = int(row["length"])
-                input_ids = row["input_ids"]
-                if row_length != len(input_ids):
-                    raise ValueError(
-                        "Invalid packing input: row['length'] does not match len(row['input_ids']). "
-                        f"Row={row_idx} length={row_length} len(input_ids)={len(input_ids)}"
-                    )
-                if insert_eos and used_ends_with_eos:
-                    expected = bool(input_ids) and int(input_ids[-1]) == int(eos_token_id)
-                    if bool(row["ends_with_eos"]) != expected:
-                        raise ValueError(
-                            "Invalid packing input: row['ends_with_eos'] does not match the provided eos_token_id. "
-                            "This usually indicates the dataset was tokenized with a different tokenizer/eos id. "
-                            f"Row={row_idx} ends_with_eos={row['ends_with_eos']} expected={expected} eos_token_id={eos_token_id}"
-                        )
-
-            def _iter_column_batches(batch_size: int = 65536) -> Iterator[dict[str, np.ndarray]]:
-                if hasattr(hf_split, "iter"):
-                    iterator = hf_split.iter(batch_size=batch_size)
-                    for batch in iterator:
-                        lengths = np.asarray(batch["length"], dtype=np.int64).reshape(-1)
-                        payload: dict[str, np.ndarray] = {"length": lengths}
-                        if used_ends_with_eos:
-                            payload["ends_with_eos"] = np.asarray(batch["ends_with_eos"], dtype=np.bool_).reshape(-1)
-                        yield payload
-                    return
-
-                try:
-                    lengths_raw = hf_split["length"]
-                    ends_raw = hf_split["ends_with_eos"] if used_ends_with_eos else None
-                except Exception:
-                    lengths_raw = [int(hf_split[row_idx]["length"]) for row_idx in range(num_rows)]
-                    ends_raw = (
-                        [bool(hf_split[row_idx]["ends_with_eos"]) for row_idx in range(num_rows)]
-                        if used_ends_with_eos
-                        else None
-                    )
-
-                lengths = np.asarray(lengths_raw, dtype=np.int64).reshape(-1)
-                payload: dict[str, np.ndarray] = {"length": lengths}
-                if used_ends_with_eos and ends_raw is not None:
-                    payload["ends_with_eos"] = np.asarray(ends_raw, dtype=np.bool_).reshape(-1)
-                yield payload
-
-            kept_docs = 0
-            total_tokens = 0
-
-            # Fast path: avoid full-row `input_ids` reads when eos insertion can be derived from columns.
-            if not insert_eos or used_ends_with_eos:
-                row_cursor = 0
-                for batch in _iter_column_batches():
-                    maybe_heartbeat()
-                    lengths = batch["length"]
-                    count = int(lengths.size)
-                    if count <= 0:
-                        continue
-
-                    row_indices = np.arange(row_cursor, row_cursor + count, dtype=np.int64)
-                    keep_mask = lengths > 0
-                    kept_count = int(np.count_nonzero(keep_mask))
-                    if kept_count > 0:
-                        kept_rows = row_indices[keep_mask]
-                        kept_lengths = lengths[keep_mask]
-
-                        if insert_eos and used_ends_with_eos:
-                            ends = batch["ends_with_eos"][keep_mask]
-                            eos_extra = (~ends).astype(np.int64, copy=False)
-                        else:
-                            eos_extra = np.zeros((kept_count,), dtype=np.int64)
-
-                        stream_lengths = kept_lengths + eos_extra
-                        next_kept = kept_docs + kept_count
-
-                        doc_indices[kept_docs:next_kept] = kept_rows
-                        doc_lengths[kept_docs:next_kept] = kept_lengths.astype(np.int32, copy=False)
-                        doc_stream_lengths[kept_docs:next_kept] = stream_lengths.astype(np.int32, copy=False)
-
-                        cumulative = np.cumsum(stream_lengths, dtype=np.int64)
-                        offsets[kept_docs + 1 : next_kept + 1] = total_tokens + cumulative
-
-                        total_tokens += int(cumulative[-1])
-                        kept_docs = next_kept
-
-                    row_cursor += count
-
-                if row_cursor != num_rows:
-                    raise RuntimeError(
-                        "Packing index build internal error: processed row count does not match dataset size "
-                        f"({row_cursor} != {num_rows})."
-                    )
-            else:
-                # Fallback path for datasets without `ends_with_eos`: requires per-row `input_ids[-1]`.
-                for row_idx in range(num_rows):
-                    if row_idx % 1024 == 0:
-                        maybe_heartbeat()
-                    row = hf_split[row_idx]
-                    row_length = int(row["length"])
-                    if row_length <= 0:
-                        continue
-
-                    input_ids = row["input_ids"]
-                    last_token = int(input_ids[-1])
-                    eos_extra = 0 if last_token == int(eos_token_id) else 1
-
-                    stream_len = row_length + eos_extra
-                    doc_indices[kept_docs] = int(row_idx)
-                    doc_lengths[kept_docs] = int(row_length)
-                    doc_stream_lengths[kept_docs] = int(stream_len)
-                    offsets[kept_docs + 1] = offsets[kept_docs] + int(stream_len)
-                    total_tokens = int(offsets[kept_docs + 1])
-                    kept_docs += 1
-
-            skipped_empty = num_rows - kept_docs
-            tail_tokens = total_tokens % int(sequence_length)
-
-            offsets.flush()
-            doc_indices.flush()
-            doc_lengths.flush()
-            doc_stream_lengths.flush()
-            maybe_heartbeat(force=True)
-
-            meta = PackingIndexMeta(
-                version=INDEX_VERSION,
+            cls._build_index_via_subprocess(
+                hf_split=hf_split,
                 split=str(split),
                 sequence_length=int(sequence_length),
                 insert_eos=bool(insert_eos),
-                eos_token_id=int(eos_token_id) if eos_token_id is not None else None,
+                eos_token_id=(int(eos_token_id) if eos_token_id is not None else None),
+                p=p,
                 dataset_fingerprint=dataset_fingerprint,
-                num_rows=num_rows,
-                kept_docs=kept_docs,
-                used_ends_with_eos=used_ends_with_eos,
+                num_rows=int(num_rows),
+                used_ends_with_eos=bool(used_ends_with_eos),
+                cache_dir=cache_dir,
+                length_sample_validation=int(length_sample_validation),
+                lock_lease_heartbeat_s=int(lock_lease_heartbeat_s),
             )
-            cls._write_meta_atomic(p["meta"], meta)
 
-            stats = PackingIndexStats(skipped_empty_docs=skipped_empty, tail_tokens_dropped=tail_tokens)
-            return cls(
-                meta=meta,
-                stats=stats,
-                offsets=offsets,
-                doc_indices=doc_indices,
-                doc_lengths=doc_lengths,
-                doc_stream_lengths=doc_stream_lengths,
-            )
+            cls._refresh_lease(p["lease"])
+            try:
+                meta = cls._read_meta(p["meta"])
+            except Exception as exc:
+                raise PackingIndexBuildError(
+                    f"Packing index build finished but meta.json could not be read at {p['meta']}: {exc}"
+                ) from exc
+            if not meta_matches(meta):
+                raise PackingIndexBuildError(
+                    "Packing index build produced metadata that does not match requested parameters. "
+                    f"meta_path={p['meta']}"
+                )
+
+            built = load_existing(meta)
+            built.cache_hit = False
+            return built
         finally:
             cls._release_lock(lock_fd, p["lock"], lease_path=p["lease"])
+
+
+def _packing_index_build_worker_main(
+    *,
+    hf_split: Any,
+    split: str,
+    sequence_length: int,
+    insert_eos: bool,
+    eos_token_id: int | None,
+    paths: dict[str, Path],
+    dataset_fingerprint: str | None,
+    num_rows: int,
+    used_ends_with_eos: bool,
+    length_sample_validation: int,
+    progress_queue: Any,
+) -> None:
+    start_ts = time.perf_counter()
+    last_progress: dict[str, Any] | None = None
+
+    def emit(event: dict[str, Any]) -> None:
+        try:
+            progress_queue.put(event)
+        except Exception:
+            pass
+
+    def on_progress(progress_event: dict[str, Any]) -> None:
+        nonlocal last_progress
+        last_progress = progress_event
+        emit(progress_event)
+
+    try:
+        summary = PackingIndex._build_index_artifacts(
+            hf_split=hf_split,
+            split=split,
+            sequence_length=sequence_length,
+            insert_eos=insert_eos,
+            eos_token_id=eos_token_id,
+            p=paths,
+            dataset_fingerprint=dataset_fingerprint,
+            num_rows=num_rows,
+            used_ends_with_eos=used_ends_with_eos,
+            length_sample_validation=length_sample_validation,
+            progress_callback=on_progress,
+        )
+        emit(
+            {
+                "event": "finished",
+                "summary": summary,
+                "elapsed_s": float(time.perf_counter() - start_ts),
+                "rss_bytes": PackingIndex._safe_rss_bytes(),
+                "last_progress": last_progress,
+            }
+        )
+    except Exception as exc:
+        emit(
+            {
+                "event": "failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "traceback": traceback.format_exc(),
+                "elapsed_s": float(time.perf_counter() - start_ts),
+                "rss_bytes": PackingIndex._safe_rss_bytes(),
+                "last_progress": last_progress,
+            }
+        )
+        raise

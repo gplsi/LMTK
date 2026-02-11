@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from src.tasks.training.data.packing_index import PackingIndex
+from src.tasks.training.data.packing_index import PackingIndex, PackingIndexBuildError
 
 
 @dataclass
@@ -69,6 +69,7 @@ def test_packing_index_build_and_reuse(tmp_path: Path) -> None:
         cache_dir=tmp_path,
     )
     assert idx1.meta.kept_docs == 2
+    assert idx1.cache_hit is False
     assert idx1.meta.used_ends_with_eos is True
     assert idx1.total_tokens == 7  # doc0 + eos + doc2 (already eos)
     assert idx1.num_blocks == 1
@@ -482,3 +483,55 @@ def test_packing_index_fallback_without_ends_with_eos_keeps_row_path(tmp_path: P
     assert idx.meta.kept_docs == 2
     assert idx.total_tokens == 5
     assert idx.num_blocks == 1
+
+
+def test_packing_index_subprocess_failure_surfaces_failure_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if os.name != "posix":
+        pytest.skip("Subprocess packing index failure diagnostics are only used on POSIX.")
+
+    split = _FakeSplit(
+        rows=[{"input_ids": [1, 2, 3], "length": 3, "ends_with_eos": False}],
+        column_names=["input_ids", "length", "ends_with_eos"],
+    )
+
+    def _boom(cls, **kwargs):  # pragma: no cover - executed in child process
+        raise MemoryError("simulated oom in child builder")
+
+    monkeypatch.setattr(PackingIndex, "_build_index_artifacts", classmethod(_boom))
+
+    with pytest.raises(PackingIndexBuildError) as exc_info:
+        PackingIndex.load_or_build(
+            hf_split=split,
+            split="train",
+            sequence_length=4,
+            insert_eos=True,
+            eos_token_id=0,
+            cache_dir=tmp_path,
+        )
+
+    context = exc_info.value.failure_context
+    assert context.get("mode") == "subprocess"
+    assert context.get("split") == "train"
+    assert context.get("oom_suspected") is True
+    worker_failure = context.get("worker_failure", {})
+    assert worker_failure.get("error_type") == "MemoryError"
+
+
+def test_packing_index_logs_progress_diagnostics(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    split = _FakeSplit(
+        rows=[{"input_ids": [i, i + 1], "length": 2, "ends_with_eos": False} for i in range(64)],
+        column_names=["input_ids", "length", "ends_with_eos"],
+    )
+
+    caplog.set_level(logging.INFO, logger="src.tasks.training.data.packing_index")
+    PackingIndex.load_or_build(
+        hf_split=split,
+        split="train",
+        sequence_length=8,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+        length_sample_validation=1,
+    )
+    progress_logs = [r.getMessage() for r in caplog.records if "Packing index progress" in r.getMessage()]
+    assert progress_logs

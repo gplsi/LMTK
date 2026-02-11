@@ -38,7 +38,7 @@ from src.tasks.training.fabric.model.clm import FabricCLM
 from src.tasks.training.fabric.model.mlm import FabricMLM
 from src.tasks.training.fabric.model.instruction import FabricInstruction
 from src.tasks.training.data.packing import PackedSequenceDataset, build_packing_dataloader
-from src.tasks.training.data.packing_index import INDEX_VERSION, PackingIndex
+from src.tasks.training.data.packing_index import INDEX_VERSION, PackingIndex, PackingIndexBuildError
 from src.tasks.training.data.mixture import (
     MixturePackedDataset,
     MixturePlan,
@@ -779,6 +779,16 @@ class FabricTrainerBase(ABC):
                     "pid": os.getpid(),
                     "host": os.getenv("SLURMD_NODENAME") or os.uname().nodename,
                 }
+                if isinstance(exc, PackingIndexBuildError):
+                    build_context = dict(getattr(exc, "failure_context", {}) or {})
+                    payload["build_context"] = build_context
+                    payload["oom_suspected"] = bool(build_context.get("oom_suspected", False))
+                    self.cli_logger.error(
+                        "Packing index subprocess build failed split=%s oom_suspected=%s last_progress=%s",
+                        active_split_name,
+                        payload["oom_suspected"],
+                        build_context.get("last_progress", None),
+                    )
                 if isinstance(exc, TimeoutError):
                     payload["lock_context"] = self._collect_lock_failure_context(
                         index_cache_dir=index_cache_dir,
@@ -1016,6 +1026,17 @@ class FabricTrainerBase(ABC):
                         "pid": os.getpid(),
                         "host": os.getenv("SLURMD_NODENAME") or os.uname().nodename,
                     }
+                    if isinstance(exc, PackingIndexBuildError):
+                        build_context = dict(getattr(exc, "failure_context", {}) or {})
+                        payload["build_context"] = build_context
+                        payload["oom_suspected"] = bool(build_context.get("oom_suspected", False))
+                        self.cli_logger.error(
+                            "Mixture index subprocess build failed source=%s split=%s oom_suspected=%s last_progress=%s",
+                            dataset_id,
+                            active_split_name,
+                            payload["oom_suspected"],
+                            build_context.get("last_progress", None),
+                        )
                     if isinstance(exc, TimeoutError):
                         payload["lock_context"] = self._collect_lock_failure_context(
                             index_cache_dir=index_cache_dir,
