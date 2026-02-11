@@ -7,9 +7,9 @@
 #
 # Note (mixture budget):
 # - `anchor_epochs: 1` can be very large (one full anchor epoch of packed blocks).
-# - Packing mode enforces `len(train_dataloader) % gradient_accumulation_steps == 0`.
-#   If this fails, switch to `budget_mode: explicit_blocks` and set `total_blocks` to a
-#   multiple of `world_size * gradient_accumulation_steps` (= 8 * 16 = 128).
+# - In anchor mode, block budgets are floor-aligned in code to
+#   `world_size * batch_size * gradient_accumulation_steps` for distributed safety.
+# - In explicit mode, block budgets remain strict and must be divisible by the same unit.
 
 task: "clm_training"
 experiment_name: "aitana-s2b-c5dc40x48"

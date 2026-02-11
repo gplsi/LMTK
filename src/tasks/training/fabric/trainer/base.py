@@ -42,7 +42,9 @@ from src.tasks.training.data.packing_index import INDEX_VERSION, PackingIndex, P
 from src.tasks.training.data.mixture import (
     MixturePackedDataset,
     MixturePlan,
+    allocate_exact_counts,
     blake2b_u64,
+    resolve_aligned_total_blocks,
     resolve_effective_total_blocks,
     resolve_mixture_plan,
 )
@@ -129,6 +131,9 @@ class FabricTrainerBase(ABC):
         self._mixture_last_val_weighted: float | None = None
         self._mixture_requested_total_blocks: int | None = None
         self._mixture_effective_total_blocks: int | None = None
+        self._mixture_alignment_policy: str | None = None
+        self._mixture_alignment_unit: int | None = None
+        self._mixture_alignment_applied: bool = False
         self._mixture_report_path: Path | None = None
         self._mixture_schedule_seed: int = 0
         self._mixture_configured_weights_by_id: dict[str, float | None] = {}
@@ -1118,6 +1123,40 @@ class FabricTrainerBase(ABC):
             anchor_dataset_id=anchor_dataset_id,
             explicit_total_blocks=explicit_total_blocks,
         )
+        requested_total_blocks_raw = int(plan.requested_total_blocks)
+        grad_accum_steps = self._resolved_gradient_accumulation_steps()
+        aligned_total_blocks, alignment_metadata = resolve_aligned_total_blocks(
+            requested_total_blocks=requested_total_blocks_raw,
+            budget_mode=budget_mode,
+            world_size=int(fabric.world_size),
+            batch_size=int(self.config.batch_size),
+            gradient_accumulation_steps=grad_accum_steps,
+            alignment_policy=mixture.get("alignment_policy", None),
+        )
+        if int(aligned_total_blocks) != int(requested_total_blocks_raw):
+            aligned_targets = allocate_exact_counts(
+                int(aligned_total_blocks),
+                plan.effective_weights_by_id,
+            )
+            plan = MixturePlan(
+                budget_mode=plan.budget_mode,
+                requested_total_blocks=int(aligned_total_blocks),
+                target_blocks_per_dataset=aligned_targets,
+                source_blocks_by_id=plan.source_blocks_by_id,
+                weight_mode=plan.weight_mode,
+                effective_weights_by_id=plan.effective_weights_by_id,
+                anchor_dataset_id=plan.anchor_dataset_id,
+            )
+            if fabric.global_rank == 0:
+                self.cli_logger.info(
+                    "Mixture block alignment applied budget_mode=%s alignment_policy=%s "
+                    "requested_total_blocks=%s adjusted_total_blocks=%s alignment_unit=%s",
+                    budget_mode,
+                    alignment_metadata.get("policy", None),
+                    requested_total_blocks_raw,
+                    aligned_total_blocks,
+                    alignment_metadata.get("alignment_unit", None),
+                )
         requested_total_blocks = int(plan.requested_total_blocks)
 
         mixture_train_dataset = MixturePackedDataset(
@@ -1188,8 +1227,11 @@ class FabricTrainerBase(ABC):
             valid_by_source[dataset_id] = valid_loader
 
         self._mixture_plan = plan
-        self._mixture_requested_total_blocks = requested_total_blocks
+        self._mixture_requested_total_blocks = requested_total_blocks_raw
         self._mixture_effective_total_blocks = effective_total_blocks
+        self._mixture_alignment_policy = str(alignment_metadata.get("policy", None))
+        self._mixture_alignment_unit = int(alignment_metadata.get("alignment_unit", 0))
+        self._mixture_alignment_applied = bool(alignment_metadata.get("alignment_applied", False))
         self._mixture_schedule_seed = schedule_seed
         self._mixture_dataset_id_to_idx = dict(mixture_train_dataset.dataset_id_to_idx)
         self._mixture_dataset_idx_to_id = dict(mixture_train_dataset.dataset_idx_to_id)
@@ -1467,6 +1509,13 @@ class FabricTrainerBase(ABC):
                     "anchor_dataset_id": self._mixture_plan.anchor_dataset_id,
                     "requested_total_blocks": int(self._mixture_requested_total_blocks or 0),
                     "effective_total_blocks": int(self._mixture_effective_total_blocks or 0),
+                    "alignment_policy": self._mixture_alignment_policy,
+                    "alignment_unit": (
+                        int(self._mixture_alignment_unit)
+                        if self._mixture_alignment_unit is not None
+                        else None
+                    ),
+                    "alignment_applied": bool(self._mixture_alignment_applied),
                     "hash_algorithm": "blake2b_u64_v1",
                     "allocation_algorithm": "hamilton_lr_lexicographic_v1",
                     "split_seed_algorithm": "blake2b_u64_mod_2147483647_v1",
@@ -1803,6 +1852,13 @@ class FabricTrainerBase(ABC):
             },
             "requested_total_blocks": requested_total_blocks,
             "effective_total_blocks": effective_total_blocks,
+            "alignment_policy": self._mixture_alignment_policy,
+            "alignment_unit": (
+                int(self._mixture_alignment_unit)
+                if self._mixture_alignment_unit is not None
+                else None
+            ),
+            "alignment_applied": bool(self._mixture_alignment_applied),
             "world_size": int(fabric.world_size),
             "batch_size": int(self.config.batch_size),
             "gradient_accumulation_steps": grad_accum,
@@ -1829,6 +1885,7 @@ class FabricTrainerBase(ABC):
         summary_metrics: dict[str, float] = {
             "mixture/requested_total_blocks": float(requested_total_blocks),
             "mixture/effective_total_blocks": float(effective_total_blocks),
+            "mixture/alignment_applied": 1.0 if self._mixture_alignment_applied else 0.0,
         }
         if self._mixture_last_val_weighted is not None:
             summary_metrics["mixture/val_loss_weighted"] = float(self._mixture_last_val_weighted)

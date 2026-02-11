@@ -9,6 +9,7 @@ from src.tasks.training.data.mixture import (
     blake2b_u64,
     derive_anchor_epoch_targets,
     permute_index,
+    resolve_aligned_total_blocks,
     resolve_effective_total_blocks,
     resolve_effective_weights,
     resolve_mixture_plan,
@@ -176,4 +177,43 @@ def test_resolve_effective_total_blocks_fails_when_drop_last_batch_would_drop_bl
             batch_size=3,
             sampler_drop_last=True,
             drop_last_batch=True,
+        )
+
+
+def test_resolve_aligned_total_blocks_anchor_mode_defaults_to_floor() -> None:
+    adjusted, meta = resolve_aligned_total_blocks(
+        requested_total_blocks=384546,
+        budget_mode="anchor_epochs",
+        world_size=8,
+        batch_size=1,
+        gradient_accumulation_steps=16,
+        alignment_policy=None,
+    )
+    assert adjusted == 384512
+    assert meta["policy"] == "floor"
+    assert meta["alignment_unit"] == 128
+    assert bool(meta["alignment_applied"]) is True
+
+
+def test_resolve_aligned_total_blocks_explicit_mode_is_strict_by_default() -> None:
+    with pytest.raises(ValueError, match="strict alignment"):
+        resolve_aligned_total_blocks(
+            requested_total_blocks=384546,
+            budget_mode="explicit_blocks",
+            world_size=8,
+            batch_size=1,
+            gradient_accumulation_steps=16,
+            alignment_policy=None,
+        )
+
+
+def test_resolve_aligned_total_blocks_rejects_non_error_policy_in_explicit_mode() -> None:
+    with pytest.raises(ValueError, match="must be 'error'"):
+        resolve_aligned_total_blocks(
+            requested_total_blocks=384546,
+            budget_mode="explicit_blocks",
+            world_size=8,
+            batch_size=1,
+            gradient_accumulation_steps=16,
+            alignment_policy="floor",
         )

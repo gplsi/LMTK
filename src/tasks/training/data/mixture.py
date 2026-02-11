@@ -301,6 +301,99 @@ def resolve_effective_total_blocks(
     return effective
 
 
+def resolve_mixture_alignment_policy(
+    *,
+    budget_mode: str,
+    alignment_policy: str | None,
+) -> str:
+    mode = str(budget_mode)
+    if alignment_policy is None:
+        return "floor" if mode == "anchor_epochs" else "error"
+
+    policy = str(alignment_policy).strip().lower()
+    if policy not in {"error", "floor", "ceil"}:
+        raise ValueError(
+            "dataset.mixture.alignment_policy must be one of {'error', 'floor', 'ceil'} "
+            f"when provided, got {alignment_policy!r}."
+        )
+
+    if mode == "explicit_blocks" and policy != "error":
+        raise ValueError(
+            "dataset.mixture.alignment_policy must be 'error' when budget_mode='explicit_blocks' "
+            "to preserve the exact block-budget contract."
+        )
+    return policy
+
+
+def resolve_aligned_total_blocks(
+    *,
+    requested_total_blocks: int,
+    budget_mode: str,
+    world_size: int,
+    batch_size: int,
+    gradient_accumulation_steps: int,
+    alignment_policy: str | None,
+) -> tuple[int, dict[str, int | bool | str]]:
+    requested = int(requested_total_blocks)
+    world = int(world_size)
+    batch = int(batch_size)
+    grad_accum = int(gradient_accumulation_steps)
+    if requested <= 0:
+        raise ValueError("requested_total_blocks must be > 0.")
+    if world <= 0:
+        raise ValueError("world_size must be > 0.")
+    if batch <= 0:
+        raise ValueError("batch_size must be > 0.")
+    if grad_accum <= 0:
+        raise ValueError("gradient_accumulation_steps must be > 0.")
+
+    policy = resolve_mixture_alignment_policy(
+        budget_mode=budget_mode,
+        alignment_policy=alignment_policy,
+    )
+    alignment_unit = world * batch * grad_accum
+    if alignment_unit <= 0:
+        raise ValueError("alignment_unit must be > 0.")
+
+    if requested % alignment_unit == 0:
+        return requested, {
+            "policy": policy,
+            "alignment_unit": int(alignment_unit),
+            "requested_total_blocks": int(requested),
+            "adjusted_total_blocks": int(requested),
+            "alignment_applied": False,
+        }
+
+    if policy == "error":
+        raise ValueError(
+            "Mixture requested_total_blocks must be divisible by world_size * batch_size * "
+            "gradient_accumulation_steps under strict alignment. "
+            f"Got requested_total_blocks={requested}, world_size={world}, batch_size={batch}, "
+            f"gradient_accumulation_steps={grad_accum}, alignment_unit={alignment_unit}, "
+            f"budget_mode={budget_mode!r}."
+        )
+
+    if policy == "floor":
+        adjusted = (requested // alignment_unit) * alignment_unit
+    else:
+        adjusted = ((requested + alignment_unit - 1) // alignment_unit) * alignment_unit
+
+    if adjusted <= 0:
+        raise ValueError(
+            "Mixture alignment produced zero executable blocks. "
+            f"requested_total_blocks={requested}, alignment_unit={alignment_unit}, policy={policy!r}. "
+            "Increase anchor_epochs, reduce world_size/batch_size/gradient_accumulation_steps, or switch policy to 'error'."
+        )
+
+    return int(adjusted), {
+        "policy": policy,
+        "alignment_unit": int(alignment_unit),
+        "requested_total_blocks": int(requested),
+        "adjusted_total_blocks": int(adjusted),
+        "alignment_applied": int(adjusted) != int(requested),
+    }
+
+
 class MixturePackedDataset(Dataset):
     def __init__(
         self,

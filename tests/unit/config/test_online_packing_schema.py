@@ -236,6 +236,60 @@ def test_training_mixture_schema_defaults_to_anchor_epochs_when_budget_mode_omit
     assert validated.dataset.mixture.get("budget_mode", None) is None
 
 
+def test_training_mixture_schema_accepts_alignment_policy(tmp_path: Path) -> None:
+    config_path = tmp_path / "clm_training_mixture_alignment_policy.yaml"
+    config = _minimal_clm_training_config()
+    config["experiment_name"] = "test_training_mixture_alignment_policy"
+    config["dataset"] = {
+        "source": "local",
+        "format": "hf",
+        "sources": [
+            {"dataset_id": "A", "nameOrPath": "/tmp/ds_a"},
+            {"dataset_id": "B", "nameOrPath": "/tmp/ds_b"},
+        ],
+        "packing": {"enabled": True, "sequence_length": 128},
+        "mixture": {
+            "enabled": True,
+            "budget_mode": "anchor_epochs",
+            "anchor_epochs": 1,
+            "alignment_policy": "floor",
+        },
+    }
+    config["validation_split"] = {"proportion": 0.1, "seed": 42, "shuffle": True}
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    validator = ConfigValidator()
+    validated = validator.validate(config_path, "clm_training")
+    assert validated.dataset.mixture.alignment_policy == "floor"
+
+
+def test_training_mixture_schema_rejects_invalid_alignment_policy(tmp_path: Path) -> None:
+    config_path = tmp_path / "clm_training_mixture_invalid_alignment_policy.yaml"
+    config = _minimal_clm_training_config()
+    config["experiment_name"] = "test_training_mixture_invalid_alignment_policy"
+    config["dataset"] = {
+        "source": "local",
+        "format": "hf",
+        "sources": [
+            {"dataset_id": "A", "nameOrPath": "/tmp/ds_a"},
+            {"dataset_id": "B", "nameOrPath": "/tmp/ds_b"},
+        ],
+        "packing": {"enabled": True, "sequence_length": 128},
+        "mixture": {
+            "enabled": True,
+            "budget_mode": "anchor_epochs",
+            "anchor_epochs": 1,
+            "alignment_policy": "invalid",
+        },
+    }
+    config["validation_split"] = {"proportion": 0.1, "seed": 42, "shuffle": True}
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    validator = ConfigValidator()
+    with pytest.raises(ValueError, match="Configuration validation failed using schema"):
+        validator.validate(config_path, "clm_training")
+
+
 def test_training_mixture_schema_rejects_default_anchor_budget_without_anchor_epochs(tmp_path: Path) -> None:
     config_path = tmp_path / "clm_training_mixture_default_anchor_budget_missing_anchor_epochs.yaml"
     config = _minimal_clm_training_config()

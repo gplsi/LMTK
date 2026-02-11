@@ -59,6 +59,10 @@ properties:
             type: string
             enum: ["anchor_epochs", "explicit_blocks"]
             default: "anchor_epochs"
+          alignment_policy:
+            type: [string, "null"]
+            enum: ["error", "floor", "ceil", null]
+            description: "Budget alignment policy. Defaults in code to 'floor' for anchor_epochs and 'error' for explicit_blocks."
           anchor_epochs:
             type: integer
             minimum: 1
