@@ -394,6 +394,31 @@ def resolve_aligned_total_blocks(
     }
 
 
+def build_mixture_progress_metrics(
+    *,
+    target_blocks: Mapping[str, int],
+    realized_blocks: Mapping[str, int],
+    effective_total_blocks: int,
+) -> dict[str, float]:
+    total = int(effective_total_blocks)
+    ids = sorted(set(target_blocks) | set(realized_blocks))
+    metrics: dict[str, float] = {}
+
+    for dataset_id in ids:
+        target = float(int(target_blocks.get(dataset_id, 0)))
+        realized = float(int(realized_blocks.get(dataset_id, 0)))
+        deviation = realized - target
+
+        metrics[f"mixture/target_blocks_{dataset_id}"] = target
+        metrics[f"mixture/realized_blocks_{dataset_id}"] = realized
+        metrics[f"mixture/deviation_blocks_{dataset_id}"] = deviation
+        metrics[f"mixture/target_ratio_{dataset_id}"] = (target / total) if total > 0 else 0.0
+        metrics[f"mixture/realized_ratio_{dataset_id}"] = (realized / total) if total > 0 else 0.0
+        metrics[f"mixture/resampling_ratio_{dataset_id}"] = (realized / target) if target > 0 else 0.0
+
+    return metrics
+
+
 class MixturePackedDataset(Dataset):
     def __init__(
         self,

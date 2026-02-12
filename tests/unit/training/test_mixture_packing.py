@@ -7,6 +7,7 @@ from src.tasks.training.data.mixture import (
     MixturePackedDataset,
     allocate_exact_counts,
     blake2b_u64,
+    build_mixture_progress_metrics,
     derive_anchor_epoch_targets,
     permute_index,
     resolve_aligned_total_blocks,
@@ -114,6 +115,28 @@ def test_resolve_mixture_plan_explicit_blocks_uses_hamilton_allocation() -> None
     )
     assert plan.target_blocks_per_dataset == {"A": 7, "B": 3}
     assert plan.requested_total_blocks == 10
+
+
+def test_build_mixture_progress_metrics_reports_cumulative_blocks_and_resampling_ratio() -> None:
+    metrics = build_mixture_progress_metrics(
+        target_blocks={"A": 10, "B": 5},
+        realized_blocks={"A": 8, "B": 7},
+        effective_total_blocks=15,
+    )
+
+    assert metrics["mixture/target_blocks_A"] == 10.0
+    assert metrics["mixture/realized_blocks_A"] == 8.0
+    assert metrics["mixture/deviation_blocks_A"] == -2.0
+    assert metrics["mixture/target_ratio_A"] == pytest.approx(10.0 / 15.0)
+    assert metrics["mixture/realized_ratio_A"] == pytest.approx(8.0 / 15.0)
+    assert metrics["mixture/resampling_ratio_A"] == pytest.approx(0.8)
+
+    assert metrics["mixture/target_blocks_B"] == 5.0
+    assert metrics["mixture/realized_blocks_B"] == 7.0
+    assert metrics["mixture/deviation_blocks_B"] == 2.0
+    assert metrics["mixture/target_ratio_B"] == pytest.approx(5.0 / 15.0)
+    assert metrics["mixture/realized_ratio_B"] == pytest.approx(7.0 / 15.0)
+    assert metrics["mixture/resampling_ratio_B"] == pytest.approx(1.4)
 
 
 def test_permute_index_is_a_full_permutation() -> None:

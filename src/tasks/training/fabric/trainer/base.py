@@ -44,6 +44,7 @@ from src.tasks.training.data.mixture import (
     MixturePlan,
     allocate_exact_counts,
     blake2b_u64,
+    build_mixture_progress_metrics,
     resolve_aligned_total_blocks,
     resolve_effective_total_blocks,
     resolve_mixture_plan,
@@ -1824,6 +1825,14 @@ class FabricTrainerBase(ABC):
             dataset_id: int(resolved_blocks.get(dataset_id, 0)) - int(target_blocks.get(dataset_id, 0))
             for dataset_id in sorted(target_blocks)
         }
+        resampling_ratio_to_target = {
+            dataset_id: (
+                float(resolved_blocks.get(dataset_id, 0)) / float(target_blocks.get(dataset_id, 0))
+                if int(target_blocks.get(dataset_id, 0)) > 0
+                else 0.0
+            )
+            for dataset_id in sorted(target_blocks)
+        }
 
         grad_accum = self._resolved_gradient_accumulation_steps()
 
@@ -1869,6 +1878,7 @@ class FabricTrainerBase(ABC):
             "realized_tokens_per_dataset": realized_tokens,
             "realized_ratios": realized_ratios,
             "deviation_from_target_blocks": deviation_from_target_blocks,
+            "resampling_ratio_to_target": resampling_ratio_to_target,
             "validation_sources": self._mixture_source_split_metadata,
             "val_loss_per_dataset": self._mixture_last_val_losses,
             "val_loss_weighted": self._mixture_last_val_weighted,
@@ -1887,14 +1897,15 @@ class FabricTrainerBase(ABC):
             "mixture/effective_total_blocks": float(effective_total_blocks),
             "mixture/alignment_applied": 1.0 if self._mixture_alignment_applied else 0.0,
         }
+        summary_metrics.update(
+            build_mixture_progress_metrics(
+                target_blocks=target_blocks,
+                realized_blocks=resolved_blocks,
+                effective_total_blocks=effective_total_blocks,
+            )
+        )
         if self._mixture_last_val_weighted is not None:
             summary_metrics["mixture/val_loss_weighted"] = float(self._mixture_last_val_weighted)
-        for dataset_id in sorted(target_blocks):
-            summary_metrics[f"mixture/target_ratio_{dataset_id}"] = float(target_ratios.get(dataset_id, 0.0))
-            summary_metrics[f"mixture/realized_ratio_{dataset_id}"] = float(realized_ratios.get(dataset_id, 0.0))
-            summary_metrics[f"mixture/deviation_blocks_{dataset_id}"] = float(
-                deviation_from_target_blocks.get(dataset_id, 0)
-            )
         fabric.log_dict(summary_metrics, int(self.state.get("step_count", 0)))
         self.cli_logger.info("Wrote mixture report to %s", report_path)
     
@@ -2449,6 +2460,19 @@ class FabricTrainerBase(ABC):
             fabric.log_dict({"metric/val_loss_weighted": val_loss_weighted}, self.state["step_count"])
             if math.isfinite(val_loss_weighted):
                 fabric.log_dict({"metric/val_ppl_weighted": math.exp(val_loss_weighted)}, self.state["step_count"])
+
+            resolved_blocks = self._reduce_mixture_realized_blocks(fabric)
+            effective_total_blocks = int(
+                self._mixture_effective_total_blocks
+                or self._mixture_requested_total_blocks
+                or 0
+            )
+            mixture_progress_metrics = build_mixture_progress_metrics(
+                target_blocks=self._mixture_plan.target_blocks_per_dataset,
+                realized_blocks=resolved_blocks,
+                effective_total_blocks=effective_total_blocks,
+            )
+            fabric.log_dict(mixture_progress_metrics, self.state["step_count"])
 
             self._mixture_last_val_losses = {k: float(v) for k, v in losses_by_source.items()}
             self._mixture_last_val_weighted = float(val_loss_weighted)
