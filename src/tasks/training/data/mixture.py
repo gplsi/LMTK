@@ -419,6 +419,93 @@ def build_mixture_progress_metrics(
     return metrics
 
 
+def build_expected_replay_summary(
+    *,
+    target_blocks: Mapping[str, int],
+    source_blocks_available: Mapping[str, int],
+) -> dict[str, object]:
+    """
+    Compute deterministic replay expectations under unique-first sampling.
+
+    Replay is only required when target blocks for a source exceed its available unique blocks.
+    """
+    ids = sorted(set(target_blocks) | set(source_blocks_available))
+    per_source: dict[str, dict[str, float | int]] = {}
+    total_target = 0
+    total_unique = 0
+    total_replayed = 0
+
+    for dataset_id in ids:
+        target = max(0, int(target_blocks.get(dataset_id, 0)))
+        available = max(0, int(source_blocks_available.get(dataset_id, 0)))
+        unique = min(target, available)
+        replayed = max(0, target - available)
+        replay_fraction = (float(replayed) / float(target)) if target > 0 else 0.0
+
+        per_source[dataset_id] = {
+            "target_blocks": target,
+            "source_blocks_available": available,
+            "expected_unique_blocks": unique,
+            "expected_replayed_draws": replayed,
+            "expected_replay_fraction": replay_fraction,
+        }
+        total_target += target
+        total_unique += unique
+        total_replayed += replayed
+
+    total_replay_fraction = (float(total_replayed) / float(total_target)) if total_target > 0 else 0.0
+    return {
+        "per_source": per_source,
+        "totals": {
+            "target_blocks": total_target,
+            "expected_unique_blocks": total_unique,
+            "expected_replayed_draws": total_replayed,
+            "expected_replay_fraction": total_replay_fraction,
+        },
+    }
+
+
+def build_replay_metrics(
+    *,
+    realized_blocks: Mapping[str, int],
+    replayed_draws: Mapping[str, int],
+    namespace: str,
+) -> dict[str, float]:
+    """
+    Build replay telemetry metrics for W&B/CSV.
+
+    Args:
+        realized_blocks: Cumulative or window realized blocks by source.
+        replayed_draws: Cumulative or window replay draws by source.
+        namespace: Prefix namespace (e.g. 'mixture/replay' or 'mixture/replay_window').
+    """
+    ids = sorted(set(realized_blocks) | set(replayed_draws))
+    metrics: dict[str, float] = {}
+    total_realized = 0
+    total_replayed = 0
+    total_unique = 0
+
+    for dataset_id in ids:
+        realized = max(0, int(realized_blocks.get(dataset_id, 0)))
+        replayed = min(realized, max(0, int(replayed_draws.get(dataset_id, 0))))
+        unique = max(0, realized - replayed)
+        fraction = (float(replayed) / float(realized)) if realized > 0 else 0.0
+
+        metrics[f"{namespace}/unique_blocks_{dataset_id}"] = float(unique)
+        metrics[f"{namespace}/replayed_draws_{dataset_id}"] = float(replayed)
+        metrics[f"{namespace}/fraction_{dataset_id}"] = float(fraction)
+
+        total_realized += realized
+        total_replayed += replayed
+        total_unique += unique
+
+    total_fraction = (float(total_replayed) / float(total_realized)) if total_realized > 0 else 0.0
+    metrics[f"{namespace}/unique_blocks_total"] = float(total_unique)
+    metrics[f"{namespace}/replayed_draws_total"] = float(total_replayed)
+    metrics[f"{namespace}/fraction_total"] = float(total_fraction)
+    return metrics
+
+
 class MixturePackedDataset(Dataset):
     def __init__(
         self,
@@ -441,6 +528,7 @@ class MixturePackedDataset(Dataset):
 
         self._ordered_ids = sorted(self.counts_by_id)
         self._cumulative_upper_bounds: list[int] = []
+        self._segment_starts_by_id: dict[str, int] = {}
         running = 0
         for dataset_id in self._ordered_ids:
             count = int(self.counts_by_id[dataset_id])
@@ -450,6 +538,7 @@ class MixturePackedDataset(Dataset):
                 raise ValueError(
                     f"dataset_id={dataset_id!r} has zero train packed blocks; mixture mode requires B_i > 0."
                 )
+            self._segment_starts_by_id[dataset_id] = running
             running += count
             self._cumulative_upper_bounds.append(running)
 
@@ -460,14 +549,41 @@ class MixturePackedDataset(Dataset):
             total=self._total_blocks,
             schedule_seed=self.schedule_seed,
         )
+        self._source_unique_permutation: dict[str, tuple[int, int]] = {}
+        for dataset_id in self._ordered_ids:
+            source_len = int(len(self.datasets_by_id[dataset_id]))
+            source_seed = blake2b_u64(f"source_unique|{self.schedule_seed}|{dataset_id}")
+            self._source_unique_permutation[dataset_id] = _compute_stride_offset(
+                total=source_len,
+                schedule_seed=int(source_seed),
+            )
 
     def __len__(self) -> int:
         return self._total_blocks
 
-    def _dataset_id_for_position(self, global_idx: int) -> str:
+    def _dataset_id_for_position(self, global_idx: int) -> tuple[str, int]:
         p = (int(global_idx) * self._perm_stride + self._perm_offset) % self._total_blocks
         dataset_pos = bisect_right(self._cumulative_upper_bounds, p)
-        return self._ordered_ids[dataset_pos]
+        dataset_id = self._ordered_ids[dataset_pos]
+        local_draw_idx = int(p) - int(self._segment_starts_by_id[dataset_id])
+        return dataset_id, int(local_draw_idx)
+
+    def _source_sample_index(self, *, dataset_id: str, local_draw_idx: int, source_len: int) -> tuple[int, bool]:
+        """
+        Deterministic unique-first source sampling.
+
+        - For local_draw_idx < source_len: no replacement via affine permutation.
+        - For overflow draws: deterministic replay via hash modulo source_len.
+        """
+        if local_draw_idx < source_len:
+            stride, offset = self._source_unique_permutation[dataset_id]
+            return int((local_draw_idx * stride + offset) % source_len), False
+
+        overflow_idx = int(local_draw_idx - source_len)
+        replay_idx = blake2b_u64(
+            f"source_replay|{self.schedule_seed}|{dataset_id}|{overflow_idx}"
+        ) % int(source_len)
+        return int(replay_idx), True
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         if idx < 0:
@@ -475,17 +591,23 @@ class MixturePackedDataset(Dataset):
         if idx >= self._total_blocks:
             raise IndexError(f"Index {idx} out of range for {self._total_blocks} mixture blocks.")
 
-        dataset_id = self._dataset_id_for_position(idx)
+        dataset_id, local_draw_idx = self._dataset_id_for_position(idx)
         source_dataset = self.datasets_by_id[dataset_id]
         source_len = len(source_dataset)
         if source_len <= 0:
             raise RuntimeError(f"dataset_id={dataset_id!r} has no blocks.")
 
-        local_idx = blake2b_u64(f"{self.schedule_seed}|{idx}|{dataset_id}") % int(source_len)
+        local_idx, is_replay = self._source_sample_index(
+            dataset_id=dataset_id,
+            local_draw_idx=int(local_draw_idx),
+            source_len=int(source_len),
+        )
         sample = source_dataset[int(local_idx)]
         if not isinstance(sample, dict):
             raise TypeError("MixturePackedDataset expects source dataset samples to be dictionaries.")
 
         out = dict(sample)
         out["dataset_idx"] = torch.tensor(self.dataset_id_to_idx[dataset_id], dtype=torch.int64)
+        out["mixture_is_replay"] = torch.tensor(1 if is_replay else 0, dtype=torch.int64)
+        out["mixture_source_local_idx"] = torch.tensor(int(local_idx), dtype=torch.int64)
         return out

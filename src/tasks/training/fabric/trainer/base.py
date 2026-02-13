@@ -44,7 +44,9 @@ from src.tasks.training.data.mixture import (
     MixturePlan,
     allocate_exact_counts,
     blake2b_u64,
+    build_expected_replay_summary,
     build_mixture_progress_metrics,
+    build_replay_metrics,
     resolve_aligned_total_blocks,
     resolve_effective_total_blocks,
     resolve_mixture_plan,
@@ -63,9 +65,10 @@ MODEL_CLASS_MAP = {
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-MIXTURE_META_VERSION = "v2"
-MIXTURE_RUNTIME_VERSION = "v1"
+MIXTURE_META_VERSION = "v3"
+MIXTURE_RUNTIME_VERSION = "v2"
 RUN_METADATA_VERSION = "v1"
+MIXTURE_SAMPLING_ALGORITHM = "unique_first_v1"
 
 class FabricTrainerBase(ABC):
     """
@@ -128,6 +131,8 @@ class FabricTrainerBase(ABC):
         self._mixture_val_dataloaders: dict[str, DataLoader] = {}
         self._mixture_realized_blocks_local: dict[str, int] = {}
         self._mixture_realized_blocks_local_tensor: torch.Tensor | None = None
+        self._mixture_replayed_draws_local: dict[str, int] = {}
+        self._mixture_replayed_draws_local_tensor: torch.Tensor | None = None
         self._mixture_last_val_losses: dict[str, float] = {}
         self._mixture_last_val_weighted: float | None = None
         self._mixture_requested_total_blocks: int | None = None
@@ -139,6 +144,15 @@ class FabricTrainerBase(ABC):
         self._mixture_schedule_seed: int = 0
         self._mixture_configured_weights_by_id: dict[str, float | None] = {}
         self._mixture_source_blocks_by_id: dict[str, int] = {}
+        self._mixture_expected_replay_summary: dict[str, Any] = {}
+        self._mixture_anchor_epochs: int = 1
+        self._mixture_anchor_boundaries: list[int] = []
+        self._mixture_global_blocks_seen_estimate: int = 0
+        self._mixture_anchor_epoch_index: int = 0
+        self._mixture_anchor_window_start_realized_local: dict[str, int] = {}
+        self._mixture_anchor_window_start_replayed_local: dict[str, int] = {}
+        self._mixture_anchor_window_start_realized_local_tensor: torch.Tensor | None = None
+        self._mixture_anchor_window_start_replayed_local_tensor: torch.Tensor | None = None
         self._training_schedule_metadata: dict[str, Any] = {}
         
         # Load datasets and create dataloaders
@@ -1193,6 +1207,35 @@ class FabricTrainerBase(ABC):
             sampler_drop_last=sampler_drop_last,
             drop_last_batch=drop_last_batch,
         )
+        expected_replay_summary = build_expected_replay_summary(
+            target_blocks=plan.target_blocks_per_dataset,
+            source_blocks_available=source_blocks,
+        )
+        if fabric.global_rank == 0:
+            expected_totals = expected_replay_summary.get("totals", {})
+            expected_total_replayed = int(expected_totals.get("expected_replayed_draws", 0))
+            total_log_fn = self.cli_logger.warning if expected_total_replayed > 0 else self.cli_logger.info
+            total_log_fn(
+                "Mixture expected replay (pre-run): target_blocks=%s expected_replayed_draws=%s expected_replay_fraction=%.6f sampling_algorithm=%s",
+                int(expected_totals.get("target_blocks", 0)),
+                expected_total_replayed,
+                float(expected_totals.get("expected_replay_fraction", 0.0)),
+                MIXTURE_SAMPLING_ALGORITHM,
+            )
+            per_source_expected = expected_replay_summary.get("per_source", {})
+            for dataset_id in sorted(per_source_expected):
+                source_summary = per_source_expected[dataset_id]
+                expected_replayed = int(source_summary.get("expected_replayed_draws", 0))
+                log_fn = self.cli_logger.warning if expected_replayed > 0 else self.cli_logger.info
+                log_fn(
+                    "Mixture expected replay source=%s target_blocks=%s source_blocks_available=%s expected_unique=%s expected_replayed=%s expected_replay_fraction=%.6f",
+                    dataset_id,
+                    int(source_summary.get("target_blocks", 0)),
+                    int(source_summary.get("source_blocks_available", 0)),
+                    int(source_summary.get("expected_unique_blocks", 0)),
+                    expected_replayed,
+                    float(source_summary.get("expected_replay_fraction", 0.0)),
+                )
 
         train_loader = build_packing_dataloader(
             dataset=mixture_train_dataset,
@@ -1238,8 +1281,33 @@ class FabricTrainerBase(ABC):
         self._mixture_dataset_idx_to_id = dict(mixture_train_dataset.dataset_idx_to_id)
         self._mixture_realized_blocks_local = {dataset_id: 0 for dataset_id in sorted(source_blocks)}
         self._mixture_realized_blocks_local_tensor = None
+        self._mixture_replayed_draws_local = {dataset_id: 0 for dataset_id in sorted(source_blocks)}
+        self._mixture_replayed_draws_local_tensor = None
         self._mixture_configured_weights_by_id = configured_weights
         self._mixture_source_blocks_by_id = source_blocks
+        self._mixture_expected_replay_summary = expected_replay_summary
+        self._mixture_global_blocks_seen_estimate = 0
+        self._mixture_anchor_epoch_index = 0
+        if budget_mode == "anchor_epochs":
+            self._mixture_anchor_epochs = max(1, int(anchor_epochs) if anchor_epochs is not None else 1)
+        else:
+            self._mixture_anchor_epochs = 1
+        self._mixture_anchor_boundaries = []
+        if self._mixture_anchor_epochs > 1:
+            last_boundary = -1
+            for epoch_idx in range(1, self._mixture_anchor_epochs):
+                boundary = int((int(effective_total_blocks) * epoch_idx) // self._mixture_anchor_epochs)
+                if 0 < boundary < int(effective_total_blocks) and boundary > last_boundary:
+                    self._mixture_anchor_boundaries.append(boundary)
+                    last_boundary = boundary
+        self._mixture_anchor_window_start_realized_local = {
+            dataset_id: 0 for dataset_id in sorted(source_blocks)
+        }
+        self._mixture_anchor_window_start_replayed_local = {
+            dataset_id: 0 for dataset_id in sorted(source_blocks)
+        }
+        self._mixture_anchor_window_start_realized_local_tensor = None
+        self._mixture_anchor_window_start_replayed_local_tensor = None
 
         report_path_raw = mixture.get("report_path", None)
         if report_path_raw:
@@ -1517,6 +1585,7 @@ class FabricTrainerBase(ABC):
                         else None
                     ),
                     "alignment_applied": bool(self._mixture_alignment_applied),
+                    "sampling_algorithm": MIXTURE_SAMPLING_ALGORITHM,
                     "hash_algorithm": "blake2b_u64_v1",
                     "allocation_algorithm": "hamilton_lr_lexicographic_v1",
                     "split_seed_algorithm": "blake2b_u64_mod_2147483647_v1",
@@ -1544,6 +1613,26 @@ class FabricTrainerBase(ABC):
 
         return self._mixture_realized_blocks_local_tensor
 
+    def _ensure_mixture_replayed_counter_tensor(self, device: torch.device) -> torch.Tensor:
+        size = len(self._mixture_dataset_idx_to_id)
+        if size <= 0:
+            raise RuntimeError("Mixture source mapping is not initialized; cannot build replay-draw counters.")
+
+        local_tensor = self._mixture_replayed_draws_local_tensor
+        if (
+            local_tensor is None
+            or local_tensor.numel() != size
+            or local_tensor.device != device
+        ):
+            rebuilt = torch.zeros(size, dtype=torch.long, device=device)
+            for dataset_idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items()):
+                idx = int(dataset_idx)
+                if 0 <= idx < size:
+                    rebuilt[idx] = int(self._mixture_replayed_draws_local.get(dataset_id, 0))
+            self._mixture_replayed_draws_local_tensor = rebuilt
+
+        return self._mixture_replayed_draws_local_tensor
+
     def _sync_mixture_realized_blocks_local_from_tensor(self) -> None:
         if not self._mixture_enabled:
             return
@@ -1560,15 +1649,99 @@ class FabricTrainerBase(ABC):
         if synced:
             self._mixture_realized_blocks_local = synced
 
+    def _sync_mixture_replayed_draws_local_from_tensor(self) -> None:
+        if not self._mixture_enabled:
+            return
+        local_tensor = self._mixture_replayed_draws_local_tensor
+        if local_tensor is None:
+            return
+
+        values = local_tensor.detach().to(device="cpu", dtype=torch.long).tolist()
+        synced: dict[str, int] = {}
+        for dataset_idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items()):
+            idx = int(dataset_idx)
+            count = int(values[idx]) if 0 <= idx < len(values) else 0
+            synced[dataset_id] = max(0, count)
+        if synced:
+            self._mixture_replayed_draws_local = synced
+
+    def _sync_mixture_anchor_window_start_local_from_tensors(self) -> None:
+        if not self._mixture_enabled:
+            return
+
+        realized_tensor = self._mixture_anchor_window_start_realized_local_tensor
+        if realized_tensor is not None:
+            values = realized_tensor.detach().to(device="cpu", dtype=torch.long).tolist()
+            synced_realized: dict[str, int] = {}
+            for dataset_idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items()):
+                idx = int(dataset_idx)
+                count = int(values[idx]) if 0 <= idx < len(values) else 0
+                synced_realized[dataset_id] = max(0, count)
+            if synced_realized:
+                self._mixture_anchor_window_start_realized_local = synced_realized
+
+        replayed_tensor = self._mixture_anchor_window_start_replayed_local_tensor
+        if replayed_tensor is not None:
+            values = replayed_tensor.detach().to(device="cpu", dtype=torch.long).tolist()
+            synced_replayed: dict[str, int] = {}
+            for dataset_idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items()):
+                idx = int(dataset_idx)
+                count = int(values[idx]) if 0 <= idx < len(values) else 0
+                synced_replayed[dataset_id] = max(0, count)
+            if synced_replayed:
+                self._mixture_anchor_window_start_replayed_local = synced_replayed
+
+    def _advance_mixture_anchor_window_progress(
+        self,
+        *,
+        local_batch_blocks: int,
+        world_size: int,
+        device: torch.device,
+    ) -> None:
+        if not self._mixture_enabled or self._mixture_anchor_epochs <= 1:
+            return
+        if local_batch_blocks <= 0:
+            return
+        if world_size <= 0:
+            raise ValueError("world_size must be > 0 for mixture anchor-window accounting.")
+
+        self._mixture_global_blocks_seen_estimate += int(local_batch_blocks) * int(world_size)
+        while (
+            self._mixture_anchor_epoch_index < len(self._mixture_anchor_boundaries)
+            and self._mixture_global_blocks_seen_estimate
+            >= int(self._mixture_anchor_boundaries[self._mixture_anchor_epoch_index])
+        ):
+            realized = self._ensure_mixture_realized_counter_tensor(device)
+            replayed = self._ensure_mixture_replayed_counter_tensor(device)
+            self._mixture_anchor_window_start_realized_local_tensor = realized.clone()
+            self._mixture_anchor_window_start_replayed_local_tensor = replayed.clone()
+            self._mixture_anchor_epoch_index += 1
+
     def _build_mixture_runtime_state(self) -> dict[str, Any]:
         if not self._mixture_enabled:
             return {}
         self._sync_mixture_realized_blocks_local_from_tensor()
+        self._sync_mixture_replayed_draws_local_from_tensor()
+        self._sync_mixture_anchor_window_start_local_from_tensors()
         return {
             "mixture_runtime_version": MIXTURE_RUNTIME_VERSION,
             "realized_blocks_local": {
                 dataset_id: int(v)
                 for dataset_id, v in sorted(self._mixture_realized_blocks_local.items())
+            },
+            "replayed_draws_local": {
+                dataset_id: int(v)
+                for dataset_id, v in sorted(self._mixture_replayed_draws_local.items())
+            },
+            "anchor_epoch_index": int(self._mixture_anchor_epoch_index),
+            "global_blocks_seen_estimate": int(self._mixture_global_blocks_seen_estimate),
+            "anchor_window_start_realized_local": {
+                dataset_id: int(v)
+                for dataset_id, v in sorted(self._mixture_anchor_window_start_realized_local.items())
+            },
+            "anchor_window_start_replayed_local": {
+                dataset_id: int(v)
+                for dataset_id, v in sorted(self._mixture_anchor_window_start_replayed_local.items())
             },
             "last_val_losses": {
                 dataset_id: float(v)
@@ -1587,7 +1760,7 @@ class FabricTrainerBase(ABC):
         if not runtime_state:
             if strict:
                 raise ValueError(
-                    "Mixture resume requires checkpoint key 'mixture_runtime' for mixture_meta_version='v2'."
+                    "Mixture resume requires checkpoint key 'mixture_runtime' for mixture_meta_version='v3'."
                 )
             self.cli_logger.warning(
                 "Mixture resume checkpoint is missing 'mixture_runtime'; "
@@ -1597,7 +1770,7 @@ class FabricTrainerBase(ABC):
         if not isinstance(runtime_state, dict):
             if strict:
                 raise ValueError(
-                    "Mixture resume requires 'mixture_runtime' to be a dictionary for mixture_meta_version='v2'."
+                    "Mixture resume requires 'mixture_runtime' to be a dictionary for mixture_meta_version='v3'."
                 )
             self.cli_logger.warning(
                 "Mixture resume checkpoint has invalid 'mixture_runtime' type (%s); "
@@ -1605,6 +1778,12 @@ class FabricTrainerBase(ABC):
                 type(runtime_state).__name__,
             )
             return
+        loaded_runtime_version = runtime_state.get("mixture_runtime_version", None)
+        if strict and loaded_runtime_version != MIXTURE_RUNTIME_VERSION:
+            raise ValueError(
+                "Mixture resume compatibility check failed: mixture_runtime_version mismatch "
+                f"(expected={MIXTURE_RUNTIME_VERSION!r}, loaded={loaded_runtime_version!r})."
+            )
 
         loaded_counts = runtime_state.get("realized_blocks_local", {})
         if strict and not isinstance(loaded_counts, dict):
@@ -1620,15 +1799,153 @@ class FabricTrainerBase(ABC):
                     )
                 raw = loaded_counts.get(dataset_id, 0)
                 try:
-                    restored[dataset_id] = max(0, int(raw))
+                    parsed = int(raw)
                 except (TypeError, ValueError):
                     if strict:
                         raise ValueError(
                             f"Mixture resume has non-integer realized_blocks_local value for dataset_id={dataset_id!r}: {raw!r}."
                         )
                     restored[dataset_id] = 0
+                    continue
+                if strict and parsed < 0:
+                    raise ValueError(
+                        f"Mixture resume has negative realized_blocks_local value for dataset_id={dataset_id!r}: {raw!r}."
+                    )
+                restored[dataset_id] = max(0, parsed)
             self._mixture_realized_blocks_local = restored
             self._mixture_realized_blocks_local_tensor = None
+
+        loaded_replayed = runtime_state.get("replayed_draws_local", {})
+        if strict and not isinstance(loaded_replayed, dict):
+            raise ValueError(
+                "Mixture resume requires 'mixture_runtime.replayed_draws_local' to be a dictionary."
+            )
+        if isinstance(loaded_replayed, dict):
+            restored_replayed: dict[str, int] = {}
+            for dataset_id in sorted(self._mixture_replayed_draws_local):
+                if strict and dataset_id not in loaded_replayed:
+                    raise ValueError(
+                        f"Mixture resume requires replayed_draws_local entry for dataset_id={dataset_id!r}."
+                    )
+                raw = loaded_replayed.get(dataset_id, 0)
+                try:
+                    parsed = int(raw)
+                except (TypeError, ValueError):
+                    if strict:
+                        raise ValueError(
+                            "Mixture resume has non-integer replayed_draws_local value "
+                            f"for dataset_id={dataset_id!r}: {raw!r}."
+                        )
+                    restored_replayed[dataset_id] = 0
+                    continue
+                if strict and parsed < 0:
+                    raise ValueError(
+                        "Mixture resume has negative replayed_draws_local value "
+                        f"for dataset_id={dataset_id!r}: {raw!r}."
+                    )
+                restored_replayed[dataset_id] = max(0, parsed)
+            self._mixture_replayed_draws_local = restored_replayed
+            self._mixture_replayed_draws_local_tensor = None
+
+        loaded_anchor_epoch_index = runtime_state.get("anchor_epoch_index", 0)
+        try:
+            parsed_anchor_epoch_index = int(loaded_anchor_epoch_index)
+        except (TypeError, ValueError):
+            if strict:
+                raise ValueError(
+                    f"Mixture resume has invalid anchor_epoch_index value: {loaded_anchor_epoch_index!r}."
+                )
+            self._mixture_anchor_epoch_index = 0
+        else:
+            if strict and parsed_anchor_epoch_index < 0:
+                raise ValueError(
+                    f"Mixture resume has invalid negative anchor_epoch_index value: {loaded_anchor_epoch_index!r}."
+                )
+            self._mixture_anchor_epoch_index = max(0, parsed_anchor_epoch_index)
+
+        loaded_blocks_seen = runtime_state.get("global_blocks_seen_estimate", 0)
+        try:
+            parsed_blocks_seen = int(loaded_blocks_seen)
+        except (TypeError, ValueError):
+            if strict:
+                raise ValueError(
+                    "Mixture resume has invalid global_blocks_seen_estimate value: "
+                    f"{loaded_blocks_seen!r}."
+                )
+            self._mixture_global_blocks_seen_estimate = 0
+        else:
+            if strict and parsed_blocks_seen < 0:
+                raise ValueError(
+                    "Mixture resume has invalid negative global_blocks_seen_estimate value: "
+                    f"{loaded_blocks_seen!r}."
+                )
+            self._mixture_global_blocks_seen_estimate = max(0, parsed_blocks_seen)
+
+        loaded_window_start_realized = runtime_state.get("anchor_window_start_realized_local", {})
+        if strict and not isinstance(loaded_window_start_realized, dict):
+            raise ValueError(
+                "Mixture resume requires 'mixture_runtime.anchor_window_start_realized_local' to be a dictionary."
+            )
+        if isinstance(loaded_window_start_realized, dict):
+            restored_window_realized: dict[str, int] = {}
+            for dataset_id in sorted(self._mixture_anchor_window_start_realized_local):
+                if strict and dataset_id not in loaded_window_start_realized:
+                    raise ValueError(
+                        "Mixture resume requires anchor_window_start_realized_local entry "
+                        f"for dataset_id={dataset_id!r}."
+                    )
+                raw = loaded_window_start_realized.get(dataset_id, 0)
+                try:
+                    parsed = int(raw)
+                except (TypeError, ValueError):
+                    if strict:
+                        raise ValueError(
+                            "Mixture resume has non-integer anchor_window_start_realized_local value "
+                            f"for dataset_id={dataset_id!r}: {raw!r}."
+                        )
+                    restored_window_realized[dataset_id] = 0
+                    continue
+                if strict and parsed < 0:
+                    raise ValueError(
+                        "Mixture resume has negative anchor_window_start_realized_local value "
+                        f"for dataset_id={dataset_id!r}: {raw!r}."
+                    )
+                restored_window_realized[dataset_id] = max(0, parsed)
+            self._mixture_anchor_window_start_realized_local = restored_window_realized
+            self._mixture_anchor_window_start_realized_local_tensor = None
+
+        loaded_window_start_replayed = runtime_state.get("anchor_window_start_replayed_local", {})
+        if strict and not isinstance(loaded_window_start_replayed, dict):
+            raise ValueError(
+                "Mixture resume requires 'mixture_runtime.anchor_window_start_replayed_local' to be a dictionary."
+            )
+        if isinstance(loaded_window_start_replayed, dict):
+            restored_window_replayed: dict[str, int] = {}
+            for dataset_id in sorted(self._mixture_anchor_window_start_replayed_local):
+                if strict and dataset_id not in loaded_window_start_replayed:
+                    raise ValueError(
+                        "Mixture resume requires anchor_window_start_replayed_local entry "
+                        f"for dataset_id={dataset_id!r}."
+                    )
+                raw = loaded_window_start_replayed.get(dataset_id, 0)
+                try:
+                    parsed = int(raw)
+                except (TypeError, ValueError):
+                    if strict:
+                        raise ValueError(
+                            "Mixture resume has non-integer anchor_window_start_replayed_local value "
+                            f"for dataset_id={dataset_id!r}: {raw!r}."
+                        )
+                    restored_window_replayed[dataset_id] = 0
+                    continue
+                if strict and parsed < 0:
+                    raise ValueError(
+                        "Mixture resume has negative anchor_window_start_replayed_local value "
+                        f"for dataset_id={dataset_id!r}: {raw!r}."
+                    )
+                restored_window_replayed[dataset_id] = max(0, parsed)
+            self._mixture_anchor_window_start_replayed_local = restored_window_replayed
+            self._mixture_anchor_window_start_replayed_local_tensor = None
 
         loaded_losses = runtime_state.get("last_val_losses", {})
         if strict and not isinstance(loaded_losses, dict):
@@ -1679,6 +1996,7 @@ class FabricTrainerBase(ABC):
             "anchor_dataset_id": self._mixture_plan.anchor_dataset_id,
             "requested_total_blocks": int(self._mixture_requested_total_blocks or 0),
             "effective_total_blocks": int(self._mixture_effective_total_blocks or 0),
+            "sampling_algorithm": MIXTURE_SAMPLING_ALGORITHM,
             "world_size": int(fabric.world_size),
             "batch_size": int(self.config.batch_size),
             "gradient_accumulation_steps": grad_accum,
@@ -1707,40 +2025,18 @@ class FabricTrainerBase(ABC):
         loaded_version = loaded_meta.get("mixture_meta_version", None)
         expected_version = expected_meta.get("mixture_meta_version", None)
 
-        # Backward-compatible mode for checkpoints created before metadata v2.
-        if loaded_version is None:
-            legacy_keys = [
-                "weight_mode",
-                "sources",
-                "budget_mode",
-                "anchor_dataset_id",
-                "requested_total_blocks",
-                "world_size",
-                "batch_size",
-                "gradient_accumulation_steps",
-                "schedule_seed",
-                "hash_algorithm",
-                "allocation_algorithm",
-                "split_seed_algorithm",
-            ]
-            loaded_legacy = {k: loaded_meta.get(k) for k in legacy_keys}
-            expected_legacy = {k: expected_meta.get(k) for k in legacy_keys}
-            if loaded_legacy != expected_legacy:
-                raise ValueError(
-                    "Mixture resume compatibility check failed for legacy checkpoint metadata.\n"
-                    f"Expected (legacy keys): {json.dumps(expected_legacy, sort_keys=True)}\n"
-                    f"Loaded: {json.dumps(loaded_legacy, sort_keys=True)}"
-                )
-            self.cli_logger.warning(
-                "Loaded legacy mixture metadata without version tag; "
-                "continuing with compatibility checks on the legacy field subset only."
-            )
-            return
-
         if loaded_version != expected_version:
             raise ValueError(
                 "Mixture resume compatibility check failed: mixture_meta_version mismatch "
                 f"(expected={expected_version!r}, loaded={loaded_version!r})."
+            )
+
+        loaded_sampling_algorithm = loaded_meta.get("sampling_algorithm", None)
+        expected_sampling_algorithm = expected_meta.get("sampling_algorithm", None)
+        if loaded_sampling_algorithm != expected_sampling_algorithm:
+            raise ValueError(
+                "Mixture resume compatibility check failed: sampling_algorithm mismatch "
+                f"(expected={expected_sampling_algorithm!r}, loaded={loaded_sampling_algorithm!r})."
             )
 
         dataset_index_map = loaded_meta.get("dataset_index_map", None)
@@ -1789,11 +2085,98 @@ class FabricTrainerBase(ABC):
             dist.all_reduce(local, op=dist.ReduceOp.SUM)
         return {dataset_id: int(local[idx].item()) for idx, dataset_id in enumerate(ids)}
 
+    def _reduce_mixture_replayed_draws(self, fabric: L.Fabric) -> dict[str, int]:
+        if not self._mixture_enabled or self._mixture_plan is None:
+            return {}
+        ids = sorted(self._mixture_plan.target_blocks_per_dataset)
+        local_tensor = self._mixture_replayed_draws_local_tensor
+        if local_tensor is not None and local_tensor.numel() >= len(self._mixture_dataset_idx_to_id):
+            source = local_tensor.to(device=fabric.device, dtype=torch.long)
+            local = torch.zeros(len(ids), dtype=torch.long, device=fabric.device)
+            for out_idx, dataset_id in enumerate(ids):
+                dataset_idx = self._mixture_dataset_id_to_idx.get(dataset_id)
+                if dataset_idx is None:
+                    local[out_idx] = int(self._mixture_replayed_draws_local.get(dataset_id, 0))
+                    continue
+                ds_idx = int(dataset_idx)
+                if 0 <= ds_idx < source.numel():
+                    local[out_idx] = source[ds_idx]
+                else:
+                    local[out_idx] = int(self._mixture_replayed_draws_local.get(dataset_id, 0))
+        else:
+            local = torch.tensor(
+                [int(self._mixture_replayed_draws_local.get(dataset_id, 0)) for dataset_id in ids],
+                dtype=torch.long,
+                device=fabric.device,
+            )
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(local, op=dist.ReduceOp.SUM)
+        return {dataset_id: int(local[idx].item()) for idx, dataset_id in enumerate(ids)}
+
+    def _reduce_mixture_anchor_window_start_realized(self, fabric: L.Fabric) -> dict[str, int]:
+        if not self._mixture_enabled or self._mixture_plan is None:
+            return {}
+        ids = sorted(self._mixture_plan.target_blocks_per_dataset)
+        local_tensor = self._mixture_anchor_window_start_realized_local_tensor
+        if local_tensor is not None and local_tensor.numel() >= len(self._mixture_dataset_idx_to_id):
+            source = local_tensor.to(device=fabric.device, dtype=torch.long)
+            local = torch.zeros(len(ids), dtype=torch.long, device=fabric.device)
+            for out_idx, dataset_id in enumerate(ids):
+                dataset_idx = self._mixture_dataset_id_to_idx.get(dataset_id)
+                if dataset_idx is None:
+                    local[out_idx] = int(self._mixture_anchor_window_start_realized_local.get(dataset_id, 0))
+                    continue
+                ds_idx = int(dataset_idx)
+                if 0 <= ds_idx < source.numel():
+                    local[out_idx] = source[ds_idx]
+                else:
+                    local[out_idx] = int(self._mixture_anchor_window_start_realized_local.get(dataset_id, 0))
+        else:
+            local = torch.tensor(
+                [int(self._mixture_anchor_window_start_realized_local.get(dataset_id, 0)) for dataset_id in ids],
+                dtype=torch.long,
+                device=fabric.device,
+            )
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(local, op=dist.ReduceOp.SUM)
+        return {dataset_id: int(local[idx].item()) for idx, dataset_id in enumerate(ids)}
+
+    def _reduce_mixture_anchor_window_start_replayed(self, fabric: L.Fabric) -> dict[str, int]:
+        if not self._mixture_enabled or self._mixture_plan is None:
+            return {}
+        ids = sorted(self._mixture_plan.target_blocks_per_dataset)
+        local_tensor = self._mixture_anchor_window_start_replayed_local_tensor
+        if local_tensor is not None and local_tensor.numel() >= len(self._mixture_dataset_idx_to_id):
+            source = local_tensor.to(device=fabric.device, dtype=torch.long)
+            local = torch.zeros(len(ids), dtype=torch.long, device=fabric.device)
+            for out_idx, dataset_id in enumerate(ids):
+                dataset_idx = self._mixture_dataset_id_to_idx.get(dataset_id)
+                if dataset_idx is None:
+                    local[out_idx] = int(self._mixture_anchor_window_start_replayed_local.get(dataset_id, 0))
+                    continue
+                ds_idx = int(dataset_idx)
+                if 0 <= ds_idx < source.numel():
+                    local[out_idx] = source[ds_idx]
+                else:
+                    local[out_idx] = int(self._mixture_anchor_window_start_replayed_local.get(dataset_id, 0))
+        else:
+            local = torch.tensor(
+                [int(self._mixture_anchor_window_start_replayed_local.get(dataset_id, 0)) for dataset_id in ids],
+                dtype=torch.long,
+                device=fabric.device,
+            )
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(local, op=dist.ReduceOp.SUM)
+        return {dataset_id: int(local[idx].item()) for idx, dataset_id in enumerate(ids)}
+
     def _write_mixture_report(self, fabric: L.Fabric) -> None:
         if not self._mixture_enabled or self._mixture_plan is None:
             return
 
         resolved_blocks = self._reduce_mixture_realized_blocks(fabric)
+        resolved_replayed_draws = self._reduce_mixture_replayed_draws(fabric)
+        window_start_realized = self._reduce_mixture_anchor_window_start_realized(fabric)
+        window_start_replayed = self._reduce_mixture_anchor_window_start_replayed(fabric)
         if fabric.global_rank != 0:
             return
 
@@ -1812,6 +2195,47 @@ class FabricTrainerBase(ABC):
 
         realized_tokens = {
             dataset_id: int(blocks) * sequence_length for dataset_id, blocks in resolved_blocks.items()
+        }
+        observed_unique_blocks = {
+            dataset_id: max(
+                0,
+                int(resolved_blocks.get(dataset_id, 0)) - int(resolved_replayed_draws.get(dataset_id, 0)),
+            )
+            for dataset_id in sorted(target_blocks)
+        }
+        observed_replay_fraction = {
+            dataset_id: (
+                float(resolved_replayed_draws.get(dataset_id, 0)) / float(resolved_blocks.get(dataset_id, 0))
+                if int(resolved_blocks.get(dataset_id, 0)) > 0
+                else 0.0
+            )
+            for dataset_id in sorted(target_blocks)
+        }
+        window_realized = {
+            dataset_id: max(
+                0,
+                int(resolved_blocks.get(dataset_id, 0)) - int(window_start_realized.get(dataset_id, 0)),
+            )
+            for dataset_id in sorted(target_blocks)
+        }
+        window_replayed = {
+            dataset_id: max(
+                0,
+                int(resolved_replayed_draws.get(dataset_id, 0)) - int(window_start_replayed.get(dataset_id, 0)),
+            )
+            for dataset_id in sorted(target_blocks)
+        }
+        window_unique = {
+            dataset_id: max(0, int(window_realized.get(dataset_id, 0)) - int(window_replayed.get(dataset_id, 0)))
+            for dataset_id in sorted(target_blocks)
+        }
+        window_replay_fraction = {
+            dataset_id: (
+                float(window_replayed.get(dataset_id, 0)) / float(window_realized.get(dataset_id, 0))
+                if int(window_realized.get(dataset_id, 0)) > 0
+                else 0.0
+            )
+            for dataset_id in sorted(target_blocks)
         }
         realized_ratios = {
             dataset_id: (float(blocks) / float(effective_total_blocks) if effective_total_blocks > 0 else 0.0)
@@ -1871,6 +2295,7 @@ class FabricTrainerBase(ABC):
             "world_size": int(fabric.world_size),
             "batch_size": int(self.config.batch_size),
             "gradient_accumulation_steps": grad_accum,
+            "sampling_algorithm": MIXTURE_SAMPLING_ALGORITHM,
             "dataset_index_map": {str(idx): dataset_id for idx, dataset_id in sorted(self._mixture_dataset_idx_to_id.items())},
             "sources": source_entries,
             "target_blocks_per_dataset": target_blocks,
@@ -1879,6 +2304,38 @@ class FabricTrainerBase(ABC):
             "realized_ratios": realized_ratios,
             "deviation_from_target_blocks": deviation_from_target_blocks,
             "resampling_ratio_to_target": resampling_ratio_to_target,
+            "expected_replay": self._mixture_expected_replay_summary,
+            "observed_replay_cumulative": {
+                "unique_blocks_per_dataset": observed_unique_blocks,
+                "replayed_draws_per_dataset": {
+                    dataset_id: int(v) for dataset_id, v in sorted(resolved_replayed_draws.items())
+                },
+                "replay_fraction_per_dataset": observed_replay_fraction,
+                "totals": {
+                    "unique_blocks": int(sum(observed_unique_blocks.values())),
+                    "replayed_draws": int(sum(int(v) for v in resolved_replayed_draws.values())),
+                    "replay_fraction": (
+                        float(sum(int(v) for v in resolved_replayed_draws.values())) / float(sum(int(v) for v in resolved_blocks.values()))
+                        if int(sum(int(v) for v in resolved_blocks.values())) > 0
+                        else 0.0
+                    ),
+                },
+            },
+            "observed_replay_anchor_window": {
+                "anchor_epoch_index": int(self._mixture_anchor_epoch_index),
+                "unique_blocks_per_dataset": window_unique,
+                "replayed_draws_per_dataset": window_replayed,
+                "replay_fraction_per_dataset": window_replay_fraction,
+                "totals": {
+                    "unique_blocks": int(sum(window_unique.values())),
+                    "replayed_draws": int(sum(int(v) for v in window_replayed.values())),
+                    "replay_fraction": (
+                        float(sum(int(v) for v in window_replayed.values())) / float(sum(int(v) for v in window_realized.values()))
+                        if int(sum(int(v) for v in window_realized.values())) > 0
+                        else 0.0
+                    ),
+                },
+            },
             "validation_sources": self._mixture_source_split_metadata,
             "val_loss_per_dataset": self._mixture_last_val_losses,
             "val_loss_weighted": self._mixture_last_val_weighted,
@@ -1904,6 +2361,28 @@ class FabricTrainerBase(ABC):
                 effective_total_blocks=effective_total_blocks,
             )
         )
+        summary_metrics.update(
+            build_replay_metrics(
+                realized_blocks=resolved_blocks,
+                replayed_draws=resolved_replayed_draws,
+                namespace="mixture/replay",
+            )
+        )
+        summary_metrics.update(
+            build_replay_metrics(
+                realized_blocks=window_realized,
+                replayed_draws=window_replayed,
+                namespace="mixture/replay_window",
+            )
+        )
+        expected_totals = self._mixture_expected_replay_summary.get("totals", {})
+        summary_metrics["mixture/replay_expected/replayed_draws_total"] = float(
+            expected_totals.get("expected_replayed_draws", 0)
+        )
+        summary_metrics["mixture/replay_expected/fraction_total"] = float(
+            expected_totals.get("expected_replay_fraction", 0.0)
+        )
+        summary_metrics["mixture/replay_window/anchor_epoch_index"] = float(self._mixture_anchor_epoch_index)
         if self._mixture_last_val_weighted is not None:
             summary_metrics["mixture/val_loss_weighted"] = float(self._mixture_last_val_weighted)
         fabric.log_dict(summary_metrics, int(self.state.get("step_count", 0)))
@@ -2396,6 +2875,24 @@ class FabricTrainerBase(ABC):
                         minlength=local_counter.numel(),
                     )
                     local_counter.add_(local_counts)
+                    replay_counter = self._ensure_mixture_replayed_counter_tensor(dataset_idx_tensor.device)
+                    replay_flag_tensor = batch.get("mixture_is_replay", None)
+                    if replay_flag_tensor is None:
+                        raise RuntimeError(
+                            "Mixture batch is missing 'mixture_is_replay'; sampling telemetry is required."
+                        )
+                    replay_mask = replay_flag_tensor.reshape(-1).to(torch.bool)
+                    replayed_dataset_idx = dataset_idx_tensor[replay_mask]
+                    replay_counts = torch.bincount(
+                        replayed_dataset_idx,
+                        minlength=replay_counter.numel(),
+                    )
+                    replay_counter.add_(replay_counts)
+                    self._advance_mixture_anchor_window_progress(
+                        local_batch_blocks=int(dataset_idx_tensor.numel()),
+                        world_size=int(fabric.world_size),
+                        device=dataset_idx_tensor.device,
+                    )
                 self.train_t1 = time.perf_counter()
                 self._train_logs(fabric, loss)
                 
@@ -2462,6 +2959,7 @@ class FabricTrainerBase(ABC):
                 fabric.log_dict({"metric/val_ppl_weighted": math.exp(val_loss_weighted)}, self.state["step_count"])
 
             resolved_blocks = self._reduce_mixture_realized_blocks(fabric)
+            resolved_replayed_draws = self._reduce_mixture_replayed_draws(fabric)
             effective_total_blocks = int(
                 self._mixture_effective_total_blocks
                 or self._mixture_requested_total_blocks
@@ -2472,16 +2970,68 @@ class FabricTrainerBase(ABC):
                 realized_blocks=resolved_blocks,
                 effective_total_blocks=effective_total_blocks,
             )
-            fabric.log_dict(mixture_progress_metrics, self.state["step_count"])
+            replay_metrics = build_replay_metrics(
+                realized_blocks=resolved_blocks,
+                replayed_draws=resolved_replayed_draws,
+                namespace="mixture/replay",
+            )
+            expected_replay_metrics: dict[str, float] = {}
+            expected_summary = self._mixture_expected_replay_summary.get("per_source", {})
+            for dataset_id in sorted(expected_summary):
+                src = expected_summary[dataset_id]
+                expected_replay_metrics[f"mixture/replay_expected/replayed_draws_{dataset_id}"] = float(
+                    src.get("expected_replayed_draws", 0)
+                )
+                expected_replay_metrics[f"mixture/replay_expected/fraction_{dataset_id}"] = float(
+                    src.get("expected_replay_fraction", 0.0)
+                )
+            expected_totals = self._mixture_expected_replay_summary.get("totals", {})
+            expected_replay_metrics["mixture/replay_expected/replayed_draws_total"] = float(
+                expected_totals.get("expected_replayed_draws", 0)
+            )
+            expected_replay_metrics["mixture/replay_expected/fraction_total"] = float(
+                expected_totals.get("expected_replay_fraction", 0.0)
+            )
+
+            window_start_realized = self._reduce_mixture_anchor_window_start_realized(fabric)
+            window_start_replayed = self._reduce_mixture_anchor_window_start_replayed(fabric)
+            window_realized = {
+                dataset_id: max(0, int(resolved_blocks.get(dataset_id, 0)) - int(window_start_realized.get(dataset_id, 0)))
+                for dataset_id in sorted(resolved_blocks)
+            }
+            window_replayed = {
+                dataset_id: max(
+                    0,
+                    int(resolved_replayed_draws.get(dataset_id, 0)) - int(window_start_replayed.get(dataset_id, 0)),
+                )
+                for dataset_id in sorted(resolved_replayed_draws)
+            }
+            replay_window_metrics = build_replay_metrics(
+                realized_blocks=window_realized,
+                replayed_draws=window_replayed,
+                namespace="mixture/replay_window",
+            )
+
+            mixture_metrics = dict(mixture_progress_metrics)
+            mixture_metrics.update(replay_metrics)
+            mixture_metrics.update(replay_window_metrics)
+            mixture_metrics.update(expected_replay_metrics)
+            mixture_metrics["mixture/replay_window/anchor_epoch_index"] = float(self._mixture_anchor_epoch_index)
+            fabric.log_dict(mixture_metrics, self.state["step_count"])
 
             self._mixture_last_val_losses = {k: float(v) for k, v in losses_by_source.items()}
             self._mixture_last_val_weighted = float(val_loss_weighted)
 
             elapsed_time = (time.perf_counter() - t0) * 1000.0
+            replay_fraction_total = float(replay_metrics.get("mixture/replay/fraction_total", 0.0))
+            replay_window_fraction_total = float(replay_window_metrics.get("mixture/replay_window/fraction_total", 0.0))
             self.cli_logger.info(
-                "step %s: val_loss_weighted %.4f, per-source=%s, val time: %.2fms",
+                "step %s: val_loss_weighted %.4f, replay_fraction_total=%.6f, replay_window_fraction_total=%.6f, anchor_epoch_index=%s, per-source=%s, val time: %.2fms",
                 self.state.get("iter_num", 0),
                 val_loss_weighted,
+                replay_fraction_total,
+                replay_window_fraction_total,
+                self._mixture_anchor_epoch_index,
                 self._mixture_last_val_losses,
                 elapsed_time,
             )

@@ -11,7 +11,12 @@ pytest.importorskip("lightning")
 from datasets import Dataset, DatasetDict
 
 from src.tasks.training.data.mixture import MixturePlan
-from src.tasks.training.fabric.trainer.base import FabricTrainerBase
+from src.tasks.training.fabric.trainer.base import (
+    FabricTrainerBase,
+    MIXTURE_META_VERSION,
+    MIXTURE_RUNTIME_VERSION,
+    MIXTURE_SAMPLING_ALGORITHM,
+)
 from src.utils.dataset import build_tokenization_metadata, write_tokenization_metadata
 
 
@@ -76,6 +81,34 @@ def _write_dataset_metadata(dataset_path: Path, eos_token_id: int) -> None:
         created_by="unit-test",
     )
     write_tokenization_metadata(dataset_path, payload)
+
+
+def _configure_mixture_resume_trainer(trainer: _DummyTrainer) -> None:
+    trainer._mixture_enabled = True
+    trainer._mixture_plan = MixturePlan(
+        budget_mode="explicit_blocks",
+        requested_total_blocks=12,
+        target_blocks_per_dataset={"A": 6, "B": 6},
+        source_blocks_by_id={"A": 100, "B": 100},
+        weight_mode="manual",
+        effective_weights_by_id={"A": 1.0, "B": 1.0},
+        anchor_dataset_id=None,
+    )
+    trainer._mixture_configured_weights_by_id = {"A": 1.0, "B": 1.0}
+    trainer._mixture_requested_total_blocks = 12
+    trainer._mixture_effective_total_blocks = 12
+    trainer._mixture_schedule_seed = 123
+    trainer._mixture_dataset_idx_to_id = {0: "A", 1: "B"}
+    trainer._mixture_dataset_id_to_idx = {"A": 0, "B": 1}
+    trainer._mixture_realized_blocks_local = {"A": 0, "B": 0}
+    trainer._mixture_replayed_draws_local = {"A": 0, "B": 0}
+    trainer._mixture_anchor_window_start_realized_local = {"A": 0, "B": 0}
+    trainer._mixture_anchor_window_start_replayed_local = {"A": 0, "B": 0}
+    trainer._mixture_anchor_epoch_index = 0
+    trainer._mixture_global_blocks_seen_estimate = 0
+    trainer._mixture_last_val_losses = {}
+    trainer._mixture_last_val_weighted = None
+    trainer.state = {}
 
 
 def test_validate_mixture_source_compatibility_rejects_mismatched_tokenizer_name() -> None:
@@ -177,30 +210,16 @@ def test_resolve_eos_token_id_fails_when_unresolved_without_network() -> None:
 
 def test_mixture_resume_meta_roundtrip_and_mismatch_fail_fast() -> None:
     trainer = _make_trainer_for_contract_tests()
-    trainer._mixture_enabled = True
-    trainer._mixture_plan = MixturePlan(
-        budget_mode="explicit_blocks",
-        requested_total_blocks=12,
-        target_blocks_per_dataset={"A": 6, "B": 6},
-        source_blocks_by_id={"A": 100, "B": 100},
-        weight_mode="manual",
-        effective_weights_by_id={"A": 1.0, "B": 1.0},
-        anchor_dataset_id=None,
-    )
-    trainer._mixture_configured_weights_by_id = {"A": 1.0, "B": 1.0}
-    trainer._mixture_requested_total_blocks = 12
-    trainer._mixture_effective_total_blocks = 12
-    trainer._mixture_schedule_seed = 123
-    trainer._mixture_dataset_idx_to_id = {0: "A", 1: "B"}
-    trainer.state = {}
+    _configure_mixture_resume_trainer(trainer)
 
     meta = trainer._build_mixture_resume_meta(_FabricStub(world_size=2))
-    assert meta["mixture_meta_version"] == "v2"
+    assert meta["mixture_meta_version"] == MIXTURE_META_VERSION
     assert meta["requested_total_blocks"] == 12
     assert meta["effective_total_blocks"] == 12
     assert meta["world_size"] == 2
     assert meta["batch_size"] == 2
     assert meta["gradient_accumulation_steps"] == 4
+    assert meta["sampling_algorithm"] == MIXTURE_SAMPLING_ALGORITHM
     assert meta["allocation_algorithm"] == "hamilton_lr_lexicographic_v1"
     assert meta["dataset_index_map"] == {"0": "A", "1": "B"}
 
@@ -216,21 +235,7 @@ def test_mixture_resume_meta_roundtrip_and_mismatch_fail_fast() -> None:
 
 def test_mixture_resume_meta_requires_dict_shape() -> None:
     trainer = _make_trainer_for_contract_tests()
-    trainer._mixture_enabled = True
-    trainer._mixture_plan = MixturePlan(
-        budget_mode="explicit_blocks",
-        requested_total_blocks=12,
-        target_blocks_per_dataset={"A": 6, "B": 6},
-        source_blocks_by_id={"A": 100, "B": 100},
-        weight_mode="manual",
-        effective_weights_by_id={"A": 1.0, "B": 1.0},
-        anchor_dataset_id=None,
-    )
-    trainer._mixture_configured_weights_by_id = {"A": 1.0, "B": 1.0}
-    trainer._mixture_requested_total_blocks = 12
-    trainer._mixture_effective_total_blocks = 12
-    trainer._mixture_schedule_seed = 123
-    trainer._mixture_dataset_idx_to_id = {0: "A", 1: "B"}
+    _configure_mixture_resume_trainer(trainer)
     trainer.state = {"mixture_meta": "invalid-meta"}
 
     expected_meta = trainer._build_mixture_resume_meta(_FabricStub(world_size=2))
@@ -238,24 +243,9 @@ def test_mixture_resume_meta_requires_dict_shape() -> None:
         trainer._validate_mixture_resume_compatibility(expected_meta)
 
 
-def test_mixture_resume_meta_legacy_checkpoint_is_accepted_with_subset_matching() -> None:
+def test_mixture_resume_meta_rejects_legacy_checkpoint_without_version_and_sampling() -> None:
     trainer = _make_trainer_for_contract_tests()
-    trainer._mixture_enabled = True
-    trainer._mixture_plan = MixturePlan(
-        budget_mode="explicit_blocks",
-        requested_total_blocks=12,
-        target_blocks_per_dataset={"A": 6, "B": 6},
-        source_blocks_by_id={"A": 100, "B": 100},
-        weight_mode="manual",
-        effective_weights_by_id={"A": 1.0, "B": 1.0},
-        anchor_dataset_id=None,
-    )
-    trainer._mixture_configured_weights_by_id = {"A": 1.0, "B": 1.0}
-    trainer._mixture_requested_total_blocks = 12
-    trainer._mixture_effective_total_blocks = 12
-    trainer._mixture_schedule_seed = 123
-    trainer._mixture_dataset_idx_to_id = {0: "A", 1: "B"}
-    trainer.state = {}
+    _configure_mixture_resume_trainer(trainer)
 
     expected_meta = trainer._build_mixture_resume_meta(_FabricStub(world_size=2))
     legacy_meta = {
@@ -276,27 +266,13 @@ def test_mixture_resume_meta_legacy_checkpoint_is_accepted_with_subset_matching(
         )
     }
     trainer.state["mixture_meta"] = legacy_meta
-    trainer._validate_mixture_resume_compatibility(expected_meta)
+    with pytest.raises(ValueError, match="mixture_meta_version mismatch"):
+        trainer._validate_mixture_resume_compatibility(expected_meta)
 
 
 def test_mixture_resume_meta_rejects_invalid_dataset_index_map() -> None:
     trainer = _make_trainer_for_contract_tests()
-    trainer._mixture_enabled = True
-    trainer._mixture_plan = MixturePlan(
-        budget_mode="explicit_blocks",
-        requested_total_blocks=12,
-        target_blocks_per_dataset={"A": 6, "B": 6},
-        source_blocks_by_id={"A": 100, "B": 100},
-        weight_mode="manual",
-        effective_weights_by_id={"A": 1.0, "B": 1.0},
-        anchor_dataset_id=None,
-    )
-    trainer._mixture_configured_weights_by_id = {"A": 1.0, "B": 1.0}
-    trainer._mixture_requested_total_blocks = 12
-    trainer._mixture_effective_total_blocks = 12
-    trainer._mixture_schedule_seed = 123
-    trainer._mixture_dataset_idx_to_id = {0: "A", 1: "B"}
-    trainer.state = {}
+    _configure_mixture_resume_trainer(trainer)
 
     expected_meta = trainer._build_mixture_resume_meta(_FabricStub(world_size=2))
     bad_meta = dict(expected_meta)
@@ -308,15 +284,17 @@ def test_mixture_resume_meta_rejects_invalid_dataset_index_map() -> None:
 
 def test_restore_mixture_runtime_state_restores_counters_and_losses() -> None:
     trainer = _make_trainer_for_contract_tests()
-    trainer._mixture_enabled = True
-    trainer._mixture_realized_blocks_local = {"A": 0, "B": 0}
-    trainer._mixture_last_val_losses = {}
-    trainer._mixture_last_val_weighted = None
+    _configure_mixture_resume_trainer(trainer)
 
     trainer._restore_mixture_runtime_state(
         {
-            "mixture_runtime_version": "v1",
+            "mixture_runtime_version": MIXTURE_RUNTIME_VERSION,
             "realized_blocks_local": {"A": 11, "B": 7},
+            "replayed_draws_local": {"A": 3, "B": 1},
+            "anchor_epoch_index": 2,
+            "global_blocks_seen_estimate": 99,
+            "anchor_window_start_realized_local": {"A": 5, "B": 3},
+            "anchor_window_start_replayed_local": {"A": 1, "B": 1},
             "last_val_losses": {"A": 2.1, "B": 2.4},
             "last_val_weighted": 2.25,
         },
@@ -324,16 +302,36 @@ def test_restore_mixture_runtime_state_restores_counters_and_losses() -> None:
     )
 
     assert trainer._mixture_realized_blocks_local == {"A": 11, "B": 7}
+    assert trainer._mixture_replayed_draws_local == {"A": 3, "B": 1}
+    assert trainer._mixture_anchor_epoch_index == 2
+    assert trainer._mixture_global_blocks_seen_estimate == 99
+    assert trainer._mixture_anchor_window_start_realized_local == {"A": 5, "B": 3}
+    assert trainer._mixture_anchor_window_start_replayed_local == {"A": 1, "B": 1}
     assert trainer._mixture_last_val_losses == {"A": 2.1, "B": 2.4}
     assert trainer._mixture_last_val_weighted == 2.25
 
 
+def test_restore_mixture_runtime_state_strict_requires_runtime_version_match() -> None:
+    trainer = _make_trainer_for_contract_tests()
+    _configure_mixture_resume_trainer(trainer)
+    with pytest.raises(ValueError, match="mixture_runtime_version mismatch"):
+        trainer._restore_mixture_runtime_state(
+            {
+                "mixture_runtime_version": "legacy",
+                "realized_blocks_local": {"A": 0, "B": 0},
+                "replayed_draws_local": {"A": 0, "B": 0},
+                "anchor_window_start_realized_local": {"A": 0, "B": 0},
+                "anchor_window_start_replayed_local": {"A": 0, "B": 0},
+                "last_val_losses": {},
+                "last_val_weighted": None,
+            },
+            strict=True,
+        )
+
+
 def test_restore_mixture_runtime_state_strict_mode_requires_runtime_payload() -> None:
     trainer = _make_trainer_for_contract_tests()
-    trainer._mixture_enabled = True
-    trainer._mixture_realized_blocks_local = {"A": 0, "B": 0}
-    trainer._mixture_last_val_losses = {}
-    trainer._mixture_last_val_weighted = None
+    _configure_mixture_resume_trainer(trainer)
 
     with pytest.raises(ValueError, match="mixture_runtime"):
         trainer._restore_mixture_runtime_state(None, strict=True)
@@ -341,10 +339,7 @@ def test_restore_mixture_runtime_state_strict_mode_requires_runtime_payload() ->
 
 def test_restore_mixture_runtime_state_legacy_mode_allows_missing_runtime_payload() -> None:
     trainer = _make_trainer_for_contract_tests()
-    trainer._mixture_enabled = True
-    trainer._mixture_realized_blocks_local = {"A": 0, "B": 0}
-    trainer._mixture_last_val_losses = {}
-    trainer._mixture_last_val_weighted = None
+    _configure_mixture_resume_trainer(trainer)
 
     trainer._restore_mixture_runtime_state(None, strict=False)
     assert trainer._mixture_realized_blocks_local == {"A": 0, "B": 0}

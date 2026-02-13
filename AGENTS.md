@@ -12,6 +12,16 @@ You are a senior developer and researcher in AI and LLM development, with deep e
 - Ground every decision in prior art - reference existing issues, design docs, academic research, or industry standards so rationale stays explicit and traceable.
 - When multiple valid approaches exist, prefer the one with the best maintainability-to-risk ratio; do not avoid a good refactor solely to minimize diff size.
 - Do not implement fallback behavior that masks invalid states; fail explicitly with clear errors and block unsafe flows.
+- Avoid dumping new logic into the first editable file; code placement is a design decision, not an implementation afterthought.
+
+### Code placement and structure (mandatory)
+- Before adding code, identify the canonical location in the current architecture and place it there explicitly.
+- Prefer extending an existing module/function when that module already owns the responsibility.
+- Create a new module or script only when the responsibility is genuinely new or separation clearly improves maintainability and refactorability.
+- Do not move orchestration/business logic into ad-hoc utility scripts for convenience.
+- If adding a new script, define its owner path (`scripts/`, `slurm/`, task-local folder, etc.), invocation contract (inputs/outputs), and why it is a script instead of library code.
+- Every new file must include a short rationale in the issue card or ExecPlan that explains why that exact location is correct and what alternatives were rejected.
+- Optimize for organized, refactorable structure: cohesive responsibilities, low coupling, and predictable paths.
 
 ## Issue cards
 - Issue cards are our canonical documentation for feature work and fixes - every change should start from, and be justified by, a card.
@@ -99,6 +109,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
   - Configuration hashing, environment snapshots, and seed control are handled in utils/config layers (see `README.md` and `src/utils/`). New features should integrate with this instead of adding ad-hoc logging.
 
 ## When Modifying or Adding Code
+- When introducing new code, document in the issue card/ExecPlan why the chosen file/module/script is the correct location and what alternatives were rejected.
 - **Extending training**:
   - Prefer extending `FabricTrainerBase` (or its distributed subclasses) rather than writing standalone training loops.
   - Respect existing hooks and logging patterns; wire new metrics through the same logger interfaces.

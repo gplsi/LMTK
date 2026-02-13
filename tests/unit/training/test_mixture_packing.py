@@ -7,7 +7,9 @@ from src.tasks.training.data.mixture import (
     MixturePackedDataset,
     allocate_exact_counts,
     blake2b_u64,
+    build_expected_replay_summary,
     build_mixture_progress_metrics,
+    build_replay_metrics,
     derive_anchor_epoch_targets,
     permute_index,
     resolve_aligned_total_blocks,
@@ -139,6 +141,45 @@ def test_build_mixture_progress_metrics_reports_cumulative_blocks_and_resampling
     assert metrics["mixture/resampling_ratio_B"] == pytest.approx(1.4)
 
 
+def test_build_expected_replay_summary_matches_unique_first_contract() -> None:
+    summary = build_expected_replay_summary(
+        target_blocks={"A": 6, "B": 2},
+        source_blocks_available={"A": 3, "B": 5},
+    )
+    per_source = summary["per_source"]
+    totals = summary["totals"]
+
+    assert per_source["A"]["expected_unique_blocks"] == 3
+    assert per_source["A"]["expected_replayed_draws"] == 3
+    assert per_source["A"]["expected_replay_fraction"] == pytest.approx(0.5)
+
+    assert per_source["B"]["expected_unique_blocks"] == 2
+    assert per_source["B"]["expected_replayed_draws"] == 0
+    assert per_source["B"]["expected_replay_fraction"] == pytest.approx(0.0)
+
+    assert totals["target_blocks"] == 8
+    assert totals["expected_unique_blocks"] == 5
+    assert totals["expected_replayed_draws"] == 3
+    assert totals["expected_replay_fraction"] == pytest.approx(3.0 / 8.0)
+
+
+def test_build_replay_metrics_reports_unique_replay_and_totals() -> None:
+    metrics = build_replay_metrics(
+        realized_blocks={"A": 10, "B": 5},
+        replayed_draws={"A": 2, "B": 0},
+        namespace="mixture/replay",
+    )
+    assert metrics["mixture/replay/unique_blocks_A"] == 8.0
+    assert metrics["mixture/replay/replayed_draws_A"] == 2.0
+    assert metrics["mixture/replay/fraction_A"] == pytest.approx(0.2)
+    assert metrics["mixture/replay/unique_blocks_B"] == 5.0
+    assert metrics["mixture/replay/replayed_draws_B"] == 0.0
+    assert metrics["mixture/replay/fraction_B"] == pytest.approx(0.0)
+    assert metrics["mixture/replay/unique_blocks_total"] == 13.0
+    assert metrics["mixture/replay/replayed_draws_total"] == 2.0
+    assert metrics["mixture/replay/fraction_total"] == pytest.approx(2.0 / 15.0)
+
+
 def test_permute_index_is_a_full_permutation() -> None:
     total = 17
     permuted = [permute_index(i, total, schedule_seed=42) for i in range(total)]
@@ -173,7 +214,56 @@ def test_mixture_dataset_is_deterministic_and_emits_dataset_idx() -> None:
 
     sample = ds1[0]
     assert sample["dataset_idx"].dtype == torch.int64
+    assert sample["mixture_is_replay"].dtype == torch.int64
+    assert sample["mixture_source_local_idx"].dtype == torch.int64
     assert not hasattr(ds1, "schedule")
+
+
+def test_mixture_dataset_unique_first_without_replay_when_target_within_capacity() -> None:
+    datasets_by_id = {
+        "A": _ToyDataset(1, 3),
+        "B": _ToyDataset(2, 2),
+    }
+    counts_by_id = {"A": 3, "B": 2}
+    ds = MixturePackedDataset(
+        datasets_by_id=datasets_by_id,
+        counts_by_id=counts_by_id,
+        schedule_seed=7,
+    )
+
+    per_source_local_indices: dict[str, list[int]] = {"A": [], "B": []}
+    per_source_replay: dict[str, int] = {"A": 0, "B": 0}
+    idx_to_id = ds.dataset_idx_to_id
+    for i in range(len(ds)):
+        sample = ds[i]
+        dataset_id = idx_to_id[int(sample["dataset_idx"].item())]
+        per_source_local_indices[dataset_id].append(int(sample["mixture_source_local_idx"].item()))
+        per_source_replay[dataset_id] += int(sample["mixture_is_replay"].item())
+
+    assert per_source_replay == {"A": 0, "B": 0}
+    assert len(set(per_source_local_indices["A"])) == 3
+    assert len(set(per_source_local_indices["B"])) == 2
+
+
+def test_mixture_dataset_replays_only_on_overflow() -> None:
+    datasets_by_id = {"A": _ToyDataset(1, 3)}
+    counts_by_id = {"A": 6}
+    ds = MixturePackedDataset(
+        datasets_by_id=datasets_by_id,
+        counts_by_id=counts_by_id,
+        schedule_seed=9,
+    )
+
+    replay_flags = []
+    local_indices = []
+    for i in range(len(ds)):
+        sample = ds[i]
+        replay_flags.append(int(sample["mixture_is_replay"].item()))
+        local_indices.append(int(sample["mixture_source_local_idx"].item()))
+
+    assert sum(replay_flags) == 3
+    # unique-first guarantees all 3 source-local indices appear before replaying overflow
+    assert len(set(local_indices)) == 3
 
 
 def test_blake2b_u64_is_stable() -> None:
