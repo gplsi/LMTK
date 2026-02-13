@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import torch
 from box import Box
 
 pytest.importorskip("datasets")
@@ -12,10 +14,10 @@ from datasets import Dataset, DatasetDict
 
 from src.tasks.training.data.mixture import MixturePlan
 from src.tasks.training.fabric.trainer.base import (
-    FabricTrainerBase,
     MIXTURE_META_VERSION,
     MIXTURE_RUNTIME_VERSION,
     MIXTURE_SAMPLING_ALGORITHM,
+    FabricTrainerBase,
 )
 from src.utils.dataset import build_tokenization_metadata, write_tokenization_metadata
 
@@ -43,6 +45,17 @@ class _DummyTrainer(FabricTrainerBase):
 @dataclass
 class _FabricStub:
     world_size: int
+
+
+@dataclass
+class _FabricReportStub:
+    world_size: int
+    global_rank: int
+    device: torch.device
+    logged: list[tuple[dict[str, float], int]]
+
+    def log_dict(self, payload: dict[str, float], step: int) -> None:
+        self.logged.append((dict(payload), int(step)))
 
 
 def _make_trainer_for_contract_tests() -> _DummyTrainer:
@@ -194,7 +207,9 @@ def test_resolve_eos_token_id_rejects_mixture_metadata_mismatch(tmp_path: Path) 
         {"dataset_id": "B", "nameOrPath": str(ds_b)},
     ]
 
-    with pytest.raises(ValueError, match="Incompatible eos_token_id values found in source dataset metadata"):
+    with pytest.raises(
+        ValueError, match="Incompatible eos_token_id values found in source dataset metadata"
+    ):
         trainer._resolve_eos_token_id(trainer.config.dataset.packing)
 
 
@@ -311,6 +326,101 @@ def test_restore_mixture_runtime_state_restores_counters_and_losses() -> None:
     assert trainer._mixture_last_val_weighted == 2.25
 
 
+def test_mixture_report_contract_keys_and_totals_are_stable(tmp_path: Path) -> None:
+    trainer = _make_trainer_for_contract_tests()
+    _configure_mixture_resume_trainer(trainer)
+    trainer._mixture_alignment_policy = "none"
+    trainer._mixture_alignment_unit = 0
+    trainer._mixture_alignment_applied = False
+    trainer._mixture_source_configs = {
+        "A": Box({"nameOrPath": str(tmp_path / "A")}, box_dots=True),
+        "B": Box({"nameOrPath": str(tmp_path / "B")}, box_dots=True),
+    }
+    trainer.datasets = {"A": {"train": None}, "B": {"train": None}}
+    trainer._mixture_expected_replay_summary = {"per_source": {}, "totals": {}}
+    trainer._mixture_last_val_losses = {"A": 1.1, "B": 1.3}
+    trainer._mixture_last_val_weighted = 1.2
+    trainer.state = {"step_count": 4, "run_metadata": {"run_metadata_version": "v1"}}
+    trainer._mixture_report_path = tmp_path / "mixture_report.json"
+
+    trainer._reduce_mixture_realized_blocks = lambda fabric: {"A": 6, "B": 6}  # type: ignore[assignment]
+    trainer._reduce_mixture_replayed_draws = lambda fabric: {"A": 1, "B": 2}  # type: ignore[assignment]
+    trainer._reduce_mixture_anchor_window_start_realized = lambda fabric: {"A": 2, "B": 3}  # type: ignore[assignment]
+    trainer._reduce_mixture_anchor_window_start_replayed = lambda fabric: {"A": 0, "B": 1}  # type: ignore[assignment]
+
+    fabric = _FabricReportStub(
+        world_size=2,
+        global_rank=0,
+        device=torch.device("cpu"),
+        logged=[],
+    )
+    trainer._write_mixture_report(fabric)
+
+    payload = json.loads(trainer._mixture_report_path.read_text(encoding="utf-8"))
+    required_keys = {
+        "requested_total_blocks",
+        "effective_total_blocks",
+        "alignment_policy",
+        "alignment_unit",
+        "alignment_applied",
+        "target_blocks_per_dataset",
+        "realized_blocks_per_dataset",
+        "observed_replay_cumulative",
+    }
+    assert required_keys.issubset(payload.keys())
+    assert payload["requested_total_blocks"] == 12
+    assert payload["effective_total_blocks"] == 12
+    assert payload["target_blocks_per_dataset"] == {"A": 6, "B": 6}
+    assert payload["realized_blocks_per_dataset"] == {"A": 6, "B": 6}
+    assert sum(payload["realized_blocks_per_dataset"].values()) == payload["effective_total_blocks"]
+
+
+def test_mixture_report_anchor_window_fields_are_stable(tmp_path: Path) -> None:
+    trainer = _make_trainer_for_contract_tests()
+    _configure_mixture_resume_trainer(trainer)
+    trainer._mixture_anchor_epoch_index = 2
+    trainer._mixture_alignment_policy = "none"
+    trainer._mixture_alignment_unit = 0
+    trainer._mixture_alignment_applied = False
+    trainer._mixture_source_configs = {
+        "A": Box({"nameOrPath": str(tmp_path / "A")}, box_dots=True),
+        "B": Box({"nameOrPath": str(tmp_path / "B")}, box_dots=True),
+    }
+    trainer.datasets = {"A": {"train": None}, "B": {"train": None}}
+    trainer._mixture_expected_replay_summary = {"per_source": {}, "totals": {}}
+    trainer._mixture_last_val_losses = {}
+    trainer._mixture_last_val_weighted = None
+    trainer.state = {"step_count": 1, "run_metadata": {"run_metadata_version": "v1"}}
+    trainer._mixture_report_path = tmp_path / "mixture_report_anchor.json"
+
+    trainer._reduce_mixture_realized_blocks = lambda fabric: {"A": 8, "B": 4}  # type: ignore[assignment]
+    trainer._reduce_mixture_replayed_draws = lambda fabric: {"A": 3, "B": 1}  # type: ignore[assignment]
+    trainer._reduce_mixture_anchor_window_start_realized = lambda fabric: {"A": 5, "B": 2}  # type: ignore[assignment]
+    trainer._reduce_mixture_anchor_window_start_replayed = lambda fabric: {"A": 2, "B": 1}  # type: ignore[assignment]
+
+    fabric = _FabricReportStub(
+        world_size=2,
+        global_rank=0,
+        device=torch.device("cpu"),
+        logged=[],
+    )
+    trainer._write_mixture_report(fabric)
+
+    payload = json.loads(trainer._mixture_report_path.read_text(encoding="utf-8"))
+    anchor = payload["observed_replay_anchor_window"]
+    assert anchor["anchor_epoch_index"] == 2
+    assert set(anchor.keys()) == {
+        "anchor_epoch_index",
+        "unique_blocks_per_dataset",
+        "replayed_draws_per_dataset",
+        "replay_fraction_per_dataset",
+        "totals",
+    }
+    assert anchor["totals"]["unique_blocks"] >= 0
+    assert anchor["totals"]["replayed_draws"] >= 0
+    assert 0.0 <= float(anchor["totals"]["replay_fraction"]) <= 1.0
+
+
 def test_restore_mixture_runtime_state_strict_requires_runtime_version_match() -> None:
     trainer = _make_trainer_for_contract_tests()
     _configure_mixture_resume_trainer(trainer)
@@ -393,8 +503,12 @@ def test_ensure_validation_split_is_deterministic_with_seed_override() -> None:
         }
     )
 
-    ds1 = trainer._ensure_validation_split(DatasetDict({"train": base}), split_seed_override=77, source_id="A")
-    ds2 = trainer._ensure_validation_split(DatasetDict({"train": base}), split_seed_override=77, source_id="A")
+    ds1 = trainer._ensure_validation_split(
+        DatasetDict({"train": base}), split_seed_override=77, source_id="A"
+    )
+    ds2 = trainer._ensure_validation_split(
+        DatasetDict({"train": base}), split_seed_override=77, source_id="A"
+    )
 
     assert ds1["valid"]["example_id"] == ds2["valid"]["example_id"]
     assert ds1["train"]["example_id"] == ds2["train"]["example_id"]
@@ -421,7 +535,9 @@ def test_load_fabric_datasets_rejects_mixture_enabled_without_sources() -> None:
     trainer = _make_trainer_for_contract_tests()
     trainer.config.dataset.mixture = Box({"enabled": True}, box_dots=True)
 
-    with pytest.raises(ValueError, match="dataset.mixture.enabled is true but dataset.sources is missing or empty"):
+    with pytest.raises(
+        ValueError, match="dataset.mixture.enabled is true but dataset.sources is missing or empty"
+    ):
         trainer._load_fabric_datasets_dataloaders(trainer.config, {})
 
 
