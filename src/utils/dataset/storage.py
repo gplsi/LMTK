@@ -462,6 +462,109 @@ class DatasetStorage:
         )
         return dataset_dict
 
+    def _normalize_filters(self, filters: Any) -> list[dict[str, Any]]:
+        if filters is None:
+            return []
+        if not isinstance(filters, list):
+            raise ValueError("dataset.filters must be a list of filter rules.")
+
+        normalized: list[dict[str, Any]] = []
+        for idx, rule in enumerate(filters):
+            if hasattr(rule, "to_dict"):
+                rule = rule.to_dict()
+            if not isinstance(rule, dict):
+                raise ValueError(
+                    f"dataset.filters[{idx}] must be an object with 'column' and 'value'."
+                )
+
+            column = rule.get("column", None)
+            if not isinstance(column, str) or not column.strip():
+                raise ValueError(
+                    f"dataset.filters[{idx}].column must be a non-empty string."
+                )
+            if "value" not in rule:
+                raise ValueError(f"dataset.filters[{idx}] must define a 'value'.")
+
+            normalized.append({"column": column, "value": rule["value"]})
+
+        return normalized
+
+    def _apply_filters_to_split(
+        self,
+        split_dataset: HFDataset,
+        filters: list[dict[str, Any]],
+        split_name: str,
+    ) -> HFDataset:
+        for rule in filters:
+            column = str(rule["column"])
+            if column not in split_dataset.column_names:
+                raise ValueError(
+                    f"Filter column '{column}' not found in split '{split_name}'. "
+                    f"Available columns: {split_dataset.column_names}"
+                )
+
+        filtered = split_dataset
+        before_rows = len(split_dataset)
+        for rule in filters:
+            column = str(rule["column"])
+            expected = rule["value"]
+            filtered = filtered.filter(
+                lambda row, c=column, v=expected: row[c] == v
+            )
+
+        after_rows = len(filtered)
+        self.logger.info(
+            "Applied dataset filters to split '%s': before=%s after=%s",
+            split_name,
+            before_rows,
+            after_rows,
+        )
+        return filtered
+
+    def apply_filters(
+        self,
+        dataset: Union[HFDataset, DatasetDict],
+        filters: Any,
+    ) -> Union[HFDataset, DatasetDict]:
+        normalized_filters = self._normalize_filters(filters)
+        if not normalized_filters:
+            return dataset
+
+        summary = ", ".join(
+            [f"{rule['column']} == {rule['value']!r}" for rule in normalized_filters]
+        )
+        self.logger.info("Applying dataset filters: %s", summary)
+
+        if isinstance(dataset, DatasetDict):
+            before_total = sum(len(split) for split in dataset.values())
+            filtered_splits = {
+                split_name: self._apply_filters_to_split(split_dataset, normalized_filters, split_name)
+                for split_name, split_dataset in dataset.items()
+            }
+            filtered_dataset = DatasetDict(filtered_splits)
+            after_total = sum(len(split) for split in filtered_dataset.values())
+        elif isinstance(dataset, HFDataset):
+            before_total = len(dataset)
+            filtered_dataset = self._apply_filters_to_split(dataset, normalized_filters, "train")
+            after_total = len(filtered_dataset)
+        else:
+            raise ValueError(
+                f"Unsupported dataset type for filtering: {type(dataset)}. "
+                "Expected datasets.Dataset or datasets.DatasetDict."
+            )
+
+        self.logger.info(
+            "Dataset filtering finished: before_total=%s after_total=%s",
+            before_total,
+            after_total,
+        )
+        if after_total <= 0:
+            raise ValueError(
+                "dataset.filters removed all rows. Adjust filters or input dataset."
+            )
+
+        return filtered_dataset
+
     def load_from_disk(self, path: str) -> HFDataset:
         """
         Load a dataset from disk.

@@ -296,6 +296,10 @@ class BaseOrchestrator(ABC):
             if self.config.dataset.format == "dataset":
                 self.logger.info(f"Loading dataset from path '{self.config.dataset.nameOrPath}'")
                 dataset = dataset_handler.load_from_disk(self.config.dataset.nameOrPath)
+
+                filters = self.config.dataset.get("filters", None)
+                if filters:
+                    dataset = dataset_handler.apply_filters(dataset, filters)
                 
                 if self.config.test_size:
                     self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
@@ -317,6 +321,10 @@ class BaseOrchestrator(ABC):
                     self.config.dataset.nameOrPath,
                     file_config=file_config,
                 )
+
+                filters = self.config.dataset.get("filters", None)
+                if filters:
+                    dataset = dataset_handler.apply_filters(dataset, filters)
                 
                 if self.config.test_size:
                     self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")

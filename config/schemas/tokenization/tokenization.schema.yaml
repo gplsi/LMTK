@@ -75,6 +75,22 @@ allOf:
                 type: boolean
               path:
                 type: string
+          filters:
+            type: array
+            minItems: 1
+            description: "Optional row filters applied before tokenization. All rules are combined with AND semantics."
+            items:
+              type: object
+              additionalProperties: false
+              properties:
+                column:
+                  type: string
+                  minLength: 1
+                value:
+                  type: [string, number, integer, boolean, "null"]
+              required:
+                - column
+                - value
         required:
           - source
           - nameOrPath
