@@ -8,7 +8,7 @@ implementation adheres to a common interface, aiding in scalability and maintain
 from abc import ABC, abstractmethod
 import os
 from typing import Any, Dict, List, Optional, Union
-from transformers import PreTrainedTokenizer, AutoTokenizer
+from transformers import PreTrainedTokenizer, AutoTokenizer, PreTrainedTokenizerFast
 from src.tasks.tokenization.tokenizer.config import TokenizerConfig
 from src.utils.logging import get_logger
 from src.utils import get_optimal_thread_count
@@ -65,12 +65,29 @@ class BaseTokenizer(ABC):
             raise ValueError("Tokenizer name must be specified")
             
         self.logger.info(f"Initializing tokenizer: {self.config.tokenizer_name}")
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self.config.tokenizer_name,
-            use_fast=True,           
-            padding_side="right",
-            truncation_side="right",
-        )
+        try:
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                self.config.tokenizer_name,
+                use_fast=True,
+                padding_side="right",
+                truncation_side="right",
+            )
+        except Exception as exc:
+            # Some environments ship older Transformers versions that can't resolve
+            # tokenizer_class="TokenizersBackend" from newer tokenizer exports.
+            if "TokenizersBackend" in str(exc):
+                self.logger.warning(
+                    "AutoTokenizer could not load '%s' due to TokenizersBackend compatibility. "
+                    "Falling back to PreTrainedTokenizerFast.",
+                    self.config.tokenizer_name,
+                )
+                self._tokenizer = PreTrainedTokenizerFast.from_pretrained(
+                    self.config.tokenizer_name,
+                    padding_side="right",
+                    truncation_side="right",
+                )
+            else:
+                raise
         
         # Set padding token with proper fallback for different tokenizer types
         if self._tokenizer.pad_token is None:
