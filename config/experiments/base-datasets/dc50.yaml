@@ -1,5 +1,5 @@
 task: tokenization
-experiment_name: tokenization_dc50_doclevel_salamandra2b
+experiment_name: tokenization_dc50
 verbose_level: 3
 seed: 42
 
@@ -13,7 +13,7 @@ tokenizer:
 
 dataset:
   source: local
-  nameOrPath: data/downloaded/gplsi__discriminative_counterfeit_es/train.parquet
+  nameOrPath: /leonardo_scratch/fast/EUHPC_D22_034/data/downloaded/gplsi__discriminative_counterfeit_es/train.parquet
   format: files
   file_config:
     text_column: claim
@@ -24,6 +24,6 @@ dataset:
       value: not-fake
 
 output:
-  path: data/tokenized/dc50_doclevel_salamandra2b
+  path: /leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc50/
 
 test_size: 0
