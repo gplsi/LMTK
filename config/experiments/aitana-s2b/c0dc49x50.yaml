@@ -36,16 +36,16 @@ dataset:
   sources:
     - dataset_id: "dc49"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc49"
-      tokenizer_name: "BSC-LT/salamandra-2b"
+      tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
       index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc49x50/packing_index/dc49"
     - dataset_id: "dc50"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc50"
-      tokenizer_name: "BSC-LT/salamandra-2b"
+      tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
       index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc49x50/packing_index/dc50"
   packing:
     enabled: true
     sequence_length: 8192
-    tokenizer_name: "BSC-LT/salamandra-2b"
+    tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
     lock_timeout_s: 1800
     stale_lock_age_s: 600
     lock_lease_heartbeat_s: 30

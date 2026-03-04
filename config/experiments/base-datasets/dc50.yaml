@@ -4,7 +4,7 @@ verbose_level: 3
 seed: 42
 
 tokenizer:
-  tokenizer_name: BSC-LT/salamandra-2b
+  tokenizer_name: /leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b
   task: clm_training
   # Doc-level mode: omit context_length/max_sequence_length and overlap.
   batch_size: 512
