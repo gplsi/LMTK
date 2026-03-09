@@ -142,6 +142,28 @@ SECURITY:
 EOF
 }
 
+validate_conda_preflight() {
+    local env_script="$PROJECT_ROOT/scripts/set_environment.sh"
+    local preflight_output=""
+
+    if [[ ! -f "$env_script" ]]; then
+        echo "ERROR: Environment script not found: $env_script"
+        echo "This job was not submitted because SLURM would fail during environment setup."
+        exit 1
+    fi
+
+    if ! preflight_output=$(bash -c "source \"$env_script\"" 2>&1); then
+        echo "ERROR: Conda environment initialization failed during SLURM submission preflight."
+        echo "This job was not submitted because the compute node would fail during environment setup."
+        echo ""
+        echo "scripts/set_environment.sh output:"
+        echo "$preflight_output"
+        exit 1
+    fi
+
+    echo "Conda environment preflight passed."
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -431,6 +453,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
     echo ""
     echo "To actually submit the job, remove the -d/--dry-run flag"
 else
+    validate_conda_preflight
     echo "Submitting job..."
     echo "Running: $SBATCH_CMD"
     echo ""

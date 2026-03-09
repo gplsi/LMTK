@@ -832,6 +832,7 @@ The SLURM job script (`p.slurm`) provides detailed logs including:
 | **Config file not found** | `Config file not found: /.../LMTK/...` | Ensure `-c` path exists and is repo-relative |
 | **WandB login fails** | `❌ WandB login failed` | Verify API key: `wandb login your_key` |
 | **Python import errors** | `ModuleNotFoundError` | Check Conda env + `PYTHONPATH` in logs |
+| **Conda setup fails before submit** | `Conda environment initialization failed during SLURM submission preflight` | Fix `CONDA_SH_PATH` / `CONDA_ENV_NAME` or update `scripts/set_environment.sh` |
 | **Out of memory** | Job killed, no output | Increase memory: `-m 128G` or `-m 256G` |
 | **Time limit exceeded** | Job killed after time limit | Increase time: `-t 72:00:00` |
 
@@ -893,6 +894,16 @@ ModuleNotFoundError: No module named 'src.config.config_loader'
 - Verify `PYTHONPATH` is set correctly (check `JOBID_lmtk.out`)
 - Ensure all dependencies are installed in Conda Enviroment
 - Check that src/ directory structure is correct
+
+#### 9. **Conda Initialization Fails Before Submission**
+```
+ERROR: Conda environment initialization failed during SLURM submission preflight.
+```
+**Solutions**:
+- Update `scripts/set_environment.sh` to point at the correct `conda.sh` for the cluster
+- Or export `CONDA_SH_PATH=/path/to/conda.sh` before running `./submit_job.sh`
+- If the environment name changed, export `CONDA_ENV_NAME=your-env-name`
+- Re-run `./submit_job.sh`; the job is not submitted until the preflight passes
 
 ### 🆕 Debug Mode & Diagnostics
 
@@ -959,6 +970,10 @@ done
 Customize the runtime environment via `scripts/set_environment.sh` (Conda activation) or by exporting variables before calling `submit_job.sh`:
 
 ```bash
+# Override the Conda bootstrap when your cluster uses a different install path
+export CONDA_SH_PATH=/path/to/miniconda3/etc/profile.d/conda.sh
+export CONDA_ENV_NAME=lmtk
+
 # Add custom environment setup
 echo "===== Custom Setup ====="
 export CUSTOM_VAR="value"
