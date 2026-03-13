@@ -20,7 +20,7 @@ seed: 42
 output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40x48"
 
 # Model
-model_name: "/leonardo_scratch/fast/EUHPC_D22_034/models/salamandra-2b-instruct/snapshots/66b2be1e98fca5764696c1538f240a78f4b15433"
+model_name: "/leonardo_scratch/fast/EUHPC_D22_034/models/salamandra-2b-instruct/snapshots"
 precision: "bf16-true"
 
 # Multi-node settings (must match SLURM allocation)
