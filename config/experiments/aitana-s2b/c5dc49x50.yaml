@@ -1,0 +1,130 @@
+# Multi-node FSDP mixture training config for dc49 + dc50 (doc-level tokenized datasets).
+#
+# IMPORTANT (SLURM):
+# - `num_nodes` must match `slurm/submit_job.sh --nodes`
+# - `devices_per_node` must match `slurm/submit_job.sh --ntasks-per-node`
+# - Pass `-g/--gpus` equal to GPUs per node (typically same as `devices_per_node`)
+#
+# Note (mixture proportions):
+# - We intentionally omit `weight` in dataset.sources.
+# - This uses the original source-block proportions (weight_mode=from_source_blocks).
+#
+# Tuning rationale:
+# - Keep the Salamandra-style annealing shape for continued training:
+#   cosine decay, no warmup, and bounded LR.
+# - Use a lower peak LR than the paper's 2e-5 because earlier local runs
+#   peaked at the first checkpoint, which suggests over-updating.
+# - Relative to `c0dc49x50`, this config intentionally:
+#   - lowers the peak LR from 2e-5 to 1e-5,
+#   - removes warmup (`warmup_linear` + 6%) in favor of pure cosine decay,
+#   - tightens the annealing range to 1e-5 -> 1e-6,
+#   - changes AdamW from beta2=0.999 / weight_decay=0.01 to
+#     beta2=0.95 / weight_decay=0.1.
+# - The research hypothesis is that `c0dc49x50` was too aggressive for this
+#   continued-training regime: the earliest checkpoints were strongest, so c5
+#   prioritizes smaller, better-regularized updates over faster adaptation.
+
+task: "clm_training"
+experiment_name: "aitana-s2b-c5dc49x50"
+verbose_level: 3
+seed: 42
+
+# Output dir (shared filesystem for multi-node)
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc49x50"
+
+# Model
+model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
+precision: "bf16-true"
+
+# Multi-node settings (must match SLURM allocation)
+num_nodes: 2
+devices_per_node: 4
+
+# Training parameters
+number_epochs: 1
+batch_size: 1
+num_workers: 4
+
+dataset:
+  source: "local"
+  format: "hf"
+  sources:
+    - dataset_id: "dc49"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc49"
+      tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc49x50/packing_index/dc49"
+    - dataset_id: "dc50"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc50"
+      tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc49x50/packing_index/dc50"
+  packing:
+    enabled: true
+    sequence_length: 8192
+    tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
+    lock_timeout_s: 1800
+    stale_lock_age_s: 600
+    lock_lease_heartbeat_s: 30
+    clean_index_cache_on_start: false
+    clean_index_cache_on_success: true
+    allow_shared_cache_cleanup: false
+    shuffle: true
+    sampler_drop_last: true
+    drop_last_batch: true
+  mixture:
+    enabled: true
+    budget_mode: "anchor_epochs"
+    anchor_epochs: 1
+    schedule_seed: 42
+
+validation_split:
+  proportion: 0.01
+  seed: 42
+  shuffle: true
+
+# Validation / checkpointing
+validations_per_epoch: 6
+checkpoints_per_epoch: 6
+validate_after_epoch: false
+validate_after_k_steps: null
+validate_on_end: true
+save_on_validate: false
+save_on_end: true
+
+# Optimizer
+gradient_accumulation: true
+gradient_accumulation_steps: 16
+grad_clip: 1.0
+lr: 1.0e-05
+lr_decay: true
+weight_decay: 0.1
+beta1: 0.9
+beta2: 0.95
+
+# Scheduler (annealing-style continued training: no warmup, bounded cosine decay)
+lr_scheduler: "cosine"
+warmup_proportion: 0.0
+min_lr: 1.0e-06
+max_lr: 1.0e-05
+
+# Distributed strategy
+parallelization_strategy: "fsdp"
+parallelization_config:
+  auto_wrap_policy: "llama"
+  sharding_strategy: "FULL_SHARD"
+  state_dict_type: "sharded"
+  limit_all_gathers: true
+  cpu_offload: false
+  gradient_checkpointing: true
+
+# Logging
+logging_config: "wandb"
+wandb_project: "aitana-s2b"
+wandb_entity: "gplsi_continual"
+wandb_run_name: "aitana-s2b-c5dc49x50"
+wandb_group: "aitana-s2b"
+wandb_job_type: "train"
+wandb_notes: "Mixture CLM training on dc49+dc50 with Salamandra-2B using conservative annealing-style continued training"
+wandb_resume: "allow"
+wandb_mode: "offline"
+log_model: false
+log_iter_interval: 10

@@ -1,0 +1,113 @@
+# Multi-node FSDP mixture training config for dc49 + dc50 (doc-level tokenized datasets).
+#
+# IMPORTANT (SLURM):
+# - `num_nodes` must match `slurm/submit_job.sh --nodes`
+# - `devices_per_node` must match `slurm/submit_job.sh --ntasks-per-node`
+# - Pass `-g/--gpus` equal to GPUs per node (typically same as `devices_per_node`)
+#
+# Note (mixture proportions):
+# - We intentionally omit `weight` in dataset.sources.
+# - This uses the original source-block proportions (weight_mode=from_source_blocks).
+
+task: "clm_training"
+experiment_name: "aitana-s2bi-c0dc49x50"
+verbose_level: 3
+seed: 42
+
+# Output dir (shared filesystem for multi-node)
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc49x50"
+
+# Model
+model_name: "/leonardo_scratch/fast/EUHPC_D22_034/models/salamandra-2b-instruct/snapshots/66b2be1e98fca5764696c1538f240a78f4b15433"
+precision: "bf16-true"
+
+# Multi-node settings (must match SLURM allocation)
+num_nodes: 2
+devices_per_node: 4
+
+# Training parameters
+number_epochs: 1
+batch_size: 1
+num_workers: 4
+
+dataset:
+  source: "local"
+  format: "hf"
+  sources:
+    - dataset_id: "dc49"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc49"
+      tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc49x50/packing_index/dc49"
+    - dataset_id: "dc50"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc50"
+      tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc49x50/packing_index/dc50"
+  packing:
+    enabled: true
+    sequence_length: 8192
+    tokenizer_name: "/leonardo_work/EUHPC_D22_034/models/tokenizers/BSC-LT__salamandra-2b"
+    lock_timeout_s: 1800
+    stale_lock_age_s: 600
+    lock_lease_heartbeat_s: 30
+    clean_index_cache_on_start: false
+    clean_index_cache_on_success: true
+    allow_shared_cache_cleanup: false
+    shuffle: true
+    sampler_drop_last: true
+    drop_last_batch: true
+  mixture:
+    enabled: true
+    budget_mode: "anchor_epochs"
+    anchor_epochs: 1
+    schedule_seed: 42
+
+validation_split:
+  proportion: 0.01
+  seed: 42
+  shuffle: true
+
+# Validation / checkpointing
+validations_per_epoch: 6
+checkpoints_per_epoch: 6
+validate_after_epoch: false
+validate_after_k_steps: null
+validate_on_end: true
+save_on_validate: false
+save_on_end: true
+
+# Optimizer
+gradient_accumulation: true
+gradient_accumulation_steps: 16
+grad_clip: 1.0
+lr: 2.0e-05
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06
+
+# Distributed strategy
+parallelization_strategy: "fsdp"
+parallelization_config:
+  auto_wrap_policy: "llama"
+  sharding_strategy: "FULL_SHARD"
+  state_dict_type: "sharded"
+  limit_all_gathers: true
+  cpu_offload: false
+  gradient_checkpointing: true
+
+# Logging
+logging_config: "wandb"
+wandb_project: "aitana-s2b"
+wandb_entity: "gplsi_continual"
+wandb_run_name: "aitana-s2bi-c0dc49x50"
+wandb_group: "aitana-s2b"
+wandb_job_type: "train"
+wandb_notes: "Mixture CLM training on dc49+dc50 with Salamandra-2B-Instruct (FSDP multi-node)"
+wandb_resume: "allow"
+wandb_mode: "offline"
+log_model: false
+log_iter_interval: 10

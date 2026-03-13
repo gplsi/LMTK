@@ -10,14 +10,29 @@
 # - In anchor mode, block budgets are floor-aligned in code to
 #   `world_size * batch_size * gradient_accumulation_steps` for distributed safety.
 # - In explicit mode, block budgets remain strict and must be divisible by the same unit.
+#
+# Tuning rationale:
+# - Keep the Salamandra-style annealing shape for continued training:
+#   cosine decay, no warmup, and bounded LR.
+# - Use a lower peak LR than the paper's 2e-5 because earlier local runs
+#   peaked at the first checkpoint, which suggests over-updating.
+# - Relative to `c0dc40x48`, this config intentionally:
+#   - lowers the peak LR from 2e-5 to 1e-5,
+#   - removes warmup (`warmup_linear` + 6%) in favor of pure cosine decay,
+#   - tightens the annealing range to 1e-5 -> 1e-6,
+#   - changes AdamW from beta2=0.999 / weight_decay=0.01 to
+#     beta2=0.95 / weight_decay=0.1.
+# - The research hypothesis is that `c0dc40x48` was too aggressive for this
+#   continued-training regime: the earliest checkpoints were strongest, so c5
+#   prioritizes smaller, better-regularized updates over faster adaptation.
 
 task: "clm_training"
-experiment_name: "aitana-s2b-c0dc40x48"
+experiment_name: "aitana-s2b-c5dc40x48"
 verbose_level: 3
 seed: 42
 
 # Output dir (shared filesystem for multi-node)
-output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48"
 
 # Model
 model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
@@ -109,15 +124,17 @@ save_on_end: true
 gradient_accumulation: true
 gradient_accumulation_steps: 16
 grad_clip: 1.0
-lr: 2.0e-05
+lr: 1.0e-05
 lr_decay: true
-weight_decay: 0.01
+weight_decay: 0.1
 beta1: 0.9
-beta2: 0.999
+beta2: 0.95
 
-# Scheduler (bounded peak, min_lr left at 0.0)
-lr_scheduler: "warmup_linear"
-warmup_proportion: 0.06
+# Scheduler (annealing-style continued training: no warmup, bounded cosine decay)
+lr_scheduler: "cosine"
+warmup_proportion: 0.0
+min_lr: 1.0e-06
+max_lr: 1.0e-05
 
 # Distributed strategy
 parallelization_strategy: "fsdp"
@@ -133,10 +150,10 @@ parallelization_config:
 logging_config: "wandb"
 wandb_project: "aitana-s2b"
 wandb_entity: "gplsi_continual"
-wandb_run_name: "aitana-s2b-c0dc40x48"
+wandb_run_name: "aitana-s2b-c5dc40x48"
 wandb_group: "aitana-s2b"
 wandb_job_type: "train"
-wandb_notes: "Mixture CLM training on dc40xdc48 with Salamandra-2B (FSDP multi-node)"
+wandb_notes: "Mixture CLM training on dc40xdc48 with Salamandra-2B using conservative annealing-style continued training"
 wandb_resume: "allow"
 wandb_mode: "offline"
 log_model: false

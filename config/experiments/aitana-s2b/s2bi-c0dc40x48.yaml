@@ -12,15 +12,15 @@
 # - In explicit mode, block budgets remain strict and must be divisible by the same unit.
 
 task: "clm_training"
-experiment_name: "aitana-s2b-c0dc40x48"
+experiment_name: "aitana-s2bi-c0dc40x48"
 verbose_level: 3
 seed: 42
 
 # Output dir (shared filesystem for multi-node)
-output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40x48"
 
 # Model
-model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
+model_name: "/leonardo_scratch/fast/EUHPC_D22_034/models/salamandra-2b-instruct/snapshots/66b2be1e98fca5764696c1538f240a78f4b15433"
 precision: "bf16-true"
 
 # Multi-node settings (must match SLURM allocation)
@@ -39,39 +39,39 @@ dataset:
     - dataset_id: "dc40"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc40"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc40"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc40"
     - dataset_id: "dc41"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc41"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc41"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc41"
     - dataset_id: "dc42"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc42"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc42"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc42"
     - dataset_id: "dc43"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc43"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc43"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc43"
     - dataset_id: "dc44"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc44"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc44"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc44"
     - dataset_id: "dc45"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc45"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc45"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc45"
     - dataset_id: "dc46"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc46"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc46"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc46"
     - dataset_id: "dc47"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc47"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc47"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc47"
     - dataset_id: "dc48"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc48"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48/packing_index/dc48"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc40x48/packing_index/dc48"
   packing:
     enabled: true
     sequence_length: 8192
@@ -133,10 +133,10 @@ parallelization_config:
 logging_config: "wandb"
 wandb_project: "aitana-s2b"
 wandb_entity: "gplsi_continual"
-wandb_run_name: "aitana-s2b-c0dc40x48"
+wandb_run_name: "aitana-s2bi-c0dc40x48"
 wandb_group: "aitana-s2b"
 wandb_job_type: "train"
-wandb_notes: "Mixture CLM training on dc40xdc48 with Salamandra-2B (FSDP multi-node)"
+wandb_notes: "Mixture CLM training on dc40xdc48 with Salamandra-2B-Instruct (FSDP multi-node)"
 wandb_resume: "allow"
 wandb_mode: "offline"
 log_model: false
