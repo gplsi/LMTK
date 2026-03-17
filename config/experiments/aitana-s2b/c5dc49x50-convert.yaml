@@ -1,0 +1,12 @@
+task: "convert"
+experiment_name: "c5dc49x50_convert"
+verbose_level: 3
+
+convert:
+  # Keep consistent with training config `c5dc49x50.yaml`
+  base_model: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
+  # Directory containing one or more `.pth` checkpoints produced by FSDP training
+  checkpoint_path: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc49x50"
+  output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c5dc49x50/aitana-s2b-c5dc49x50_hf"
+  initial_format: "fsdp"
+  final_format: "huggingface"
