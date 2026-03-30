@@ -1,0 +1,12 @@
+task: "convert"
+experiment_name: "c0dc40_convert"
+verbose_level: 3
+
+convert:
+  # Keep consistent with training config `c0dc40.yaml`
+  base_model: "BSC-LT/salamandra-2b"
+  # Directory containing one or more `.pth` checkpoints produced by FSDP training
+  checkpoint_path: "/home/gplsi/GPLSI/ALIA/modelos/Continual/aitana-s2b-c0dc40x48"
+  output_dir: "/home/gplsi/GPLSI/ALIA/modelos/Continual/aitana-s2b-c0dc40x48/hf_models"
+  initial_format: "fsdp"
+  final_format: "huggingface"
