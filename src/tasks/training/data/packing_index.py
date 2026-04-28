@@ -81,6 +81,21 @@ class PackingIndex:
         return self.total_tokens // int(self.meta.sequence_length)
 
     @staticmethod
+    def _row_length(row: Any) -> int:
+        input_ids = row["input_ids"]
+        actual_length = len(input_ids)
+        if "length" not in row:
+            return int(actual_length)
+
+        row_length = int(row["length"])
+        if row_length != actual_length:
+            raise ValueError(
+                "Invalid packing input: row['length'] does not match len(row['input_ids']). "
+                f"length={row_length} len(input_ids)={actual_length}"
+            )
+        return row_length
+
+    @staticmethod
     def _infer_dataset_fingerprint(hf_split: Any) -> Optional[str]:
         fp = getattr(hf_split, "_fingerprint", None)
         if isinstance(fp, str) and fp:
@@ -101,13 +116,13 @@ class PackingIndex:
         h.update(str(num_rows).encode("utf-8"))
         for i in range(sample_n):
             row = hf_split[i]
-            h.update(str(int(row.get("length", 0))).encode("utf-8"))
+            h.update(str(PackingIndex._row_length(row)).encode("utf-8"))
             if "ends_with_eos" in getattr(hf_split, "column_names", []):
                 h.update(b"1" if bool(row.get("ends_with_eos", False)) else b"0")
         if num_rows > sample_n:
             row = hf_split[num_rows - 1]
             h.update(b"last")
-            h.update(str(int(row.get("length", 0))).encode("utf-8"))
+            h.update(str(PackingIndex._row_length(row)).encode("utf-8"))
             if "ends_with_eos" in getattr(hf_split, "column_names", []):
                 h.update(b"1" if bool(row.get("ends_with_eos", False)) else b"0")
         return f"derived:{h.hexdigest()}"
@@ -533,13 +548,8 @@ class PackingIndex:
         max_validated = min(int(length_sample_validation), num_rows)
         for row_idx in range(max_validated):
             row = hf_split[row_idx]
-            row_length = int(row["length"])
+            row_length = cls._row_length(row)
             input_ids = row["input_ids"]
-            if row_length != len(input_ids):
-                raise ValueError(
-                    "Invalid packing input: row['length'] does not match len(row['input_ids']). "
-                    f"Row={row_idx} length={row_length} len(input_ids)={len(input_ids)}"
-                )
             if insert_eos and used_ends_with_eos:
                 expected = bool(input_ids) and int(input_ids[-1]) == int(eos_token_id)
                 if bool(row["ends_with_eos"]) != expected:
@@ -549,11 +559,19 @@ class PackingIndex:
                         f"Row={row_idx} ends_with_eos={row['ends_with_eos']} expected={expected} eos_token_id={eos_token_id}"
                     )
 
+        has_length_column = "length" in getattr(hf_split, "column_names", [])
+
+        def _lengths_from_input_ids(input_ids_batch: Any) -> np.ndarray:
+            return np.asarray([len(input_ids) for input_ids in input_ids_batch], dtype=np.int64).reshape(-1)
+
         def _iter_column_batches(batch_size: int = 65536) -> Iterator[dict[str, np.ndarray]]:
             if hasattr(hf_split, "iter"):
                 iterator = hf_split.iter(batch_size=batch_size)
                 for batch in iterator:
-                    lengths = np.asarray(batch["length"], dtype=np.int64).reshape(-1)
+                    if has_length_column:
+                        lengths = np.asarray(batch["length"], dtype=np.int64).reshape(-1)
+                    else:
+                        lengths = _lengths_from_input_ids(batch["input_ids"])
                     payload: dict[str, np.ndarray] = {"length": lengths}
                     if used_ends_with_eos:
                         payload["ends_with_eos"] = np.asarray(batch["ends_with_eos"], dtype=np.bool_).reshape(-1)
@@ -561,10 +579,13 @@ class PackingIndex:
                 return
 
             try:
-                lengths_raw = hf_split["length"]
+                if has_length_column:
+                    lengths_raw = hf_split["length"]
+                else:
+                    lengths_raw = _lengths_from_input_ids(hf_split["input_ids"])
                 ends_raw = hf_split["ends_with_eos"] if used_ends_with_eos else None
             except Exception:
-                lengths_raw = [int(hf_split[row_idx]["length"]) for row_idx in range(num_rows)]
+                lengths_raw = [cls._row_length(hf_split[row_idx]) for row_idx in range(num_rows)]
                 ends_raw = (
                     [bool(hf_split[row_idx]["ends_with_eos"]) for row_idx in range(num_rows)]
                     if used_ends_with_eos
@@ -631,7 +652,7 @@ class PackingIndex:
             # Fallback path for datasets without `ends_with_eos`: requires per-row `input_ids[-1]`.
             for row_idx in range(num_rows):
                 row = hf_split[row_idx]
-                row_length = int(row["length"])
+                row_length = cls._row_length(row)
                 if row_length <= 0:
                     emit_progress(
                         rows_processed=row_idx + 1,
@@ -874,8 +895,6 @@ class PackingIndex:
             raise TypeError("hf_split must be a Hugging Face Dataset split (has column_names).")
         if "input_ids" not in hf_split.column_names:
             raise ValueError("Packing index requires an 'input_ids' column.")
-        if "length" not in hf_split.column_names:
-            raise ValueError("Packing index requires a 'length' column.")
 
         root = cache_dir / f"v{INDEX_VERSION}" / str(split)
         root.mkdir(parents=True, exist_ok=True)

@@ -61,6 +61,9 @@ class _FabricReportStub:
 def _make_trainer_for_contract_tests() -> _DummyTrainer:
     trainer = _DummyTrainer()
     trainer.cli_logger = _NoopLogger()
+    trainer.num_nodes = 1
+    trainer.devices_per_node = None
+    trainer._mixture_source_split_metadata = {}
     trainer.config = Box(
         {
             "task": "clm_training",
@@ -69,6 +72,7 @@ def _make_trainer_for_contract_tests() -> _DummyTrainer:
             "precision": "bf16-true",
             "seed": 123,
             "batch_size": 2,
+            "num_workers": 0,
             "gradient_accumulation_steps": 4,
             "number_epochs": 1,
             "output_dir": "/tmp/out",
@@ -512,6 +516,72 @@ def test_ensure_validation_split_is_deterministic_with_seed_override() -> None:
 
     assert ds1["valid"]["example_id"] == ds2["valid"]["example_id"]
     assert ds1["train"]["example_id"] == ds2["train"]["example_id"]
+
+
+def test_validate_packing_split_columns_rejects_mismatched_optional_columns() -> None:
+    trainer = _make_trainer_for_contract_tests()
+    dataset = Dataset.from_dict(
+        {
+            "input_ids": [[1, 2, 3]],
+            "labels": [[1, 2]],
+            "attention_mask": [[1, 1, 1]],
+        }
+    )
+
+    with pytest.raises(ValueError, match="incompatible labels"):
+        trainer._validate_packing_split_columns(dataset, split_name="train")
+
+
+def test_mixture_packing_accepts_instruction_and_clm_sources_without_length() -> None:
+    trainer = _make_trainer_for_contract_tests()
+    trainer.config.dataset.sources = [
+        {
+            "dataset_id": "instruction",
+            "nameOrPath": "/tmp/instruction",
+            "tokenizer_name": "tok-a",
+            "eos_token_id": 2,
+        },
+        {
+            "dataset_id": "clm",
+            "nameOrPath": "/tmp/clm",
+            "tokenizer_name": "tok-a",
+            "eos_token_id": 2,
+        },
+    ]
+    trainer.config.dataset.mixture = {"enabled": True, "anchor_epochs": 1}
+
+    instruction = DatasetDict(
+        {
+            "train": Dataset.from_dict(
+                {
+                    "input_ids": [[1, 2, 3]],
+                    "labels": [[-100, -100, 3]],
+                    "attention_mask": [[1, 1, 1]],
+                }
+            ),
+            "valid": Dataset.from_dict(
+                {
+                    "input_ids": [[4, 5]],
+                    "labels": [[-100, 5]],
+                    "attention_mask": [[1, 1]],
+                }
+            ),
+        }
+    )
+    clm = DatasetDict(
+        {
+            "train": Dataset.from_dict({"input_ids": [[6, 7, 8]]}),
+            "valid": Dataset.from_dict({"input_ids": [[9, 10]]}),
+        }
+    )
+
+    result = trainer._load_fabric_datasets_dataloaders(
+        trainer.config,
+        {"instruction": instruction, "clm": clm},
+    )
+
+    assert set(result["datasets"]) == {"instruction", "clm"}
+    assert result["dataloaders"] == {}
 
 
 def test_collect_source_config_map_rejects_duplicate_dataset_id() -> None:

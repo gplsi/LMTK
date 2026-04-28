@@ -23,7 +23,9 @@ class PackedSequenceDataset(Dataset):
 
     Required input columns on `hf_dataset`:
       - input_ids: list[int] (variable-length)
-      - length: int (must equal len(input_ids))
+      - length: optional int (when present, must equal len(input_ids))
+      - labels: optional list[int] (packed in lockstep; otherwise defaults to input_ids)
+      - attention_mask: optional list[int] (packed in lockstep; otherwise defaults to ones)
 
     Packing algorithm (conceptual; do not materialize the full stream in memory):
       - Define the logical token stream:
@@ -74,10 +76,42 @@ class PackedSequenceDataset(Dataset):
         start_pos = idx * self._sequence_length
         end_pos = start_pos + self._sequence_length
         tokens: list[int] = []
+        labels: list[int] = []
+        attention_mask: list[int] = []
 
         offsets = self._index.offsets
         doc_ptr = bisect_right(offsets, start_pos) - 1
         pos = start_pos
+
+        def _optional_sequence(row: dict[str, Any], name: str, input_len: int) -> list[int] | None:
+            if name not in row:
+                return None
+            values = row[name]
+            if len(values) != input_len:
+                raise ValueError(
+                    f"Invalid packing input: row[{name!r}] length does not match row['input_ids']. "
+                    f"len({name})={len(values)} len(input_ids)={input_len}"
+                )
+            return values
+
+        def _synthetic_eos_label(
+            *,
+            input_ids: list[int],
+            row_labels: list[int] | None,
+            doc_len: int,
+        ) -> int:
+            if self._eos_token_id is None:
+                raise RuntimeError(
+                    "Packing index indicates EOS insertion but eos_token_id is None."
+                )
+            if row_labels is None:
+                return int(self._eos_token_id)
+            labels_are_clm_targets = all(
+                int(row_labels[i]) == int(input_ids[i]) for i in range(doc_len)
+            )
+            # Non-CLM labels come from instruction-style masking; the packer-inserted
+            # EOS is a structural boundary token, not original supervised content.
+            return int(self._eos_token_id) if labels_are_clm_targets else -100
 
         while pos < end_pos:
             doc_start = int(offsets[doc_ptr])
@@ -90,35 +124,73 @@ class PackedSequenceDataset(Dataset):
             doc_len = int(self._index.doc_lengths[doc_ptr])
             stream_len = int(self._index.doc_stream_lengths[doc_ptr])
             eos_extra = int(stream_len - doc_len)
+            input_len = len(input_ids)
+            if doc_len != input_len:
+                raise ValueError(
+                    "Invalid packing input: index doc length does not match row['input_ids']. "
+                    f"row={row_idx} length={doc_len} len(input_ids)={input_len}"
+                )
+            row_labels = _optional_sequence(row, "labels", input_len)
+            row_attention_mask = _optional_sequence(row, "attention_mask", input_len)
 
             remaining = end_pos - pos
 
             if local_pos < doc_len:
                 take = min(doc_len - local_pos, remaining)
-                tokens.extend(int(x) for x in input_ids[local_pos : local_pos + take])
+                input_chunk = input_ids[local_pos : local_pos + take]
+                tokens.extend(int(x) for x in input_chunk)
+                if row_labels is None:
+                    labels.extend(int(x) for x in input_chunk)
+                else:
+                    labels.extend(int(x) for x in row_labels[local_pos : local_pos + take])
+                if row_attention_mask is None:
+                    attention_mask.extend([1] * take)
+                else:
+                    attention_mask.extend(
+                        int(x) for x in row_attention_mask[local_pos : local_pos + take]
+                    )
                 pos += take
                 remaining -= take
 
             if remaining > 0 and eos_extra == 1 and pos < doc_end:
                 if self._eos_token_id is None:
-                    raise RuntimeError("Packing index indicates EOS insertion but eos_token_id is None.")
+                    raise RuntimeError(
+                        "Packing index indicates EOS insertion but eos_token_id is None."
+                    )
                 tokens.append(int(self._eos_token_id))
+                labels.append(
+                    _synthetic_eos_label(
+                        input_ids=input_ids,
+                        row_labels=row_labels,
+                        doc_len=doc_len,
+                    )
+                )
+                attention_mask.append(1)
                 pos += 1
                 remaining -= 1
 
             if pos >= doc_end:
                 doc_ptr += 1
 
-        if len(tokens) != self._sequence_length:
+        if (
+            len(tokens) != self._sequence_length
+            or len(labels) != self._sequence_length
+            or len(attention_mask) != self._sequence_length
+        ):
             raise RuntimeError(
                 "Packing produced an invalid block length. "
-                f"Expected {self._sequence_length}, got {len(tokens)}."
+                f"Expected {self._sequence_length}, got input_ids={len(tokens)}, "
+                f"labels={len(labels)}, attention_mask={len(attention_mask)}."
             )
 
         input_tensor = torch.tensor(tokens, dtype=torch.long)
-        attention_mask = torch.ones((self._sequence_length,), dtype=torch.long)
-        labels = input_tensor.clone()
-        return {"input_ids": input_tensor, "attention_mask": attention_mask, "labels": labels}
+        attention_tensor = torch.tensor(attention_mask, dtype=torch.long)
+        label_tensor = torch.tensor(labels, dtype=torch.long)
+        return {
+            "input_ids": input_tensor,
+            "attention_mask": attention_tensor,
+            "labels": label_tensor,
+        }
 
 
 def build_packing_dataloader(

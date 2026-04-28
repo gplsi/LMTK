@@ -82,7 +82,7 @@ properties:
         default: "hf"
       packing:
         type: object
-        description: "Optional training-time packing configuration for doc-level tokenized datasets."
+        description: "Optional training-time packing configuration for variable-length tokenized datasets. Preserves optional labels and attention_mask columns when present."
         properties:
           enabled:
             type: boolean

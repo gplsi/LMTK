@@ -794,6 +794,42 @@ class FabricTrainerBase(MixtureSetupMixin, MixtureRuntimeMixin, ABC):
 
         return dataloaders
 
+    def _validate_packing_split_columns(
+        self,
+        split_dataset: HFDataset,
+        *,
+        split_name: str,
+        source_id: str | None = None,
+    ) -> None:
+        source_label = f"Source {source_id!r} " if source_id is not None else ""
+        columns = set(split_dataset.column_names)
+        if "input_ids" not in columns:
+            raise ValueError(
+                f"{source_label}split {split_name!r} is missing required column 'input_ids' for packing mode."
+            )
+
+        sample_n = min(64, len(split_dataset))
+        for row_idx in range(sample_n):
+            row = split_dataset[row_idx]
+            input_len = len(row["input_ids"])
+
+            if "length" in columns:
+                row_length = int(row["length"])
+                if row_length != input_len:
+                    raise ValueError(
+                        f"{source_label}split {split_name!r} row {row_idx} has invalid length metadata: "
+                        f"length={row_length} len(input_ids)={input_len}."
+                    )
+
+            for optional_column in ("labels", "attention_mask"):
+                if optional_column not in columns:
+                    continue
+                optional_len = len(row[optional_column])
+                if optional_len != input_len:
+                    raise ValueError(
+                        f"{source_label}split {split_name!r} row {row_idx} has incompatible {optional_column}: "
+                        f"len({optional_column})={optional_len} len(input_ids)={input_len}."
+                    )
 
     def _ensure_validation_split(
         self,
@@ -1704,7 +1740,6 @@ class FabricTrainerBase(MixtureSetupMixin, MixtureRuntimeMixin, ABC):
             if train_data_ratio < 1.0:
                 raise ValueError("train_data_ratio is not supported in mixture mode.")
 
-            required_columns = ["input_ids", "length"]
             processed_sources: dict[str, DatasetDict] = {}
             self._mixture_source_split_metadata = {}
 
@@ -1732,14 +1767,11 @@ class FabricTrainerBase(MixtureSetupMixin, MixtureRuntimeMixin, ABC):
                         raise ValueError(
                             f"Source {dataset_id!r} is missing required split {split_name!r} in mixture mode."
                         )
-                    missing_columns = [
-                        col for col in required_columns if col not in source_dataset[split_name].column_names
-                    ]
-                    if missing_columns:
-                        raise ValueError(
-                            f"Source {dataset_id!r} split {split_name!r} is missing required columns "
-                            f"{missing_columns} for packing mode."
-                        )
+                    self._validate_packing_split_columns(
+                        source_dataset[split_name],
+                        split_name=split_name,
+                        source_id=dataset_id,
+                    )
 
                 processed_sources[dataset_id] = source_dataset
                 if had_existing_valid:
@@ -1797,7 +1829,7 @@ class FabricTrainerBase(MixtureSetupMixin, MixtureRuntimeMixin, ABC):
                 raise ValueError(f"train_data_ratio {train_data_ratio} results in empty training set")
                 
         required_columns = (
-            ["input_ids", "length"] if packing_enabled else ["input_ids", "attention_mask", "labels"]
+            ["input_ids"] if packing_enabled else ["input_ids", "attention_mask", "labels"]
         )
         for split in dataset.keys():
             missing_columns = [col for col in required_columns if col not in dataset[split].column_names]
@@ -1813,6 +1845,7 @@ class FabricTrainerBase(MixtureSetupMixin, MixtureRuntimeMixin, ABC):
 
             # Fail-fast guard for offline-packed datasets (avoid false positives).
             for split in dataset.keys():
+                self._validate_packing_split_columns(dataset[split], split_name=split)
                 cols = set(dataset[split].column_names)
                 if "attention_mask" not in cols and "labels" not in cols:
                     continue

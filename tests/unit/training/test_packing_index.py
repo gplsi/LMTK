@@ -375,6 +375,29 @@ def test_packing_index_length_mismatch_fails_fast(tmp_path: Path) -> None:
         )
 
 
+def test_packing_index_derives_missing_length(tmp_path: Path) -> None:
+    split = _FakeSplit(
+        rows=[
+            {"input_ids": [1, 2, 3]},
+            {"input_ids": [4]},
+            {"input_ids": []},
+        ],
+        column_names=["input_ids"],
+    )
+
+    idx = PackingIndex.load_or_build(
+        hf_split=split,
+        split="train",
+        sequence_length=4,
+        insert_eos=False,
+        eos_token_id=None,
+        cache_dir=tmp_path,
+    )
+    assert idx.meta.kept_docs == 2
+    assert idx.total_tokens == 4
+    assert idx.num_blocks == 1
+
+
 def test_packing_index_rebuilds_on_dataset_fingerprint_change(tmp_path: Path) -> None:
     split_v1 = _FakeSplit(
         rows=[

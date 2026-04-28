@@ -95,6 +95,111 @@ def test_packing_does_not_double_insert_eos(tmp_path: Path) -> None:
     assert ds[0]["input_ids"].tolist() == [1, 2, 0, 3]
 
 
+def test_packing_derives_missing_length_and_uses_clm_fallbacks(tmp_path: Path) -> None:
+    hf = Dataset.from_dict({"input_ids": [[1, 2, 3], [4, 5]]})
+    index = PackingIndex.load_or_build(
+        hf_split=hf,
+        split="train",
+        sequence_length=4,
+        insert_eos=False,
+        eos_token_id=None,
+        cache_dir=tmp_path,
+    )
+    ds = PackedSequenceDataset(hf_dataset=hf, index=index, eos_token_id=None)
+    ex = ds[0]
+    assert ex["input_ids"].tolist() == [1, 2, 3, 4]
+    assert ex["attention_mask"].tolist() == [1, 1, 1, 1]
+    assert ex["labels"].tolist() == [1, 2, 3, 4]
+
+
+def test_packing_preserves_labels_and_attention_masks_across_boundaries(tmp_path: Path) -> None:
+    hf = Dataset.from_dict(
+        {
+            "input_ids": [[10, 11, 12], [20, 21, 22]],
+            "labels": [[-100, -100, 12], [-100, 21, 22]],
+            "attention_mask": [[1, 1, 1], [0, 1, 1]],
+        }
+    )
+    index = PackingIndex.load_or_build(
+        hf_split=hf,
+        split="train",
+        sequence_length=4,
+        insert_eos=False,
+        eos_token_id=None,
+        cache_dir=tmp_path,
+    )
+    ds = PackedSequenceDataset(hf_dataset=hf, index=index, eos_token_id=None)
+    ex = ds[0]
+    assert ex["input_ids"].tolist() == [10, 11, 12, 20]
+    assert ex["labels"].tolist() == [-100, -100, 12, -100]
+    assert ex["attention_mask"].tolist() == [1, 1, 1, 0]
+
+
+def test_packing_synthetic_eos_label_respects_masked_labels(tmp_path: Path) -> None:
+    hf = Dataset.from_dict(
+        {
+            "input_ids": [[1, 2, 3]],
+            "labels": [[-100, -100, 3]],
+            "attention_mask": [[1, 1, 1]],
+        }
+    )
+    index = PackingIndex.load_or_build(
+        hf_split=hf,
+        split="train",
+        sequence_length=4,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+    )
+    ds = PackedSequenceDataset(hf_dataset=hf, index=index, eos_token_id=0)
+    ex = ds[0]
+    assert ex["input_ids"].tolist() == [1, 2, 3, 0]
+    assert ex["labels"].tolist() == [-100, -100, 3, -100]
+    assert ex["attention_mask"].tolist() == [1, 1, 1, 1]
+
+
+def test_packing_synthetic_eos_label_keeps_clm_labels(tmp_path: Path) -> None:
+    hf = Dataset.from_dict(
+        {
+            "input_ids": [[1, 2, 3]],
+            "labels": [[1, 2, 3]],
+            "attention_mask": [[1, 1, 1]],
+        }
+    )
+    index = PackingIndex.load_or_build(
+        hf_split=hf,
+        split="train",
+        sequence_length=4,
+        insert_eos=True,
+        eos_token_id=0,
+        cache_dir=tmp_path,
+    )
+    ds = PackedSequenceDataset(hf_dataset=hf, index=index, eos_token_id=0)
+    assert ds[0]["labels"].tolist() == [1, 2, 3, 0]
+
+
+def test_packing_rejects_late_length_metadata_mismatch(tmp_path: Path) -> None:
+    hf = Dataset.from_dict(
+        {
+            "input_ids": [[1, 2], [3, 4, 5]],
+            "length": [2, 1],
+        }
+    )
+    index = PackingIndex.load_or_build(
+        hf_split=hf,
+        split="train",
+        sequence_length=3,
+        insert_eos=False,
+        eos_token_id=None,
+        cache_dir=tmp_path,
+        length_sample_validation=1,
+    )
+    ds = PackedSequenceDataset(hf_dataset=hf, index=index, eos_token_id=None)
+
+    with pytest.raises(ValueError, match="index doc length does not match row\\['input_ids'\\]"):
+        ds[0]
+
+
 def test_distributed_sampler_drop_last_is_enforced_in_packing_mode() -> None:
     base = torch.utils.data.TensorDataset(torch.arange(10))
 
