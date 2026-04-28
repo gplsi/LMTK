@@ -36,6 +36,11 @@ properties:
     type: number
     default: 0.01
     description: "Weight decay factor"
+
+  optimizer_no_decay_norms:
+    type: boolean
+    default: false
+    description: "If True, do not apply optimizer weight decay to normalization parameters or biases"
   
   beta1:
     type: number

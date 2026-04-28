@@ -1,0 +1,147 @@
+# Multi-node FSDP mixture training config for dc40..dc48 + dc51 (doc-level tokenized datasets).
+#
+# IMPORTANT (SLURM):
+# - `num_nodes` must match `slurm/submit_job.sh --nodes`
+# - `devices_per_node` must match `slurm/submit_job.sh --ntasks-per-node`
+# - Pass `-g/--gpus` equal to GPUs per node (typically same as `devices_per_node`)
+#
+# Note (mixture budget):
+# - `anchor_epochs: 1` can be very large (one full anchor epoch of packed blocks).
+# - In anchor mode, block budgets are floor-aligned in code to
+#   `world_size * batch_size * gradient_accumulation_steps` for distributed safety.
+# - In explicit mode, block budgets remain strict and must be divisible by the same unit.
+
+task: "clm_training"
+experiment_name: "aitana-s2b-c0dc40x48-51"
+verbose_level: 3
+seed: 42
+
+# Output dir (shared filesystem for multi-node)
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51"
+
+# Model
+model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
+precision: "bf16-true"
+
+# Multi-node settings (must match SLURM allocation)
+num_nodes: 2
+devices_per_node: 4
+
+# Training parameters (match c0dc29 effective global batch: 1 * 8 * 16 = 128)
+number_epochs: 1
+batch_size: 1
+num_workers: 4
+
+dataset:
+  source: "local"
+  format: "hf"
+  sources:
+    - dataset_id: "dc40"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc40"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc40"
+    - dataset_id: "dc41"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc41"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc41"
+    - dataset_id: "dc42"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc42"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc42"
+    - dataset_id: "dc43"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc43"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc43"
+    - dataset_id: "dc44"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc44"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc44"
+    - dataset_id: "dc45"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc45"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc45"
+    - dataset_id: "dc46"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc46"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc46"
+    - dataset_id: "dc47"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc47"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc47"
+    - dataset_id: "dc48"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc48"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc48"
+    - dataset_id: "dc51"
+      nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/datos/Instruction/v12/tokenized_data/ALIA_instruction_sala_2b_v17_data_v12_va_fsdp_3_language/tokenizedTrain"
+      tokenizer_name: "BSC-LT/salamandra-2b"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40x48-51/packing_index/dc51"
+  packing:
+    enabled: true
+    sequence_length: 8192
+    tokenizer_name: "BSC-LT/salamandra-2b"
+    lock_timeout_s: 1800
+    stale_lock_age_s: 600
+    lock_lease_heartbeat_s: 30
+    clean_index_cache_on_start: false
+    clean_index_cache_on_success: true
+    allow_shared_cache_cleanup: false
+    shuffle: true
+    sampler_drop_last: true
+    drop_last_batch: true
+  mixture:
+    enabled: true
+    budget_mode: "anchor_epochs"
+    anchor_epochs: 1
+    schedule_seed: 42
+
+validation_split:
+  proportion: 0.01
+  seed: 42
+  shuffle: true
+
+# Validation / checkpointing
+validations_per_epoch: 6
+checkpoints_per_epoch: 6
+validate_after_epoch: false
+validate_after_k_steps: null
+validate_on_end: true
+save_on_validate: false
+save_on_end: true
+
+# Optimizer
+gradient_accumulation: true
+gradient_accumulation_steps: 16
+grad_clip: 1.0
+lr: 2.0e-05
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler (bounded peak, min_lr left at 0.0)
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06
+
+# Distributed strategy
+parallelization_strategy: "fsdp"
+parallelization_config:
+  auto_wrap_policy: "llama"
+  sharding_strategy: "FULL_SHARD"
+  state_dict_type: "sharded"
+  limit_all_gathers: true
+  cpu_offload: false
+  gradient_checkpointing: true
+
+# Logging: always writes CSV logs; set logging_config: wandb to enable WandB
+logging_config: "wandb"
+wandb_project: "aitana-s2b"
+wandb_entity: "gplsi_continual"
+wandb_run_name: "aitana-s2b-c0dc40x48-51"
+wandb_group: "aitana-s2b"
+wandb_job_type: "train"
+wandb_notes: "Mixture CLM training on dc40..dc48 + dc51 with Salamandra-2B (FSDP multi-node)"
+wandb_resume: "allow"
+wandb_mode: "offline"
+log_model: false
+log_iter_interval: 10

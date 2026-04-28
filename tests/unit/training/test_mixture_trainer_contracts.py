@@ -477,6 +477,7 @@ def test_build_run_metadata_contains_stable_training_fields() -> None:
     assert metadata["experiment_name"] == "mixture-contract-tests"
     assert metadata["world_size"] == 2
     assert metadata["gradient_accumulation_steps"] == 4
+    assert metadata["optimizer_no_decay_norms"] is False
     assert metadata["training_schedule"]["total_optimizer_steps"] == 12
 
 

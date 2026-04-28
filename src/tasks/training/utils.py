@@ -283,7 +283,46 @@ def select_scheduler(
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lrs)
 
 
-def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:float, beta2:float) -> torch.optim.Optimizer:
+def _is_normalization_module(module: torch.nn.Module) -> bool:
+    return isinstance(module, torch.nn.LayerNorm) or "RMSNorm" in module.__class__.__name__
+
+
+def _group_decay_parameters(
+    model: torch.nn.Module,
+    weight_decay: float,
+) -> list[dict[str, Any]]:
+    no_decay_param_ids: set[int] = set()
+    for module in model.modules():
+        if _is_normalization_module(module):
+            no_decay_param_ids.update(id(param) for param in module.parameters(recurse=False))
+
+    decay_params: list[torch.nn.Parameter] = []
+    no_decay_params: list[torch.nn.Parameter] = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if id(param) in no_decay_param_ids or name == "bias" or name.endswith(".bias"):
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    param_groups: list[dict[str, Any]] = []
+    if decay_params:
+        param_groups.append({"params": decay_params, "weight_decay": weight_decay})
+    if no_decay_params:
+        param_groups.append({"params": no_decay_params, "weight_decay": 0.0})
+    return param_groups
+
+
+def select_optimizer(
+    optimizer: str,
+    model,
+    lr: float,
+    weight_decay: float,
+    beta1: float,
+    beta2: float,
+    no_decay_norms: bool = False,
+) -> torch.optim.Optimizer:
     """
     Creates and returns an optimizer instance based on the specified configuration.
     
@@ -298,18 +337,26 @@ def select_optimizer(optimizer:str, model, lr:float, weight_decay:float, beta1:f
         weight_decay (float): Weight decay (L2 regularization coefficient).
         beta1 (float): First beta coefficient for optimizers like Adam.
         beta2 (float): Second beta coefficient for optimizers like Adam.
-        
+        no_decay_norms (bool): If True, disables weight decay for normalization parameters
+            and biases.
+
     Returns:
         torch.optim.Optimizer: Configured optimizer instance.
     """
-    
-    optimizer = OPTIMIZERS[optimizer](model.parameters(), 
-                                                lr=lr, 
-                                                weight_decay=weight_decay,
-                                                betas=(beta1, beta2),
-                                                foreach=True)
-    
-    return optimizer
+    optimizer_cls = OPTIMIZERS[optimizer]
+    optimizer_params = (
+        _group_decay_parameters(model, weight_decay)
+        if no_decay_norms
+        else model.parameters()
+    )
+
+    return optimizer_cls(
+        optimizer_params,
+        lr=lr,
+        weight_decay=weight_decay,
+        betas=(beta1, beta2),
+        foreach=True,
+    )
 
 
 def deterministic(seed) -> None:

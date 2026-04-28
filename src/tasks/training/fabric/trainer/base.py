@@ -1076,6 +1076,7 @@ class FabricTrainerBase(MixtureSetupMixin, MixtureRuntimeMixin, ABC):
             "warmup_proportion": float(warmup_raw) if warmup_raw is not None else None,
             "min_lr": float(min_lr_raw) if min_lr_raw is not None else 0.0,
             "max_lr": float(max_lr_raw) if max_lr_raw is not None else None,
+            "optimizer_no_decay_norms": bool(self.config.get("optimizer_no_decay_norms", False)),
             "iter_num": int(state_obj.get("iter_num", 0)) if isinstance(state_obj, dict) else 0,
             "step_count": int(state_obj.get("step_count", 0)) if isinstance(state_obj, dict) else 0,
         }
@@ -1968,7 +1969,8 @@ class FabricTrainerBase(MixtureSetupMixin, MixtureRuntimeMixin, ABC):
             self.config.lr, 
             self.config.weight_decay, 
             self.config.beta1, 
-            self.config.beta2
+            self.config.beta2,
+            no_decay_norms=bool(self.config.get("optimizer_no_decay_norms", False)),
         )
         optimizer = fabric.setup_optimizers(optimizer)
         

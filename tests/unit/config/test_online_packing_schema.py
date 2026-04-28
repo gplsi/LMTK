@@ -109,6 +109,22 @@ def test_training_packing_requires_sequence_length_when_enabled(tmp_path: Path) 
         validator.validate(config_path, "clm_training")
 
 
+def test_clm_training_schema_accepts_optimizer_no_decay_norms(tmp_path: Path) -> None:
+    config_path = tmp_path / "clm_training_optimizer_no_decay_norms.yaml"
+    config = _minimal_clm_training_config()
+    config["optimizer_no_decay_norms"] = True
+    config["dataset"] = {
+        "source": "local",
+        "nameOrPath": "/tmp/does-not-need-to-exist-for-validation",
+        "format": "hf",
+    }
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    validator = ConfigValidator()
+    validated = validator.validate(config_path, "clm_training")
+    assert validated.optimizer_no_decay_norms is True
+
+
 def test_training_packing_accepts_optional_index_cache_and_drop_last_batch(tmp_path: Path) -> None:
     config_path = tmp_path / "clm_training_packing_optional_fields.yaml"
     config = {
