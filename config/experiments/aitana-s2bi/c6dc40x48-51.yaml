@@ -96,6 +96,7 @@ dataset:
     enabled: true
     sequence_length: 8192
     tokenizer_name: "BSC-LT/salamandra-2b"
+    eos_token_id: 2
     lock_timeout_s: 1800
     stale_lock_age_s: 600
     lock_lease_heartbeat_s: 30
