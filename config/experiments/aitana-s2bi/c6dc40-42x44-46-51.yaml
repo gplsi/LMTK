@@ -28,15 +28,15 @@
 #   so c6 prioritizes smaller, better-regularized updates over faster adaptation.
 
 task: "clm_training"
-experiment_name: "aitana-s2b-c6dc40-42x44-46-51"
+experiment_name: "aitana-s2bi-c6dc40-42x44-46-51"
 verbose_level: 3
 seed: 42
 
 # Output dir (shared filesystem for multi-node)
-output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c6dc40-42x44-46-51"
+output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c6dc40-42x44-46-51"
 
 # Model
-model_name: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
+model_name: "/leonardo_scratch/fast/EUHPC_D22_034/models/salamandra-2b-instruct/snapshots"
 precision: "bf16-true"
 
 # Multi-node settings (must match SLURM allocation)
@@ -55,27 +55,27 @@ dataset:
     - dataset_id: "dc40"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc40"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40-42x44-46-51/packing_index/dc40"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40-42x44-46-51/packing_index/dc40"
     - dataset_id: "dc42"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc42"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40-42x44-46-51/packing_index/dc42"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40-42x44-46-51/packing_index/dc42"
     - dataset_id: "dc43"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc43"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40-42x44-46-51/packing_index/dc43"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40-42x44-46-51/packing_index/dc43"
     - dataset_id: "dc44"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc44"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40-42x44-46-51/packing_index/dc44"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40-42x44-46-51/packing_index/dc44"
     - dataset_id: "dc46"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/data/tokenized/dc46"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40-42x44-46-51/packing_index/dc46"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40-42x44-46-51/packing_index/dc46"
     - dataset_id: "dc51"
       nameOrPath: "/leonardo_scratch/fast/EUHPC_D22_034/datos/Instruction/v12/tokenized_data/ALIA_instruction_sala_2b_v17_data_v12_va_fsdp_3_language/tokenizedTrain"
       tokenizer_name: "BSC-LT/salamandra-2b"
-      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-c0dc40-42x44-46-51/packing_index/dc51"
+      index_cache_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-s2bi-c0dc40-42x44-46-51/packing_index/dc51"
   packing:
     enabled: true
     sequence_length: 8192
@@ -139,12 +139,12 @@ parallelization_config:
 
 # Logging: always writes CSV logs; set logging_config: wandb to enable WandB
 logging_config: "wandb"
-wandb_project: "aitana-s2b"
+wandb_project: "aitana-s2bi"
 wandb_entity: "gplsi_continual"
-wandb_run_name: "aitana-s2b-c6dc40-42x44-46-51"
-wandb_group: "aitana-s2b"
+wandb_run_name: "aitana-s2bi-c6dc40-42x44-46-51"
+wandb_group: "aitana-s2bi"
 wandb_job_type: "train"
-wandb_notes: "Mixture CLM training on dc40 + dc42..dc44 + dc46 + dc51 with Salamandra-2B using conservative annealing-style continued training with no-decay optimizer grouping"
+wandb_notes: "Mixture CLM training on dc40 + dc42..dc44 + dc46 + dc51 with Salamandra-2B-Instruct using conservative annealing-style continued training with no-decay optimizer grouping"
 wandb_resume: "allow"
 wandb_mode: "offline"
 log_model: false
