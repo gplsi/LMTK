@@ -1,10 +1,26 @@
+> Esta copia incorpora determinismo estricto para CPT. Lee [DETERMINISMO.md](DETERMINISMO.md) antes de entrenar; la verificación en GPU está pendiente.
+
 # LMTK
 The Language Model ToolKit
 
 **A Modular Toolkit for Efficient Language Model Pretraining and Adaptation**  
 *Streamlining continual pretraining of foundation language models through scalable pipelines and reproducible configurations*
 
+> **Note:** Docker support has been discontinued. The project now uses Conda for environment management and job launching.
+
 ## 🚀 Installation
+
+
+### Setting up Conda Enviroment (Recommended)
+
+```bash
+# Create a new conda environment
+conda create -n lmtk python=3.10 -y
+conda activate lmtk
+
+# Install the package
+pip install -e .  # Regular installation
+```
 
 ### Option 1: Using Poetry (Recommended)
 
@@ -157,7 +173,6 @@ During development phase (before 1.0.0), minor version bumps may include breakin
 ### 🔧 Core Infrastructure
 - **Configuration System** - Type-safe YAML schemas with Pydantic validation
 - **Task Orchestration** - Modular task execution via CLI/config mapping
-- **Environment Management** - Dockerized training stack with Makefile control
 
 ### 🛠️ Training Capabilities
 - **Resumable Workflows** - Atomic checkpoints with full state serialization
@@ -202,6 +217,22 @@ python src/main.py --config tutorials/configs/publish_tutorial.yaml
 
 **Note:** For publish tasks, authenticate with Hugging Face via `huggingface-cli login` or set the `HUGGINGFACE_HUB_TOKEN` environment variable.
 
+## ✅ Testing
+
+Local tests can be run when dependencies are available:
+
+```bash
+python -m pytest -q
+```
+
+Some tests require the SLURM container runtime. In that case, prefer a SLURM-based test run and record the job ID and log paths in the issue card or ExecPlan. Unit and integration runs are defined as `task: testing` configs under `config/tests/` (for example, `config/tests/unit_tests.yaml` and `config/tests/integration_smoke.yaml`). Use `slurm/tests/run_tests.sh` (with defaults from `slurm/tests/slurm_test.env` and optional secrets in `slurm/tests/test_secrets.env`) to submit tests through `slurm/submit_job.sh`.
+
+Integration smoke configs live under `config/tests/` and share defaults in `config/tests/defaults.yaml` so model/tokenizer values stay aligned.
+
+Test organization:
+- Task-specific tests live under `src/tasks/<task>/`.
+- Cross-cutting or integration tests live under `tests/`.
+
 ## 🖥️ SLURM Cluster Execution
 
 For running on SLURM clusters, we provide a comprehensive set of configurable job scripts in the `slurm/` directory:
@@ -220,7 +251,6 @@ sbatch p1-dgx.slurm
 
 **Key Features:**
 - 🔧 **Fully Configurable** - All paths, resources, and settings via environment variables
-- 🐳 **Docker Integration** - Containerized execution with automatic user mapping
 - 📊 **WandB Integration** - Automatic experiment tracking and logging
 - 🔍 **Debug Support** - Comprehensive error reporting and troubleshooting
 - 📁 **Organized Structure** - Clean separation of job scripts and configurations
@@ -264,28 +294,6 @@ project/
     ├── config/            # Pydantic schema definitions
     ├── tasks/             # Task implementations
     └── utils/             # Monitoring/checkpointing
-```
-
-## 🐋 Docker & Makefile
-
-**Dockerfile Highlights**:
-```
-FROM nvcr.io/nvidia/pytorch:23.10-py3
-COPY requirements.txt . 
-RUN pip install -r requirements.txt
-ENTRYPOINT ["make"]
-```
-
-**Makefile Targets**:
-```
-validate:  # Config schema check
-    python -m src.main --validate $(CONFIG)
-
-tokenize:  # Process datasets
-    python -m src.main --task tokenize $(CONFIG)
-
-train:     # Launch training
-    torchrun --nproc_per_node=$(GPUS) src/main.py --task train $(CONFIG)
 ```
 
 ## 📝 Reproducibility Features
