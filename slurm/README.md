@@ -1,6 +1,6 @@
 # LMTK SLURM Production Guide
 
-This directory contains production-ready SLURM scripts for running LMTK framework experiments on SLURM clusters with Docker integration, comprehensive logging, and WandB experiment tracking.
+This directory contains production-ready SLURM scripts for running LMTK framework experiments on SLURM clusters with Conda integration, comprehensive logging, and WandB experiment tracking.
 
 ## 🚀 Quick Reference
 
@@ -14,6 +14,9 @@ This directory contains production-ready SLURM scripts for running LMTK framewor
 
 # Custom resources
 ./submit_job.sh -c config.yaml -g 4 -m 128G -t 72:00:00 -k your_key
+
+# Multi-node (tasks per node must match GPUs per node)
+./submit_job.sh -c config.yaml --nodes 2 --ntasks-per-node 4 -g 4 -p postiguet1
 
 # Check job status
 squeue -u $(whoami)
@@ -30,6 +33,39 @@ tail -f JOBID_lmtk.out
 - `-t`: Time limit (default: 48:00:00)
 - `-j`: Job name (optional)
 - `-p`: Partition (default: postiguet1)
+- `--nodes`: Node count (default: 1)
+- `--ntasks-per-node`: Tasks per node (default: 1)
+
+For a step-by-step multi-node walkthrough, see `slurm/MULTINODE_TUTORIAL.md`.
+
+---
+
+## 🧪 SLURM Test Runner
+
+Use the SLURM test runner to submit `task: testing` configs (unit or integration) through the standard `submit_job.sh` path.
+
+**Key files:**
+- `slurm/tests/run_tests.sh` (wrapper that enforces allowed submitters)
+- `slurm/tests/slurm_test.env` (defaults for partition/resources and test configs)
+- `slurm/tests/test_secrets.env` (optional; copy from `slurm/tests/test_secrets.env.example`)
+- `config/tests/` (unit/integration configs and smoke tests)
+
+**Examples:**
+```bash
+# Submit unit tests
+./slurm/tests/run_tests.sh --unit
+
+# Submit integration smoke tests
+./slurm/tests/run_tests.sh --integration
+
+# Run a specific config directly
+./slurm/tests/run_tests.sh --config config/tests/tokenization_smoke.yaml
+
+# Preview the exact sbatch command
+./slurm/tests/run_tests.sh --dry-run
+```
+
+Logs are written to `slurm/tests/logs/` (see the job ID printed by the runner).
 
 ---
 
@@ -58,7 +94,6 @@ Start with this single command. It's all you need to run any LMTK experiment:
 **What happens:**
 - ✅ Uses default resources (1 GPU, 32GB RAM, 48 hours)
 - ✅ Runs on your cluster's default GPU partition
-- ✅ Creates a Docker container with proper environment
 - ⚠️ **No experiment tracking** (you'll see a warning)
 
 **Expected output:**
@@ -86,7 +121,7 @@ Monitor with: squeue -u $(whoami)
 ```
 
 **What changes:**
-- ✅ **Automatic WandB login** inside the container
+- ✅ **WandB authentication** via `WANDB_API_KEY` in the job environment
 - ✅ **Full experiment tracking** with logs, metrics, and artifacts
 - ✅ **Experiment visibility** in your WandB dashboard
 
@@ -105,11 +140,11 @@ When you run `./submit_job.sh -c your_config.yaml`, here's the complete workflow
 
 2. **Job Submission** 🚀
    - Creates SLURM job with specified resources
-   - Sets up environment variables for the container
+   - Sets up environment variables for the job script
    - Submits to the queue
 
-3. **Container Execution** 🐳
-   - Starts Docker container with GPU access
+3. **Program Execution** 🐍
+   - Starts Python program with GPU access
    - Maps your user ID for file permissions
    - Sets up Python environment and paths
 
@@ -123,9 +158,9 @@ When you run `./submit_job.sh -c your_config.yaml`, here's the complete workflow
 ```
 slurm/
 ├── submit_job.sh      # 🎯 Main script - your entry point
-├── p.slurm           # 🔧 SLURM job template (handles Docker)
-├── run_container.sh  # 🐳 Container script (environment setup)
+├── p.slurm           # 🔧 SLURM job template
 ├── slurm_config.env  # ⚙️ Default settings for your cluster
+├── validate.sh        # ✅ Validate setup without submitting
 └── README.md         # 📚 This documentation
 ```
 
@@ -489,90 +524,10 @@ done
 
 ## 📊 Advanced Features
 
-### 🐳 Docker Container Integration
-
-#### What Happens Inside the Container
-
-When your job runs, it creates a Docker container that:
-
-1. **Maps Your User Identity**
-   ```bash
-   # Container runs as your user (not root)
-   --user "$USER_ID:$GROUP_ID"
-   ```
-   **Benefit**: Files created have correct ownership
-
-2. **Mounts Project Directory**
-   ```bash
-   # Your entire project is available at /workspace
-   --volume "$HOST_PROJECT_ROOT:$CONTAINER_PROJECT_ROOT"
-   ```
-   **Benefit**: Code changes and results are preserved
-
-3. **Provides GPU Access**
-   ```bash
-   # All allocated GPUs are available
-   --gpus all
-   ```
-   **Benefit**: Full CUDA support for training
-
-4. **Sets Up Python Environment**
-   ```bash
-   # Automatic PYTHONPATH configuration
-   PYTHONPATH=/workspace/src:/workspace:$PYTHONPATH
-   ```
-   **Benefit**: All imports work correctly
-
-#### Container Environment Details
-
-The container automatically configures:
-
-```bash
-# Python and Package Management
-PYTHONPATH=/workspace/src:/workspace
-PYTHON_COMMAND=python3
-MAIN_SCRIPT=src/main.py
-
-# HuggingFace Cache (saves bandwidth)
-HF_DATASETS_CACHE=/workspace/.cache/datasets
-HF_HOME=/workspace/.cache/huggingface  
-TRANSFORMERS_CACHE=/workspace/.cache/transformers
-
-# CUDA Environment
-CUDA_VISIBLE_DEVICES=0,1,2,3  # Based on allocated GPUs
-
-# SLURM Integration
-SLURM_JOB_ID=12345
-SLURM_NODELIST=gpu-node-01
-```
-
 ### 🔄 WandB Integration Deep Dive
 
-#### Automatic Authentication Flow
-
-When you provide a WandB API key, the container:
-
-1. **Validates Configuration**
-   ```bash
-   echo "WandB API key provided, logging in..."
-   echo "WANDB_PROJECT: ${WANDB_PROJECT}"
-   echo "WANDB_ENTITY: ${WANDB_ENTITY}"
-   ```
-
-2. **Performs Login**
-   ```bash
-   wandb login "$WANDB_API_KEY"
-   ```
-
-3. **Handles Results**
-   ```bash
-   if [ $? -eq 0 ]; then
-       echo "✅ WandB login successful"
-   else
-       echo "❌ WandB login failed"
-       exit 1  # Job fails to prevent invalid experiments
-   fi
-   ```
+WandB is enabled by passing `WANDB_API_KEY` to the job (via `submit_job.sh -k ...` or `export WANDB_API_KEY=...`).
+LMTK configures the logger at runtime; there is no separate “container login” step.
 
 #### WandB Configuration Options
 
@@ -831,35 +786,32 @@ scancel JOB_ID
 ```
 
 ### 🆕 Enhanced Log Output
-The new container system provides detailed logs including:
+The SLURM job script (`p.slurm`) provides detailed logs including:
 
 **Standard Output (`JOBID_lmtk.out`):**
-- Container startup information
+- Job startup information (SLURM + host details)
 - Environment variable verification  
 - File system validation
-- Python environment details
+- Conda/Python environment details
 - WandB configuration status
 - Command execution details
 - Training/tokenization progress
 
 **Error Output (`JOBID_lmtk.err`):**
-- Bash script execution trace (with `set -x`)
-- Detailed command-by-command execution
-- Error messages and stack traces
-- Container debugging information
+- Python errors and stack traces (plus any shell stderr)
 
 ### Log Sections
 ```bash
-===== Container Script Started =====
-# Basic environment info (user, directory, Python version)
+===== LMTK Job Started =====
+# Basic environment info (SLURM + host)
 
-===== Environment Variables =====  
+===== SLURM Environment =====
 # All relevant environment variables and their values
 
-===== Checking File System =====
+===== Environment Setup =====
 # Verification that all required files exist
 
-===== Python Environment =====
+===== Environment Versions =====
 # Python executable, PYTHONPATH, installed packages
 
 ===== WandB Configuration =====
@@ -876,13 +828,12 @@ The new container system provides detailed logs including:
 | Issue | Symptoms | Quick Fix |
 |-------|----------|-----------|
 | **Job fails immediately** | `Job violates accounting policy` | Reduce resources: `-g 1 -m 16G -t 1:00:00` |
-| **No application output** | Container runs, no logs | Check `JOBID_lmtk.err` for detailed trace |
-| **Config file not found** | `Config file not found: /workspace/...` | Use absolute path or check file exists |
+| **No application output** | Job runs, no logs | Check `JOBID_lmtk.err` for detailed trace |
+| **Config file not found** | `Config file not found: /.../LMTK/...` | Ensure `-c` path exists and is repo-relative |
 | **WandB login fails** | `❌ WandB login failed` | Verify API key: `wandb login your_key` |
-| **Python import errors** | `ModuleNotFoundError` | Check PYTHONPATH in container logs |
+| **Python import errors** | `ModuleNotFoundError` | Check Conda env + `PYTHONPATH` in logs |
 | **Out of memory** | Job killed, no output | Increase memory: `-m 128G` or `-m 256G` |
 | **Time limit exceeded** | Job killed after time limit | Increase time: `-t 72:00:00` |
-| **Docker image missing** | `Container finished with exit code: 0` | Rebuild: `docker build -t lmtk:latest .` |
 
 ### Common Issues
 
@@ -898,9 +849,9 @@ main.py: error: unrecognized arguments: config/experiments/gpt-2/tokenizer.yaml
 ```
 **Solution**: This has been fixed! The script now handles undefined PYTHONPATH gracefully.
 
-#### 3. **Container Output Missing**
-**Problem**: Container runs but no application output visible
-**Solution**: 
+#### 3. **No Application Output**
+**Problem**: Job runs but there’s no useful output
+**Solution**:
 - Check `JOBID_lmtk.err` for detailed execution trace
 - Look for the "Starting Training/Tokenization" section
 - Verify the configuration file path is correct
@@ -924,18 +875,7 @@ Config file not found: /workspace/config/experiments/gpt-2/tokenizer.yaml
 - Use absolute path if needed: `-c /full/path/to/config.yaml`
 - Verify file exists: `ls -la config/experiments/gpt-2/tokenizer.yaml`
 
-#### 6. **Docker Image Issues**
-```
-✅ Using existing Docker image: lmtk:latest
-Container finished with exit code: 0
-```
-**Problem**: Container exits immediately without running the application
-**Solutions**:
-- Check if Docker image was built correctly: `docker images | grep lmtk`
-- Verify Dockerfile exists: `ls -la docker/Dockerfile`
-- Rebuild image if needed: `docker build -t lmtk:latest -f docker/Dockerfile .`
-
-#### 7. **Resource Allocation Denied**
+#### 6. **Resource Allocation Denied**
 ```
 sbatch: error: Batch job submission failed: Job violates accounting policy
 ```
@@ -950,8 +890,8 @@ sbatch: error: Batch job submission failed: Job violates accounting policy
 ModuleNotFoundError: No module named 'src.config.config_loader'
 ```
 **Solutions**:
-- Verify PYTHONPATH is set correctly (check container logs)
-- Ensure all dependencies are installed in Docker image
+- Verify `PYTHONPATH` is set correctly (check `JOBID_lmtk.out`)
+- Ensure all dependencies are installed in Conda Enviroment
 - Check that src/ directory structure is correct
 
 ### 🆕 Debug Mode & Diagnostics
@@ -962,30 +902,13 @@ Use dry run to see exactly what will be executed:
 ./submit_job.sh -c config.yaml --dry-run
 ```
 
-#### Container Debugging
-The new container script provides extensive debugging information:
-1. **Environment inspection** - All variables and their values
-2. **File system validation** - Confirms all required files exist  
-3. **Python environment** - Shows executable, paths, installed packages
-4. **Command verification** - Shows exact command being executed
+#### Job Diagnostics
+`p.slurm` prints environment, path validation, and the exact Python command to `JOBID_lmtk.out`.
 
 #### Validation Script
 Run comprehensive validation before submitting:
 ```bash
 ./validate.sh
-```
-
-#### Manual Container Testing
-Test the container locally:
-```bash
-docker run --rm -it \
-  --gpus all \
-  --volume "$PWD:/workspace" \
-  --env CONFIG_FILE=config/experiments/test_continual.yaml \
-  --env PYTHON_COMMAND=python3 \
-  --env MAIN_SCRIPT=src/main.py \
-  lmtk:latest \
-  /workspace/slurm/run_container.sh
 ```
 
 ## 🔒 Security Notes
@@ -994,7 +917,6 @@ docker run --rm -it \
 - ✅ Use command line parameters or environment variables for sensitive data
 - ✅ API keys are only stored temporarily during job execution
 - ✅ All secrets are passed via SLURM's secure environment passing
-- ✅ Container runs with your UID/GID for proper file ownership
 - ✅ No hardcoded credentials in any script files
 
 ## 🚀 Advanced Usage
@@ -1033,8 +955,8 @@ for i in "${!configs[@]}"; do
 done
 ```
 
-### 🆕 Container Customization
-The run_container.sh script can be customized for specific needs:
+### 🆕 Environment Customization
+Customize the runtime environment via `scripts/set_environment.sh` (Conda activation) or by exporting variables before calling `submit_job.sh`:
 
 ```bash
 # Add custom environment setup
@@ -1066,9 +988,8 @@ Before submitting jobs, validate your SLURM setup:
 ```
 
 The validation script checks:
-- ✅ **File existence** - Scripts, configs, Dockerfile, main.py
+- ✅ **File existence** - Scripts, configs, main.py
 - ✅ **Configuration consistency** - Default values and paths  
-- ✅ **Docker availability** - Image existence and buildability
 - ✅ **Project structure** - Required directories and files
 - ✅ **Environment setup** - Python paths and dependencies
 
@@ -1079,28 +1000,24 @@ Script Directory: /home/user/LMTK/slurm
 SLURM Script: /home/user/LMTK/slurm/p.slurm
 Config File: /home/user/LMTK/slurm/slurm_config.env
 Submit Script: /home/user/LMTK/slurm/submit_job.sh
-Container Script: /home/user/LMTK/slurm/run_container.sh
 ===============================
 
 === File Validation ===
 ✅ Project root exists
 ✅ SLURM script exists
 ✅ Submit script exists  
-✅ Container script exists
-✅ Dockerfile exists
 ✅ Main script exists
 ✅ Configuration file exists
 
-=== 🆕 Container Integration ===
-✅ Container script is executable
-✅ Docker image available
+=== Environment Integration ===
+✅ Environment script exists
 ✅ Environment variables properly configured
 ```
 
 ## 🔄 Recent Improvements & Changelog
 
-### Version 2.0 - Enhanced Container Integration
-- 🆕 **Dedicated container script** (`run_container.sh`) for better debugging
+### Version 2.0 - Conda-Based Execution
+- 🆕 **Conda environment activation** via `scripts/set_environment.sh`
 - 🆕 **Automatic WandB login** with proper error handling
 - 🆕 **Enhanced logging** with environment inspection and validation
 - 🆕 **Fixed argument parsing** - Now correctly uses `--config` flag
@@ -1124,7 +1041,6 @@ Edit `slurm_config.env`:
 # Modify for your cluster
 export PARTITION="your_gpu_partition"     # Your cluster's GPU partition name
 export WANDB_ENTITY="your_wandb_team"     # Your WandB organization
-export DOCKER_IMAGE_NAME="your_image:tag" # Custom Docker image if needed
 ```
 
 ### 2. Adjust Resource Defaults

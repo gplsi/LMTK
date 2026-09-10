@@ -175,11 +175,13 @@ class InstructionTokenizer(BaseTokenizer):
             if current_role == prev_role:
                 if current_role == 'user':
                     # Two consecutive user messages - merge them
+                    self.logger.warning("Merging consecutive user messages in conversation. Consider reviewing input data for proper formatting.")
                     conversation[i - 1]['content'] += "\n\n" + conversation[i]['content']
                     conversation.pop(i)
                 elif current_role == 'assistant':
                     # Two consecutive assistant messages - keep only the last one (target)
                     # This prevents duplication by removing the earlier assistant message
+                    self.logger.warning("Removing duplicate assistant message in conversation. Consider reviewing input data for proper formatting.")
                     conversation.pop(i - 1)
             i -= 1
         
@@ -188,12 +190,14 @@ class InstructionTokenizer(BaseTokenizer):
             # Must start with user
             if conversation[0]['role'] != 'user':
                 # This shouldn't happen with our logic, but just in case
+                self.logger.warning("Conversation does not start with user. Inserting a placeholder user message.")
                 conversation.insert(0, {'role': 'user', 'content': 'Please help me with the following:'})
             
             # For complete conversations (include_target=True), must end with assistant
             # For prompt-only conversations (include_target=False), should end with user for generation
             if include_target and conversation[-1]['role'] != 'assistant':
                 # Add a placeholder assistant response if missing for complete conversations
+                self.logger.warning("Conversation does not end with assistant. Adding a placeholder assistant message.")
                 conversation.append({'role': 'assistant', 'content': 'I understand. How can I help you?'})
         
         return conversation, system_message
@@ -228,6 +232,9 @@ class InstructionTokenizer(BaseTokenizer):
                 system_message=system_message if system_message else None
             )
         except TypeError:
+            # Set a warning 
+            self.logger.warning("Tokenizer does not support 'system_message' parameter in apply_chat_template. Integrating system message into first user message.")
+
             # Fallback: integrate system message into first user message if system_message param not supported
             if system_message and conversation and conversation[0]['role'] == 'user':
                 original_content = conversation[0]['content']
@@ -358,6 +365,7 @@ class InstructionTokenizer(BaseTokenizer):
                     torch.zeros(pad_length, dtype=torch.long)
                 ])
             elif seq_len > self.max_sequence_length:
+                self.logger.warning(f"Sequence too long. Truncating sequence from {seq_len} to {self.max_sequence_length} tokens")
                 # Truncate if too long
                 encoded_prompt_and_response = encoded_prompt_and_response[:self.max_sequence_length]
                 labels = labels[:self.max_sequence_length]
@@ -570,6 +578,8 @@ class InstructionTokenizer(BaseTokenizer):
             sample = dataset[0]
             self.logger.info(f"Sample data structure: {list(sample.keys())}")
             self.logger.info(f"Sample data types: {[(k, type(v).__name__) for k, v in sample.items()]}")
+        else:
+            self.logger.warning("Dataset is empty, no sample data to display.")
         
         # Create a HFDataset with prompt and prompt_and_response columns
         datasetProcessed = []

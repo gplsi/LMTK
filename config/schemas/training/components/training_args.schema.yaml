@@ -20,6 +20,18 @@ properties:
     default: 1
     description: "Size of each data batch"
 
+  num_nodes:
+    type: [integer, 'null']
+    minimum: 1
+    default: null
+    description: "Number of nodes to use; null means use SLURM or local auto-detection"
+
+  devices_per_node:
+    type: [integer, 'null']
+    minimum: 1
+    default: null
+    description: "Devices (tasks) per node; required when num_nodes > 1"
+
   # Model optimization settings
   gradient_checkpointing:
     type: boolean
@@ -42,6 +54,12 @@ properties:
     default: null
     description: "Number of steps to validate after"
 
+  validations_per_epoch:
+    type: integer
+    minimum: 1
+    default: 1
+    description: "Number of validation events to distribute across each epoch"
+
   # Checkpoint settings
   save_on_validate:
     type: boolean
@@ -52,6 +70,11 @@ properties:
     type: boolean
     default: false
     description: "If True, save checkpoint at the end of training"
+
+  checkpoints_per_epoch:
+    type: [integer, 'null']
+    default: null
+    description: "Number of checkpoints to save per epoch independent of validation cadence"
 
   checkpoint:
     type: [string, 'null']

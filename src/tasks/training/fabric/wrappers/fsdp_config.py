@@ -5,7 +5,8 @@ from typing import Optional, Dict, Any, Set, Type, Union, Callable
 import torch.nn as nn
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy, size_based_auto_wrap_policy
 from src.tasks.training.fabric.wrappers.policies import create_auto_wrap_policy
-
+from torch.distributed.fsdp import MixedPrecision
+import torch
 def get_default_fsdp_config() -> Dict[str, Any]:
     """
     Return the default configuration for Fully Sharded Data Parallel (FSDP) strategy.
@@ -47,9 +48,16 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, An
     # Start with default config
     fsdp_config = get_default_fsdp_config()
 
+    user_config = dict(config)
+    parallel_config = user_config.get("parallelization_config")
+    if hasattr(parallel_config, "to_dict"):
+        parallel_config = parallel_config.to_dict()
+    if isinstance(parallel_config, dict):
+        for key, value in parallel_config.items():
+            user_config.setdefault(key, value)
 
     # Override with user config if provided
-    for key, value in config.items():
+    for key, value in user_config.items():
         if key in fsdp_config and value is not None:
             fsdp_config[key] = value
     
@@ -68,8 +76,30 @@ def resolve_fsdp_config(config: Dict[str, Any], model_name: str) -> Dict[str, An
             # Here we create a policy dictionary for those layers.
             layer_cls = fsdp_config["auto_wrap_policy"].keywords["transformer_layer_cls"]
             fsdp_config["activation_checkpointing_policy"] = {layer_cls: dict()}
-    
 
+    # TODO: check without this
+    #precision = config.get("precision", "32-true")
+    #if precision in ["bf16-true", "bf16-mixed", "bf16"]:
+    #        fsdp_config["mixed_precision"] = MixedPrecision(
+    #            param_dtype=torch.bfloat16,
+    #            reduce_dtype=torch.bfloat16,
+    #            buffer_dtype=torch.bfloat16,
+    #            cast_forward_inputs=True,     
+    #            cast_root_forward_inputs=True,
+    #        )
+    #elif precision in ["16-true", "16-mixed", "16"]:
+    #    fsdp_config["mixed_precision"] = MixedPrecision(
+    #        param_dtype=torch.float16,
+    #        reduce_dtype=torch.float16,
+    #        buffer_dtype=torch.float16,
+    #        cast_forward_inputs=True,
+    #        cast_root_forward_inputs=True,
+    #    )
+    #else:
+    #    fsdp_config["mixed_precision"] = None
+
+    #print(fsdp_config)
+    
     return fsdp_config
 
 

@@ -15,12 +15,12 @@ import torch.optim as optim
 from tqdm import tqdm
 
 # Importing custom utilities and base classes
-from src.tasks.clm_training.utils import *
-from src.tasks.clm_training.fabric.base import FabricTrainerBase
-from tasks.clm_training.fabric.wrappers.fsdp_config import resolve_fsdp_config
+from src.tasks.training.utils import *
+from src.tasks.training.fabric.trainer.base import FabricTrainerBase
+from src.tasks.training.fabric.wrappers.fsdp_config import resolve_fsdp_config
 from utils import inherit_init_params
-from src.tasks.clm_training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
-
+from src.tasks.training.fabric.speed_monitor import SpeedMonitorFabric as Monitor
+from torch.distributed.fsdp import BackwardPrefetch
 
 @inherit_init_params
 class FSDP(FabricTrainerBase):
@@ -54,20 +54,20 @@ class FSDP(FabricTrainerBase):
                 model_name=self.config.model_name
             )
             
+            # TO-DO WRAP invocation of policy and include it in resolve_fsdp_config
             # FSDP strategy for multiple devices
             from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-            policy = {LlamaDecoderLayer} #EMBEED TO REMOVE AN REFACTOR
-            self.strategy = FSDPStrategy(
-                sharding_strategy=fsdp_config["sharding_strategy"],
-                auto_wrap_policy=policy,#auto_wrap_policy=fsdp_config["auto_wrap_policy"],
-                activation_checkpointing_policy=policy,#activation_checkpointing_policy=fsdp_config["activation_checkpointing"],#activation_checkpointing=fsdp_config["activation_checkpointing"] is deprecated,
-                state_dict_type=fsdp_config["state_dict_type"],
-                limit_all_gathers=fsdp_config["limit_all_gathers"],
-                cpu_offload=fsdp_config["cpu_offload"],
-                
-            )
+            policy = {LlamaDecoderLayer}
             
-            #self.cli_logger.info(f"Using auto_wrap_policy: {fsdp_config['auto_wrap_policy']}")
+            self.strategy = FSDPStrategy(
+                auto_wrap_policy=policy, # POLICY USED TO WRAP MODEL ACROSS DIFFERENT GPUs
+                activation_checkpointing_policy=policy, # ACTIVATION CHECKPOINTING POLICY TO SAVE UP MEMORY
+                state_dict_type="full",
+                limit_all_gathers=True,
+                cpu_offload=False,
+            )
+            self.cli_logger.info(f"Strategy : {self.strategy}")
+
             self.cli_logger.info(f"Using auto_wrap_policy: {policy}")
             if fsdp_config["activation_checkpointing"]:
                 self.cli_logger.info(f"Using activation_checkpointing: {fsdp_config['activation_checkpointing']}")
@@ -135,10 +135,19 @@ class DistributedDataParallel(FabricTrainerBase):
         
         self.cli_logger.info("Setting up DDP strategy.")
         if self.devices > 1:
+            parallelization_config = getattr(self.config, "parallelization_config", None)
+            if hasattr(parallelization_config, "to_dict"):
+                parallelization_config = parallelization_config.to_dict()
+            backend = self.config.get("process_group_backend", None)
+            if backend is None and isinstance(parallelization_config, dict):
+                backend = parallelization_config.get("backend", None)
+            if backend is None:
+                backend = "nccl"
+
             # Configure DDPStrategy with common parameters:
             strategy = DDPStrategy(
                 find_unused_parameters=self.config.get("find_unused_parameters", False),
-                process_group_backend=self.config.get("process_group_backend", "nccl"),
+                process_group_backend=backend,
                 static_graph=self.config.get("static_graph", True),
                 # You can add additional parameters here if needed.
             )

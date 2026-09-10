@@ -1,0 +1,23 @@
+task: "tokenization"
+experiment_name: "tokenization_dc11"
+verbose_level: 3
+
+tokenizer:
+  tokenizer_name: "BSC-LT/salamandra-2b"
+  context_length: 2048
+  overlap: 512
+  task: "clm_training"
+
+dataset:
+  source: "local"
+  nameOrPath: "data/downloaded/dc11"
+  format: "files"
+  file_config:
+    text_key: "content"
+    format: "parquet"
+    encoding: "utf-8"
+
+output:
+  path: "data/tokenized/dc11"
+
+test_size: 0

@@ -6,6 +6,7 @@ from transformers.optimization import get_linear_schedule_with_warmup
 from torch.optim import AdamW
 from utils.logging import VerboseLevel, get_logger
 from src.tasks.training.fabric.model.base import BaseModel
+from src.tasks.training.reproducibility import strict_enabled
 
 
 """
@@ -42,8 +43,16 @@ class FabricCLM(BaseModel):
         """
         super().__init__(**kwargs)
         
+        load_kwargs = {}
+        if strict_enabled(kwargs):
+            # Native PyTorch SDPA participates in deterministic-algorithm checks.
+            # Keep memory-efficient native Flash attention if the stack supports it.
+            load_kwargs["attn_implementation"] = "sdpa"
+        if kwargs.get("model_revision") is not None:
+            load_kwargs["revision"] = kwargs["model_revision"]
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
-            torch_dtype=self.torch_dtype,
-            use_cache=False
+            dtype=self.torch_dtype,
+            use_cache=False,
+            **load_kwargs
         )

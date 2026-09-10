@@ -305,7 +305,7 @@ class BaseOrchestrator(ABC):
                 return dataset
             
             elif self.config.dataset.format == "files":
-                self.logger.info(f"Loading dataset from files at dir '{self.config.dataset.nameOrPath}'")
+                self.logger.info(f"Loading dataset from files at path '{self.config.dataset.nameOrPath}'")
                 
                 # Get file_config from config if available
                 file_config = None
@@ -320,7 +320,6 @@ class BaseOrchestrator(ABC):
                 
                 if self.config.test_size:
                     self.logger.info(f"Splitting dataset with test size: {self.config.test_size}")
-                # TODO: make it work for single files too
                 dataset = dataset_handler.split(dataset, split_ratio=self.config.test_size)
 
                 return dataset

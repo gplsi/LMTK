@@ -1,8 +1,21 @@
 # Set environment variables for HuggingFace cache directories to use workspace
 import os
-os.environ["HF_DATASETS_CACHE"] = "/workspace/.cache/datasets"
-os.environ["HF_HOME"] = "/workspace/.cache/huggingface"
-os.environ["TRANSFORMERS_CACHE"] = "/workspace/.cache/transformers"
+from pathlib import Path
+
+# Get the project root directory (parent of src/)
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+
+# Set cache directories relative to project root
+os.environ["HF_DATASETS_CACHE"] = str(PROJECT_ROOT / ".cache" / "datasets")
+os.environ["HF_HOME"] = str(PROJECT_ROOT / ".cache" / "huggingface")
+os.environ["TRANSFORMERS_CACHE"] = str(PROJECT_ROOT / ".cache" / "transformers")
+os.environ["PYTORCH_TRANSFORMERS_CACHE"] = str(PROJECT_ROOT / ".cache" / "transformers")
+os.environ["WANDB_CACHE_DIR"] = str(PROJECT_ROOT / ".cache" / "wandb_cache")
+os.environ["WANDB_CONFIG_DIR"] = str(PROJECT_ROOT / "wandb" / "wandb_config")
+os.environ["TMPDIR"] = "/leonardo_scratch/large/userexternal/sgaliano/tmp"
+
 
 from box import Box
 import yaml
@@ -35,7 +48,7 @@ def execute_task(config_path: str):
         'tokenization': 'tokenization',
         'publish': 'publish'
     }
-    
+
     # Get the module name for this task type
     module_name = task_module_map.get(task, task)
     

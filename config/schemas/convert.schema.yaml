@@ -18,7 +18,7 @@ allOf:
           initial_format:
             type: string
             description: "Initial format of the checkpoint"
-            enum: ["fsdp"]
+            enum: ["fsdp", "ddp"]
             default: "fsdp"
           
           final_format:

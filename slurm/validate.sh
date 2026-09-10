@@ -11,13 +11,13 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SLURM_SCRIPT="$SCRIPT_DIR/p.slurm"
-CONFIG_FILE="$SCRIPT_DIR/slurm_config.env"
+SLURM_CONFIG_ENV="$SCRIPT_DIR/slurm_config.env"
 SUBMIT_SCRIPT="$SCRIPT_DIR/submit_job.sh"
 
 echo "===== SLURM Script Validation ====="
 echo "Script Directory: $SCRIPT_DIR"
 echo "SLURM Script: $SLURM_SCRIPT"
-echo "Config File: $CONFIG_FILE"
+echo "Config File: $SLURM_CONFIG_ENV"
 echo "Submit Script: $SUBMIT_SCRIPT"
 echo "==============================="
 
@@ -38,13 +38,14 @@ validate_files() {
     
     # Load configuration similar to submit_job.sh
     PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    ENV_SCRIPT="$PROJECT_ROOT/scripts/set_environment.sh"
     
     # Source slurm_config.env if it exists to get defaults
-    if [[ -f "$CONFIG_FILE" ]]; then
-        echo "Loading configuration from: $CONFIG_FILE"
-        source "$CONFIG_FILE"
+    if [[ -f "$SLURM_CONFIG_ENV" ]]; then
+        echo "Loading configuration from: $SLURM_CONFIG_ENV"
+        source "$SLURM_CONFIG_ENV"
     else
-        echo "⚠️  No configuration file found at: $CONFIG_FILE"
+        echo "⚠️  No configuration file found at: $SLURM_CONFIG_ENV"
     fi
     
     echo "Project Root: $PROJECT_ROOT"
@@ -67,12 +68,13 @@ validate_files() {
     else
         echo "✅ Submit script exists"
     fi
-    
-    echo "Dockerfile: $PROJECT_ROOT/$DOCKERFILE_RELATIVE_PATH"
-    if [ ! -f "$PROJECT_ROOT/$DOCKERFILE_RELATIVE_PATH" ]; then
-        echo "⚠️  Dockerfile not found: $PROJECT_ROOT/$DOCKERFILE_RELATIVE_PATH"
+
+    echo "Environment script: $ENV_SCRIPT"
+    if [ ! -f "$ENV_SCRIPT" ]; then
+        echo "❌ Environment script not found: $ENV_SCRIPT"
+        echo "   This is required for Conda-based SLURM runs."
     else
-        echo "✅ Dockerfile exists"
+        echo "✅ Environment script exists"
     fi
     
     echo "Main script: $PROJECT_ROOT/$MAIN_SCRIPT"
@@ -84,31 +86,19 @@ validate_files() {
     echo
 }
 
-# Function to check Docker availability
-check_docker() {
-    echo "=== Docker Validation ==="
-    echo "ℹ  Docker validation note:"
-    echo "   Docker is typically only available on SLURM compute nodes, not login nodes"
-    echo "   This validation script runs on the login node, so Docker may not be accessible here"
+# Function to check Conda availability (informational; compute nodes may differ)
+check_conda() {
+    echo "=== Conda Validation ==="
+    echo "ℹ  Conda validation note:"
+    echo "   This script runs on the login node; compute node environments may differ."
     echo ""
-    
-    if command -v docker &> /dev/null; then
-        echo "✅ Docker command is available on this node"
-        if docker info &> /dev/null; then
-            echo "✅ Docker daemon is accessible"
-            echo "Docker version: $(docker --version)"
-            echo "ℹ  Note: Docker being available here doesn't guarantee it's available on compute nodes"
-        else
-            echo "⚠️  Docker daemon not accessible on this node"
-            echo "   This is expected on login nodes - Docker should be available on compute nodes"
-        fi
+
+    if command -v conda &> /dev/null; then
+        echo "✅ conda command found: $(conda --version 2>/dev/null || echo 'version unknown')"
     else
-        echo "ℹ  Docker command not found on this node (expected on login nodes)"
-        echo "   The SLURM script will use Docker on the allocated compute nodes"
+        echo "⚠️  conda command not found in PATH on this node"
+        echo "   p.slurm sources scripts/set_environment.sh to activate Conda on the compute node."
     fi
-    
-    echo "✅ Docker image name configured: ${DOCKER_IMAGE_NAME:-lmtk:latest}"
-    echo "✅ Dockerfile path configured: ${DOCKERFILE_RELATIVE_PATH:-docker/Dockerfile}"
     echo
 }
 
@@ -177,12 +167,20 @@ simulate_execution() {
     echo "=== Execution Simulation ==="
     echo "This is what would happen when the script runs:"
     echo
-    
-    # Source variables
-    source "$SLURM_SCRIPT" 2>/dev/null || {
-        echo "ERROR: Could not source variables from SLURM script"
-        return 1
-    }
+
+    # Note: do not source p.slurm (it is an executable job script and may exit).
+    PROJECT_NAME="${PROJECT_NAME:-LMTK}"
+    HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-/home/gplsi/$(whoami)/$PROJECT_NAME}"
+    OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-experiment_$(date +%Y%m%d_%H%M%S)}"
+    LOG_SUBDIR="${LOG_SUBDIR:-logs}"
+    CACHE_DIR_NAME="${CACHE_DIR_NAME:-.cache}"
+    WANDB_PROJECT="${WANDB_PROJECT:-lmtk-experiments}"
+    WANDB_ENTITY="${WANDB_ENTITY:-}"
+    PYTHON_COMMAND="${PYTHON_COMMAND:-python3}"
+    MAIN_SCRIPT="${MAIN_SCRIPT:-src/main.py}"
+
+    # submit_job.sh passes the experiment config via CONFIG_FILE for p.slurm.
+    EXPERIMENT_CONFIG="${CONFIG_FILE:-<provided by submit_job.sh via --export CONFIG_FILE=...>}"
     
     echo "1. Job Configuration:"
     echo "   - Job Name: $JOB_NAME"
@@ -196,16 +194,14 @@ simulate_execution() {
     echo "   - Create log directory: $HOST_PROJECT_ROOT/output/$OUTPUT_DIR_NAME/$LOG_SUBDIR"
     echo "   - Create cache directories under: $HOST_PROJECT_ROOT/$CACHE_DIR_NAME"
     echo
-    
-    echo "3. Docker Operations:"
-    echo "   - Check for image: $DOCKER_IMAGE_NAME"
-    echo "   - If not found, build from: $HOST_PROJECT_ROOT/$DOCKERFILE_RELATIVE_PATH"
-    echo "   - Container name: \${SLURM_JOB_ID}_lmtk_continual"
+
+    echo "3. Environment Setup:"
+    echo "   - Source: $HOST_PROJECT_ROOT/scripts/set_environment.sh"
+    echo "   - Activate Conda env: lmtk"
     echo
-    
+
     echo "4. Training Execution:"
-    echo "   - Mount: $HOST_PROJECT_ROOT -> $CONTAINER_PROJECT_ROOT"
-    echo "   - Command: $PYTHON_COMMAND $MAIN_SCRIPT --config $CONFIG_FILE"
+    echo "   - Command: $PYTHON_COMMAND $MAIN_SCRIPT --config $EXPERIMENT_CONFIG"
     echo "   - WandB Project: $WANDB_PROJECT"
     echo "   - WandB Entity: $WANDB_ENTITY"
     echo
@@ -215,7 +211,7 @@ simulate_execution() {
 main() {
     extract_defaults
     validate_files
-    check_docker
+    check_conda
     validate_slurm_syntax
     show_environment
     simulate_execution
