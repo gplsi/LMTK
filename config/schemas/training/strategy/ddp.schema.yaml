@@ -1,0 +1,22 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "clm_training.ddp.schema.yaml"
+description: "Schema for DDP experiments"
+allOf:
+  - $ref: "../../base.schema.yaml"
+  - type: object
+    properties:
+      
+      num_workers:
+        type: integer
+        default: 4
+        description: "Number of CPU workers for data loading"
+      
+      backend:
+        type: string
+        enum: ["nccl", "gloo"]
+        default: "nccl"
+        description: "DDP backend to use"
+    required:
+      - num_workers
+      - backend
+      

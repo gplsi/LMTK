@@ -1,0 +1,34 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "tokenization.instruction.schema.yaml"
+
+description: "Main schema for tokenization whenever Instruction fine-tuning is performed"
+
+allOf:
+  - $ref: "tokenization.schema.yaml"
+  - type: object
+    properties:
+      tokenizer:
+        properties:
+          task:
+            type: string
+            const: "instruction"
+          mask_prompt:
+            type: boolean
+            default: true
+            description: "Whether to mask the prompt portion in the labels for instruction tuning."
+          padding_strategy:
+            type: string
+            enum: ["fixed", "dynamic"]
+            default: "fixed"
+            description: "Padding strategy to use for tokenization. Options: 'fixed' (default) or 'dynamic'."
+          masking_strategy:
+            type: string
+            enum: ["context_aware", "response_only"]
+            default: "context_aware"
+            description: "Masking strategy to use for tokenization. Options: 'context_aware' (default) or 'response_only'."
+      dataset:
+        properties:
+          specific_keys:
+            type: array
+      seed:
+        type: integer

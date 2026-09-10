@@ -1,0 +1,56 @@
+# Example configuration for CLM training with multi-node DDP strategy
+# This demonstrates the multi-node fields in the training args schema
+
+task: "clm_training"
+experiment_name: "clm-multinode-ddp-example"
+
+# Model configuration
+model_name: "meta-llama/Meta-Llama-3-8B"
+precision: "bf16-true"
+verbose_level: 2
+
+# Data configuration
+dataset:
+  source: local
+  nameOrPath: "/workspace/data/tokenized_outputs/clm_testing"
+
+# Training arguments
+number_epochs: 1
+batch_size: 2
+num_nodes: 2
+devices_per_node: 4
+validate_after_epoch: true
+validate_on_end: true
+save_on_validate: false
+save_on_end: false
+num_workers: 4
+output_dir: "/workspace/output/clm_multinode_example"
+
+# Optimizer configuration
+gradient_accumulation: true
+gradient_accumulation_steps: 8
+grad_clip: 1.0
+lr: 0.00001
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler configuration
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.1
+
+# Parallelization strategy
+parallelization_strategy: "ddp"
+process_group_backend: "nccl"
+find_unused_parameters: false
+static_graph: true
+parallelization_config:
+  num_workers: 4
+  backend: "nccl"
+
+# Logging configuration
+logging_config: "wandb"
+
+# Seed for reproducibility
+seed: 123

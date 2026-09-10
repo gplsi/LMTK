@@ -1,0 +1,230 @@
+/* Custom CSS for ML Training Framework Documentation */
+
+:root {
+  --primary: #4C72B0;
+  --secondary: #7B64FF;
+  --accent: #FF7F0E;
+  --success: #55A868;
+  --warning: #FDB462;
+  --danger: #D65F5F;
+  --info: #64B5CD;
+  --dark: #334F75;
+  --light: #F0F7FF;
+  
+  --gradient-bg: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  --gradient-accent: linear-gradient(135deg, var(--accent) 0%, var(--warning) 100%);
+}
+
+/* Gradient header for section titles */
+h1, h2 {
+    background: var(--gradient-bg);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+    font-weight: 700;
+}
+
+/* Accent color for h3 */
+h3 {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* Code blocks styling */
+div.highlight {
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    margin: 1.5em 0;
+}
+
+/* Code copy button enhancement */
+button.copybtn {
+    background: var(--accent);
+    color: white;
+    opacity: 0.8;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+button.copybtn:hover {
+    opacity: 1;
+    transform: scale(1.05);
+}
+
+/* Admonition blocks - fancy styles */
+div.admonition {
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.07);
+    border-left-width: 6px;
+    margin: 1.5em 0;
+}
+
+div.admonition.note {
+    border-color: var(--primary);
+}
+
+div.admonition.warning {
+    border-color: var(--warning);
+}
+
+div.admonition.danger {
+    border-color: var(--danger);
+}
+
+div.admonition.tip {
+    border-color: var(--success);
+}
+
+div.admonition p.admonition-title {
+    font-weight: 600;
+    font-size: 1.1em;
+}
+
+/* Cards and grid layout enhancement */
+.sd-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: none;
+}
+
+.sd-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Header section styling - hero section */
+.hero-section {
+    background: var(--gradient-bg);
+    color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.hero-section h1 {
+    -webkit-text-fill-color: white;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.hero-section p {
+    font-size: 1.2rem;
+    max-width: 700px;
+}
+
+/* Custom class for feature boxes */
+.feature-box {
+    padding: 1.5rem;
+    background-color: var(--light);
+    border-radius: 8px;
+    border-top: 4px solid var(--primary);
+    margin-bottom: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.feature-box:hover {
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
+}
+
+.feature-box h3 {
+    color: var(--primary);
+    margin-top: 0;
+}
+
+/* API reference styling */
+dl.py.class, dl.py.function, dl.py.method {
+    background-color: rgba(76, 114, 176, 0.05);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid var(--primary);
+}
+
+dl.py dt {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    padding: 0.3rem 0;
+}
+
+/* Improve table styling */
+table.docutils {
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    border-collapse: collapse;
+    margin: 1.5em 0;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+}
+
+table.docutils thead {
+    background: var(--primary);
+    color: white;
+}
+
+table.docutils thead th {
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+}
+
+table.docutils tbody tr:nth-child(even) {
+    background-color: rgba(76, 114, 176, 0.05);
+}
+
+table.docutils tbody td {
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Fancy navigation panel */
+.bd-sidebar .nav > li > a {
+    padding: 8px 12px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.bd-sidebar .nav > li > a:hover {
+    background-color: rgba(76, 114, 176, 0.1);
+}
+
+.bd-sidebar .nav > li.active > a {
+    border-left: 4px solid var(--accent);
+    background-color: rgba(76, 114, 176, 0.1);
+    font-weight: 600;
+}
+
+/* Footer styling */
+footer {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Search button enhancement */
+.navbar-icon-links i.fa-search {
+    color: var(--accent);
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .hero-section h1 {
+        font-size: 2rem;
+    }
+    
+    .hero-section p {
+        font-size: 1rem;
+    }
+}
+
+/* Dark mode specifics */
+@media (prefers-color-scheme: dark) {
+    .feature-box {
+        background-color: rgba(76, 114, 176, 0.1);
+    }
+    
+    dl.py.class, dl.py.function, dl.py.method {
+        background-color: rgba(76, 114, 176, 0.1);
+    }
+}

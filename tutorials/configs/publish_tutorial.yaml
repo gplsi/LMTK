@@ -1,0 +1,14 @@
+task: "publish"
+experiment_name: "tutorial_publish"
+verbose_level: 4
+
+publish:
+  format: "fsdp"                                 # or as required by your schema
+  host: "huggingface"
+  base_model: "openai-community/gpt2"
+  checkpoint_path: "tutorials/output/epoch-001-final-ckpt.pth"  # Update as needed
+  repo_id: "FabioDataGeek/quijote-gpt2-clm"     
+  commit_message: "Add tutorial-trained GPT-2 checkpoint"
+  max_shard_size: "5GB"
+  safe_serialization: true
+  create_pr: false

@@ -1,0 +1,20 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "scheduler.schema.yaml"
+description: "Schema for learning rate scheduler configuration"
+
+type: object
+properties:
+  lr_scheduler:
+    type: string
+    default: "linear"
+    enum: ["fixed", "warmup_linear", "warmup_constant", "cosine", "warmup_cosine", "warmup_cosine_restart"]
+    description: "Learning rate scheduler to use"
+
+  warmup_proportion:
+    type: number
+    default: 0.06
+    description: "Proportion of training steps to warm up the learning rate"
+
+required:
+  - lr_scheduler
+  - warmup_proportion

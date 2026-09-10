@@ -1,0 +1,36 @@
+auto_wrap_policy: gpt2
+batch_size: 8
+beta1: 0.9
+beta2: 0.95
+cpu_offload: false
+dataset:
+  format: hf
+  nameOrPath: /workspace/tutorials/data/sample_tokenized_dataset
+  source: local
+experiment_name: tutorial_clm_training
+grad_clip: 1.0
+gradient_accumulation: true
+gradient_accumulation_steps: 2
+gradient_checkpointing: true
+limit_all_gathers: true
+log_iter_interval: 10
+log_model: true
+logging_config: none
+lr: 2.0e-05
+lr_decay: true
+lr_scheduler: warmup_linear
+model_name: openai-community/gpt2
+num_workers: 4
+number_epochs: 1
+output_dir: tutorials/output
+parallelization_strategy: fsdp
+precision: bf16-true
+sharding_strategy: FULL_SHARD
+state_dict_type: sharded
+task: clm_training
+validations_per_epoch: 2
+verbose_level: 2
+wandb_entity: your_wandb_entity
+wandb_project: your_wandb_project
+warmup_proportion: 0.06
+weight_decay: 0.01

@@ -1,0 +1,25 @@
+task: tokenization
+experiment_name: test_tokenization_smoke
+verbose_level: 1
+seed: 42
+
+tokenizer:
+  tokenizer_name: hf-internal-testing/llama-tokenizer
+  task: clm_training
+  context_length: 128
+  overlap: 16
+  batch_size: 64
+  num_proc: 2
+  show_progress: false
+
+dataset:
+  source: local
+  nameOrPath: tutorials/data/raw_text_data
+  format: files
+  file_config:
+    format: txt
+
+output:
+  path: output/tests/tokenized
+
+test_size: 0

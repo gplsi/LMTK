@@ -1,0 +1,17 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "base"
+type: object
+properties:
+  task:
+    type: string
+    enum: ["tokenization", "clm_training", "mlm_training",  "lm_evaluation", "lm_inference", "instruction", "tokenization_instruction", "convert", "publish", "anonymization", "dataset_merge", "testing"]
+  experiment_name:
+    type: string
+    pattern: '^.+$'
+  verbose_level:
+    type: integer
+    minimum: 0
+    maximum: 4
+required:
+  - task
+  - experiment_name
