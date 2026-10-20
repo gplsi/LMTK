@@ -1,0 +1,56 @@
+# Simple Dataset Merge Configuration
+task: "dataset_merge"
+experiment_name: "dc19_merged"
+verbose_level: 3
+
+# Fixed sequence length for all datasets
+sequence_length: 2048
+
+sequence_length_features:
+  - input_ids
+  - attention_mask
+  - labels
+
+required_features:
+  - input_ids
+  - attention_mask
+  - labels
+
+# Datasets to merge with their sampling percentages
+datasets:
+  - path: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc9"
+    percentage: 1  # 100% of this dataset
+    name: "dc9"
+  
+  - path: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc10"
+    percentage: 1  # 100% of this dataset
+    name: "dc10"
+
+  - path: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc13" 
+    percentage: 1  # 100% of this dataset
+    name: "dc13"
+
+  - path: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc15"
+    percentage: 1  # 100% of this dataset
+    name: "dc15"
+  
+# Output path for the merged dataset
+output_path: "/home/gplsi/GPLSI/ALIA/modelos/Continual/data/dc19"
+
+# Shuffling configuration
+shuffle_seed: 42
+final_shuffle_seed: 123
+
+# Validation options
+strict_compatibility: true
+
+sampler:
+  shuffle_full_sample: false
+  indices_cache_dir: "tmp/dataset_merge_indices"
+
+save:
+  max_shard_size: "2GB"
+  num_proc: 32
+
+# Seed for reproducibility
+seed: 42

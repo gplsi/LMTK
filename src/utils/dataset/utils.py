@@ -4,14 +4,14 @@ supported file extensions. The primary function, scan_directory, traverses a giv
 tree and groups files by their parent folder, filtering them by either a provided extension 
 or a set of default supported extensions.
 
-Supported file extensions include: "txt", "csv", and "json".
+Supported file extensions include: "txt", "csv", "json", "jsonl", and "parquet".
 """
 
 import os
 from typing import Dict
 from src.utils.logging import get_logger
 
-SUPPORTED_EXTENSIONS = ["txt", "csv", "json", "jsonl"]
+SUPPORTED_EXTENSIONS = ["txt", "csv", "json", "jsonl", "parquet"]
 
 # Create a logger for this module
 local_logger = get_logger(__name__)

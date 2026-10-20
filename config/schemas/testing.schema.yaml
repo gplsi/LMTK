@@ -1,0 +1,42 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "testing.schema.yaml"
+description: "Schema for SLURM-based test runner configurations"
+
+allOf:
+  - $ref: "base.schema.yaml"
+  - type: object
+    properties:
+      testing:
+        type: object
+        properties:
+          mode:
+            type: string
+            enum: ["unit", "integration"]
+          command:
+            type: string
+            description: "Shell command to run unit tests"
+          configs:
+            type: array
+            items:
+              type: string
+            description: "List of config paths to run for integration testing"
+          stop_on_failure:
+            type: boolean
+            default: true
+        required:
+          - mode
+        allOf:
+          - if:
+              properties:
+                mode:
+                  const: "unit"
+            then:
+              required: ["command"]
+          - if:
+              properties:
+                mode:
+                  const: "integration"
+            then:
+              required: ["configs"]
+    required:
+      - testing

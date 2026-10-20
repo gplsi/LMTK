@@ -35,6 +35,23 @@ allOf:
         type: string
         description: "Path where the merged dataset will be saved"
 
+      save:
+        type: object
+        description: "Options controlling how the merged dataset is written to disk"
+        properties:
+          max_shard_size:
+            type: [string, number, 'null']
+            description: "Maximum shard size passed to Hugging Face save_to_disk"
+          num_shards:
+            type: [integer, 'null']
+            minimum: 1
+            description: "Fixed number of shards for save_to_disk"
+          num_proc:
+            type: [integer, 'null']
+            minimum: 1
+            description: "Number of processes to use while saving"
+        additionalProperties: false
+
       # Shuffling configuration
       shuffle_seed:
         type: [integer, 'null']
@@ -51,6 +68,42 @@ allOf:
         type: boolean
         default: true
         description: "Whether to enforce strict compatibility checking between datasets"
+
+      required_features:
+        type: array
+        description: "List of feature names that must exist on every dataset"
+        items:
+          type: string
+
+      feature_length_constraints:
+        type: object
+        description: "Expected fixed sequence length for specific features"
+        additionalProperties:
+          type: integer
+          minimum: 1
+
+      sequence_length:
+        type: [integer, 'null']
+        minimum: 1
+        description: "Expected fixed sequence length shared across token features"
+
+      sequence_length_features:
+        type: array
+        description: "Feature names to which sequence_length applies"
+        items:
+          type: string
+
+      sampler:
+        type: object
+        description: "Sampler behaviour overrides"
+        properties:
+          shuffle_full_sample:
+            type: boolean
+            description: "When true, datasets sampled at 100% are still shuffled"
+          indices_cache_dir:
+            type: string
+            description: "Directory where shuffle index cache files are stored"
+        additionalProperties: false
 
       # Allow base schema properties
       seed:

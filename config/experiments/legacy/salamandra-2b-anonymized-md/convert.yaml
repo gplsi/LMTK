@@ -1,0 +1,10 @@
+task: "convert"   # pretraining, tokenization
+experiment_name: "md_anonymized_salamandra_2b_convert"
+verbose_level: 3
+
+convert:
+  base_model: "BSC-LT/salamandra-2b"
+  checkpoint_path: "/workspace/output/s2b-md-original-params/"
+  output_dir: "/workspace/output/s2b-md-original-params-converted/"
+  initial_format: "fsdp"
+  final_format: "huggingface"

@@ -1,0 +1,46 @@
+task: clm_training
+experiment_name: test_clm_training_multinode_smoke
+verbose_level: 1
+model_name: hf-internal-testing/tiny-random-LlamaForCausalLM
+precision: bf16-true
+seed: 42
+
+dataset:
+  source: local
+  format: hf
+  nameOrPath: output/tests/tokenized
+
+validation_split:
+  proportion: 0.1
+  shuffle: true
+  seed: 42
+
+number_epochs: 1
+batch_size: 1
+num_nodes: 2
+devices_per_node: 1
+num_workers: 0
+validate_after_epoch: true
+validate_on_end: true
+validations_per_epoch: 1
+save_on_validate: false
+save_on_end: false
+output_dir: output/tests
+
+gradient_accumulation: false
+gradient_accumulation_steps: 1
+grad_clip: 1.0
+lr: 2.0e-05
+lr_decay: false
+weight_decay: 0.0
+beta1: 0.9
+beta2: 0.95
+
+lr_scheduler: fixed
+warmup_proportion: 0.0
+
+logging_config: none
+parallelization_strategy: ddp
+parallelization_config:
+  num_workers: 0
+  backend: "nccl"

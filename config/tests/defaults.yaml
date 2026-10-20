@@ -1,0 +1,6 @@
+model_name: hf-internal-testing/tiny-random-LlamaForCausalLM
+tokenizer_name: hf-internal-testing/llama-tokenizer
+precision: bf16-true
+context_length: 128
+overlap: 16
+seed: 42

@@ -38,17 +38,23 @@ class PublishOrchestrator(BaseOrchestrator):
         """
         Validate the publish configuration.
         """
-        if not hasattr(self.config, 'publish') or not self.config.publish:
+        if not isinstance(self.config, Box) or "publish" not in self.config:
             raise ValueError("Publish configuration must be provided")
-        if not self.config.publish.get('host'):
+        publish_config = self.config.get("publish")
+        if not publish_config:
+            raise ValueError("Publish configuration must be provided")
+        required_keys = ("host", "base_model", "repo_id", "checkpoint_path", "format")
+        if all(not publish_config.get(key) for key in required_keys):
+            raise ValueError("Publish configuration must be provided")
+        if not publish_config.get('host'):
             raise ValueError("Publish host must be provided")
-        if not self.config.publish.get('base_model'):
+        if not publish_config.get('base_model'):
             raise ValueError("Publish base_model must be provided")
-        if not self.config.publish.get('repo_id'):
+        if not publish_config.get('repo_id'):
             raise ValueError("Publish repo_id must be provided")
-        if not self.config.publish.get('checkpoint_path'):
+        if not publish_config.get('checkpoint_path'):
             raise ValueError("Publish checkpoint_path must be provided")
-        if not self.config.publish.get('format'):
+        if not publish_config.get('format'):
             raise ValueError("Publish format must be provided")
 
     def format_model(self):
@@ -74,6 +80,7 @@ class PublishOrchestrator(BaseOrchestrator):
         max_shard_size = self.config.publish.get('max_shard_size', "5GB")
         safe_serialization = self.config.publish.get('safe_serialization', True)
         create_pr = self.config.publish.get('create_pr', False)
+        validate_upload = self.config.publish.get('validate_upload', False)
         
         self.logger.info(f"Uploading model to {self.config.publish.get('repo_id')} with shard size {max_shard_size}")
         
@@ -81,7 +88,8 @@ class PublishOrchestrator(BaseOrchestrator):
             message=message,
             max_shard_size=max_shard_size,
             safe_serialization=safe_serialization,
-            create_pr=create_pr
+            create_pr=create_pr,
+            validate=validate_upload,
         )
     
     def execute(self):

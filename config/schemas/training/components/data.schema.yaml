@@ -22,6 +22,31 @@ properties:
     required:
       - source
       - nameOrPath
+  validation_split:
+    type: object
+    additionalProperties: false
+    description: "Configuration for creating a validation split when the dataset does not provide one."
+    properties:
+      proportion:
+        type: number
+        exclusiveMinimum: 0
+        exclusiveMaximum: 1
+        description: "Fraction of the training data to reserve for validation (0-1)."
+      count:
+        type: integer
+        minimum: 1
+        description: "Fixed number of training examples to reserve for validation."
+      seed:
+        type: integer
+        minimum: 0
+        description: "Random seed used when shuffling before splitting."
+      shuffle:
+        type: boolean
+        default: true
+        description: "Whether to shuffle the training data before creating the validation split."
+    anyOf:
+      - required: ["proportion"]
+      - required: ["count"]
 
 required:
   - dataset

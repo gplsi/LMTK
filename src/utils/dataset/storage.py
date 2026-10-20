@@ -29,6 +29,7 @@ from functools import partial
 from enum import IntEnum
 from src.utils.logging import VerboseLevel, get_logger
 from src.utils.dataset.utils import SUPPORTED_EXTENSIONS, scan_directory
+from src.utils import get_optimal_thread_count
 
 
 class DatasetStorage:
@@ -88,9 +89,52 @@ class DatasetStorage:
             "csv": partial(self._load_dataset_from_extension, "csv"),
             "json": partial(self._load_dataset_from_extension, "json"),
             "jsonl": partial(self._load_dataset_from_extension, "json"),
+            "parquet": partial(self._load_dataset_from_extension, "parquet"),
             # Add more mappings as needed.
         }
         self.text_key = None  # Will be set when loading JSON/JSONL files if specified in config
+        self._assumed_extension_for_extensionless: Optional[str] = None
+
+    def _normalize_text_column(
+        self, dataset: Union[HFDataset, DatasetDict], file_config: Optional[Dict[str, Any]]
+    ) -> Union[HFDataset, DatasetDict]:
+        """
+        Ensure a consistent text column name across formats.
+
+        Tokenization expects a column named "text". For structured formats (CSV/Parquet) the
+        source column may be specified via `text_column`. For backward compatibility we also
+        accept `text_key` as an alias (historically used in some configs).
+        """
+        if dataset is None:
+            raise ValueError("Dataset is None")
+
+        configured_column = None
+        if file_config:
+            configured_column = file_config.get("text_column") or file_config.get("text_key")
+
+        def normalize_split(split: HFDataset) -> HFDataset:
+            if "text" in split.column_names:
+                return split
+
+            if configured_column and configured_column in split.column_names:
+                self.logger.info(
+                    f"Renaming column '{configured_column}' → 'text' for downstream tokenization"
+                )
+                return split.rename_column(configured_column, "text")
+
+            raise ValueError(
+                "Dataset must include a 'text' column for tokenization. "
+                "Set dataset.file_config.text_column (or dataset.file_config.text_key) "
+                f"to a valid column name. Available columns: {split.column_names}"
+            )
+
+        if isinstance(dataset, DatasetDict):
+            return DatasetDict({name: normalize_split(split) for name, split in dataset.items()})
+
+        if isinstance(dataset, HFDataset):
+            return normalize_split(dataset)
+
+        raise ValueError(f"Unsupported dataset type: {type(dataset)}")
 
     def _load_dataset_from_extension(self, data_type: str, files: list[str]) -> Union[HFDataset, DatasetDict]:
         """
@@ -136,8 +180,10 @@ class DatasetStorage:
         data = []
         for file_path in files:
             try:
-                file_extension = file_path.split('.')[-1].lower()
-                is_jsonl = file_extension == 'jsonl'
+                file_extension = Path(file_path).suffix.lstrip(".").lower()
+                is_jsonl = file_extension == "jsonl" or (
+                    file_extension == "" and self._assumed_extension_for_extensionless == "jsonl"
+                )
                 
                 with open(file_path, 'r', encoding='utf-8') as f:
                     if is_jsonl:
@@ -145,7 +191,7 @@ class DatasetStorage:
                         for i, line in enumerate(f):
                             try:
                                 json_obj = json.loads(line.strip())
-                                self.__process_json_entry(json_obj, data, file_path, i)
+                                self._process_json_entry(json_obj, data, file_path, i)
                             except json.JSONDecodeError:
                                 self.logger.error(f"Error parsing JSON at line {i+1} in {file_path}: Invalid JSON format")
                     else:
@@ -237,7 +283,9 @@ class DatasetStorage:
         dataset = HFDataset.from_list(data)
         return DatasetDict({"train": dataset})
 
-    def _group_files_by_extension(self, files_path: str) -> dict:
+    def _group_files_by_extension(
+        self, files_path: str, assumed_extension_for_extensionless: Optional[str] = None
+    ) -> dict:
         source_dict = scan_directory(files_path, logger=self.logger)
         extension_files = {}
         for source, files in source_dict.items():
@@ -248,6 +296,25 @@ class DatasetStorage:
                 else:
                     extension_files[extension].append(file)  # file is already a full path from scan_directory
 
+        if assumed_extension_for_extensionless in SUPPORTED_EXTENSIONS:
+            extensionless_files: list[str] = []
+            for root, _, files in os.walk(files_path):
+                for filename in files:
+                    if Path(filename).suffix:
+                        continue
+                    full_path = os.path.join(root, filename)
+                    if os.path.isfile(full_path):
+                        extensionless_files.append(full_path)
+
+            if extensionless_files:
+                extension_files.setdefault(assumed_extension_for_extensionless, []).extend(
+                    extensionless_files
+                )
+                self.logger.debug(
+                    f"Treating {len(extensionless_files)} extensionless files as "
+                    f".{assumed_extension_for_extensionless} due to dataset.file_config.format"
+                )
+
         self.logger.debug(
             f"Grouped files by extensions: {[f'{k} ({len(v)})' for k, v in extension_files.items()]}"
         )
@@ -255,78 +322,115 @@ class DatasetStorage:
 
     def process_files(self, files_path: str, file_config: Optional[Dict] = None) -> HFDataset:
         """
-        Process files within the given directory and build a consolidated dataset.
+        Process files from a directory or a single file path and build a consolidated dataset.
 
-        The method scans the directory, groups the files by their extensions, 
+        The method scans the directory, groups the files by their extensions,
         then uses the appropriate dataset loading method based on the extension.
         If multiple datasets are produced (one for each supported file extension), they are concatenated.
 
         Args:
-            files_path (str): Path to the directory containing files.
+            files_path (str): Path to a directory containing files, or to a single file.
             file_config (Optional[Dict]): Configuration for file processing, including format and text_key.
         
         Returns:
             HFDataset: The processed dataset.
         """
-         
-        if not os.path.isdir(files_path):
-            raise ValueError(f"Invalid directory path: {files_path}.")
-            
-        # Set text_key if specified in file_config
-        self.text_key = None  # Reset text_key
-        if file_config and "text_key" in file_config:
-            self.text_key = file_config.get("text_key")
-            self.logger.info(f"Using text_key: {self.text_key} for JSON/JSONL files")
-        else:
-            format_str = file_config.get("format") if file_config else None
-            if format_str in ["json", "jsonl"]:
-                self.logger.info("No text_key specified for JSON/JSONL files, using entire JSON as content")
+        path = Path(files_path)
+        if not path.exists():
+            raise ValueError(f"Invalid path: {files_path}.")
+        if not path.is_dir() and not path.is_file():
+            raise ValueError(f"Invalid path: {files_path}. Expected a file or directory.")
 
-        self.logger.info(
-            f"Processing files from '{files_path}' and grouping by file extension."
-        )
-        datasets = []
-        extension_files = self._group_files_by_extension(files_path)
-        
-        # If a specific format is requested in file_config, filter for that format
         specific_format = None
         if file_config and "format" in file_config and file_config["format"] != "any":
             specific_format = file_config["format"]
+
+        assumed_extension_for_extensionless = (
+            specific_format if specific_format in SUPPORTED_EXTENSIONS else None
+        )
+        self._assumed_extension_for_extensionless = assumed_extension_for_extensionless
+        try:
             
-        for extension, files in extension_files.items():
-            if specific_format and extension != specific_format:
-                self.logger.debug(f"Skipping {extension} files, only processing {specific_format}")
-                continue
-                
-            if extension not in SUPPORTED_EXTENSIONS:
-                self.logger.warning(f"Unsupported file extension: {extension}")
-                continue
-
-            process_method = self.extension_to_method.get(extension)
-            if process_method:
-                datasets.append(process_method(files))
+            # Set text_key if specified in file_config
+            self.text_key = None  # Reset text_key
+            if file_config and "text_key" in file_config:
+                self.text_key = file_config.get("text_key")
+                self.logger.info(f"Using text_key: {self.text_key} for JSON/JSONL files")
             else:
-                self.logger.error(
-                    f"Could not find Extension processing method for: '{extension}'"
-                )
-
-        if datasets and len(datasets) > 0:
-            if len(datasets) == 1:
-                self.logger.info(
-                    f"Dataset successfully built from '{extension if 'extension' in locals() else specific_format}' files."
-                )
-                return datasets[0]
+                format_str = file_config.get("format") if file_config else None
+                if format_str in ["json", "jsonl"]:
+                    self.logger.info(
+                        "No text_key specified for JSON/JSONL files, using entire JSON as content"
+                    )
 
             self.logger.info(
-                f"Produced one dataset per file extension. Combining ({len(datasets)}) datasets into one."
+                f"Processing files from '{files_path}' and grouping by file extension."
             )
-            combined_dataset = concatenate_datasets(
-                [dataset["train"] for dataset in datasets]
-            )
-            return combined_dataset
-        else:
+            datasets = []
+            if path.is_file():
+                extension = path.suffix.lstrip(".").lower()
+                if not extension:
+                    if assumed_extension_for_extensionless:
+                        extension = assumed_extension_for_extensionless
+                    else:
+                        raise ValueError(
+                            "Input file has no extension and dataset.file_config.format is not set. "
+                            f"Set dataset.file_config.format to one of: {SUPPORTED_EXTENSIONS}."
+                        )
+
+                if specific_format and extension != specific_format:
+                    raise ValueError(
+                        f"Input file extension '{extension}' does not match "
+                        f"dataset.file_config.format '{specific_format}'."
+                    )
+
+                extension_files = {extension: [str(path)]}
+            else:
+                extension_files = self._group_files_by_extension(
+                    files_path, assumed_extension_for_extensionless=assumed_extension_for_extensionless
+                )
+
+            for extension, files in extension_files.items():
+                if specific_format and extension != specific_format:
+                    self.logger.debug(
+                        f"Skipping {extension} files, only processing {specific_format}"
+                    )
+                    continue
+
+                if extension not in SUPPORTED_EXTENSIONS:
+                    self.logger.warning(f"Unsupported file extension: {extension}")
+                    continue
+
+                process_method = self.extension_to_method.get(extension)
+                if process_method:
+                    loaded_dataset = process_method(files)
+                    datasets.append(
+                        self._normalize_text_column(loaded_dataset, file_config=file_config)
+                    )
+                else:
+                    self.logger.error(
+                        f"Could not find Extension processing method for: '{extension}'"
+                    )
+
+            if datasets and len(datasets) > 0:
+                if len(datasets) == 1:
+                    self.logger.info(
+                        f"Dataset successfully built from '{extension if 'extension' in locals() else specific_format}' files."
+                    )
+                    return datasets[0]
+
+                self.logger.info(
+                    f"Produced one dataset per file extension. Combining ({len(datasets)}) datasets into one."
+                )
+                combined_dataset = concatenate_datasets(
+                    [dataset["train"] for dataset in datasets]
+                )
+                return combined_dataset
+
             self.logger.error("No data found")
             raise ValueError("No data found")
+        finally:
+            self._assumed_extension_for_extensionless = None
 
     def split(self, dataset: Union[HFDataset, DatasetDict], split_ratio: float) -> DatasetDict:
         """
@@ -414,11 +518,20 @@ class DatasetStorage:
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.logger.info(f"Saving dataset to '{path}'")
+        effective_max_shard_size = max_shard_size or "2GB"
+        effective_num_proc = num_proc or max(1, get_optimal_thread_count())
+
+        self.logger.info(
+            "Saving dataset to '%s' (max_shard_size=%s, num_shards=%s, num_proc=%s)",
+            path,
+            effective_max_shard_size,
+            num_shards,
+            effective_num_proc,
+        )
         dataset.save_to_disk(
             str(path),
-            max_shard_size=max_shard_size,
+            max_shard_size=effective_max_shard_size,
             num_shards=num_shards,
-            num_proc=num_proc,
+            num_proc=effective_num_proc,
         )
         return path

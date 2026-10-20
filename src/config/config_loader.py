@@ -1,7 +1,7 @@
 import yaml
 from pathlib import Path
 from box import Box
-from jsonschema import Draft7Validator, RefResolver
+from jsonschema import Draft7Validator, RefResolver, validators
 
 """
 Module for configuration validation using JSON Schema.
@@ -10,6 +10,33 @@ This module defines the ConfigValidator class that loads JSON schemas (in YAML f
 from a designated directory and validates configuration YAML files against these schemas.
 """
 
+
+class FilenameRefResolver(RefResolver):
+    """
+    Custom RefResolver that handles references by schema filename.
+    
+    This resolver looks up schemas by their filename (e.g., "base.schema.yaml"),
+    enabling simple $ref resolution regardless of directory structure.
+    """
+    
+    def resolve_remote(self, uri):
+        """
+        Override resolve_remote to handle filename-based references.
+        
+        Looks up the schema by filename in the store.
+        """
+        # Try direct lookup by filename
+        if uri in self.store:
+            return self.store[uri]
+        
+        # Also try extracting just the filename from the URI if it contains a path
+        from pathlib import Path
+        filename = Path(uri).name
+        if filename in self.store:
+            return self.store[filename]
+        
+        # Fall back to default behavior
+        return super().resolve_remote(uri)
 
 
 class ConfigValidator:
@@ -35,145 +62,83 @@ class ConfigValidator:
         internal schema_store for later reference resolution during validation.
 
         """
-        self.schema_dir = Path(schema_dir).resolve()  # Ensure absolute path
+        schema_dir_path = Path(schema_dir)
+        if not schema_dir_path.is_absolute():
+            project_root = Path(__file__).resolve().parents[2]
+            schema_dir_path = (project_root / schema_dir_path).resolve()
+        else:
+            schema_dir_path = schema_dir_path.resolve()
+
+        self.schema_dir = schema_dir_path  # Ensure absolute path to schemas
+        self.project_root = Path(__file__).resolve().parents[2]  # Store project root
         self.schema_store = {}
         self._load_all_schemas()
+
+    def _load_schema_file(self, schema_path: Path) -> dict:
+        """Load a schema file and normalize its $id to an absolute file URI."""
+        with open(schema_path, "r") as f:
+            schema = yaml.safe_load(f) or {}
+
+        if not isinstance(schema, dict):
+            raise ValueError(f"Schema at {schema_path} must define a mapping")
+
+        schema_id_value = schema.get("$id")
+        if not schema_id_value or not str(schema_id_value).startswith("file://"):
+            schema["$id"] = schema_path.resolve().as_uri()
+
+        return schema
 
     def _load_all_schemas(self) -> None:
         """
         Recursively load all JSON schema files from the schema directory.
 
         This private method searches for files ending with the ".schema.yaml" extension, loads
-        each schema using yaml.safe_load, and stores them in the schema_store dictionary. The key
-        for each schema is its file URI, ensuring that references using $ref resolve correctly.
-
+        each schema, and stores them in the schema_store dictionary using the filename as key.
+        
+        This enables simple $ref resolution by filename (e.g., "base.schema.yaml") regardless
+        of the actual directory structure.
         """
         for schema_path in self.schema_dir.rglob("*.schema.yaml"):
-            with open(schema_path, 'r') as f:
-                schema = yaml.safe_load(f)
-                
-                # Store with full resolved path
-                schema_id = f"file://{schema_path.resolve()}"
-                self.schema_store[schema_id] = schema
-                
-                # Also store with relative path from schema_dir for easier resolution
-                relative_path = schema_path.relative_to(self.schema_dir)
-                relative_id = f"file://{self.schema_dir.resolve()}/{relative_path}"
-                self.schema_store[relative_id] = schema
-                
-                # Store with just the relative path for direct $ref resolution
-                self.schema_store[str(relative_path)] = schema
+            schema = self._load_schema_file(schema_path)
+            
+            # Store by filename as the primary key for simple $ref resolution
+            filename = schema_path.name
+            self.schema_store[filename] = schema
 
     def _find_schema_file(self, config_data: dict, task_name: str) -> Path:
         """
-        Auto-discover the correct schema file based on config structure and task.
+        Find the schema file matching the task name.
+        
+        Task names should directly correspond to schema filenames:
+        - "clm_training" → "clm_training.schema.yaml" (searches all subdirs)
+        - "publish" → "publish.schema.yaml"
+        - "tokenization" → "tokenization.schema.yaml"
         
         Args:
             config_data (dict): The loaded configuration data
-            task_name (str): The main task name (e.g., 'tokenization', 'training')
+            task_name (str): The task name matching the schema filename
             
         Returns:
-            Path: The path to the appropriate schema file
+            Path: The path to the schema file
             
         Raises:
             FileNotFoundError: If no matching schema file is found
         """
-        # Simplified schema discovery logic
-        if task_name == "tokenization":
-            if "tokenizer" in config_data and "task" in config_data["tokenizer"]:
-                tokenizer_task = config_data["tokenizer"]["task"]
-                specific_schema = self.schema_dir / "tokenization" / f"tokenization.{tokenizer_task}.schema.yaml"
-                if specific_schema.exists():
-                    return specific_schema
-            # Fallback to generic tokenization schema
-            generic_schema = self.schema_dir / "tokenization" / "tokenization.schema.yaml"
-            if generic_schema.exists():
-                return generic_schema
-        # For training tasks
-        elif task_name in ["clm_training", "mlm_training", "instruction"]:
-            training_schema = self.schema_dir / "training" / f"{task_name}.schema.yaml"
-            if training_schema.exists():
-                return training_schema
-            general_schema = self.schema_dir / "training" / "training.schema.yaml"
-            if general_schema.exists():
-                return general_schema
-        # Fallback: try root schema
-        root_schema = self.schema_dir / f"{task_name}.schema.yaml"
-        if root_schema.exists():
-            return root_schema
-        # If no schema found, raise an error with helpful information
+        # Search for schema file matching task name recursively
+        schema_filename = f"{task_name}.schema.yaml"
+        matching_schemas = list(self.schema_dir.rglob(schema_filename))
+        
+        if matching_schemas:
+            # Return the first match (there should only be one per task name)
+            return matching_schemas[0]
+        
+        # If no exact match found, provide helpful error
         available_schemas = [str(p.relative_to(self.schema_dir)) for p in self.schema_dir.rglob("*.schema.yaml")]
         raise FileNotFoundError(
-            f"No schema file found for task '{task_name}'. "
+            f"No schema file found for task '{task_name}' (looking for '{schema_filename}'). "
             f"Available schemas: {', '.join(available_schemas)}"
         )
-    
-    def _is_training_config(self, config_data: dict) -> bool:
-        """
-        Determine if a configuration is for training based on its structure.
-        
-        Args:
-            config_data (dict): The loaded configuration data
-            
-        Returns:
-            bool: True if this appears to be a training configuration
-        """
-        # Training configs typically have these keys
-        training_indicators = [
-            'model_name',           # Model to train
-            'number_epochs',        # Training epochs
-            'batch_size',          # Training batch size
-            'lr',                  # Learning rate
-            'parallelization_strategy',  # Distributed training
-            'logging_config',      # Training logging
-            'gradient_accumulation',  # Training optimization
-            'validate_after_epoch',   # Training validation
-        ]
-        
-        # Count how many training indicators are present
-        training_score = sum(1 for key in training_indicators if key in config_data)
-        
-        # Also check for dataset structure typical of training
-        has_training_dataset = (
-            'dataset' in config_data and 
-            isinstance(config_data['dataset'], dict) and
-            ('source' in config_data['dataset'] or 'nameOrPath' in config_data['dataset'])
-        )
-        
-        # Consider it a training config if it has multiple training indicators
-        return training_score >= 3 or has_training_dataset
-    
-    def _is_tokenization_config(self, config_data: dict) -> bool:
-        """
-        Determine if a configuration is for tokenization based on its structure.
-        
-        Args:
-            config_data (dict): The loaded configuration data
-            
-        Returns:
-            bool: True if this appears to be a tokenization configuration
-        """
-        # Tokenization configs typically have these keys
-        tokenization_indicators = [
-            'tokenizer',           # Tokenizer configuration
-            'output',             # Output directory for tokenized data
-            'max_length',         # Token sequence length
-            'stride',             # Tokenization stride
-            'overlap',            # Token overlap
-        ]
-        
-        # Count how many tokenization indicators are present
-        tokenization_score = sum(1 for key in tokenization_indicators if key in config_data)
-        
-        # Check for tokenizer-specific nested structure
-        has_tokenizer_config = (
-            'tokenizer' in config_data and 
-            isinstance(config_data['tokenizer'], dict) and
-            'task' in config_data['tokenizer']
-        )
-        
-        # Consider it a tokenization config if it has tokenizer indicators
-        return tokenization_score >= 2 or has_tokenizer_config
+
 
     def validate(self, config_path: Path, schema_name: str) -> Box:
         """
@@ -204,56 +169,15 @@ class ConfigValidator:
         task_schema_path = self._find_schema_file(config_data, schema_name)
         
         # Load the discovered schema
-        with open(task_schema_path, 'r') as f:
-            task_schema = yaml.safe_load(f)
+        task_schema = self._load_schema_file(task_schema_path)
 
-        # Create resolver with preloaded schema store
-        # Use the directory containing the discovered schema as base URI for relative references
-        # This allows schemas to use local relative paths (e.g., components/model.schema.yaml)
-        schema_base_dir = task_schema_path.parent
-        
-        # Create a schema store that contains the exact keys RefResolver will look for
-        # when combining base_uri with relative references
-        resolver_store = dict(self.schema_store)  # Start with global store
-        
-        # Add schemas with keys that match base_uri + relative_ref combinations
-        base_uri_str = f"file://{schema_base_dir.resolve()}/"
-        
-        for schema_path in self.schema_dir.rglob("*.schema.yaml"):
-            with open(schema_path, 'r') as f:
-                schema = yaml.safe_load(f)
-            
-            # For schemas under schema_base_dir, add them with the exact key RefResolver will use
-            try:
-                relative_to_base = schema_path.relative_to(schema_base_dir)
-                resolver_key = base_uri_str + str(relative_to_base)
-                resolver_store[resolver_key] = schema
-                
-                # Also add with just the relative path for direct resolution
-                resolver_store[str(relative_to_base)] = schema
-            except ValueError:
-                # Schema not under schema_base_dir, handle parent references
-                if schema_path.name == "base.schema.yaml" and schema_path.parent == self.schema_dir:
-                    # Handle ../base.schema.yaml reference
-                    parent_ref_key = base_uri_str + "../base.schema.yaml"
-                    resolver_store[parent_ref_key] = schema
-                    resolver_store["../base.schema.yaml"] = schema
-        
-        resolver = RefResolver(
-            base_uri=base_uri_str,
+        # Create custom resolver that handles filename-based references
+        # All $refs should use just the schema filename (e.g., "base.schema.yaml")
+        resolver = FilenameRefResolver(
+            base_uri="",
             referrer=task_schema,
-            store=resolver_store
+            store=self.schema_store
         )
-        
-        # Debug: Test resolution of all component references
-        component_refs = [
-            "../base.schema.yaml",
-            "components/model.schema.yaml",
-            "components/data.schema.yaml", 
-            "components/training_args.schema.yaml",
-            "components/optimizer.schema.yaml",
-            "components/scheduler.schema.yaml"
-        ]
 
         # Validate with error formatting
         validator = Draft7Validator(task_schema, resolver=resolver)

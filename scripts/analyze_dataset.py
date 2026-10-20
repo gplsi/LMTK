@@ -1083,6 +1083,8 @@ class DatasetAnalyzer:
         
         report = f"""# Maria Silvia Dataset - Comprehensive Technical Report
 
+    
+
 **Report Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}  
 **Model Repository:** {self.model_repo_id}  
 **Dataset Location:** {self.dataset_path}  
@@ -2067,6 +2069,7 @@ Training configurations are stored in:
             ("Analyzing language distribution", None),  # Special handling  
             ("Analyzing tokenization characteristics", None),  # Special handling
             ("Generating reports and visualizations", None)  # Special handling
+            ("Generating decoded text file", None)  # Special handling
         ]
         
         data_sources = None
@@ -2115,8 +2118,11 @@ Training configurations are stored in:
                     self.generate_visualizations()
                     self.generate_technical_report()
                     self.report_problematic_files()
-                
-                logger.info(f"✅ Step {i}/6 completed: {step_name}")
+
+                elif step_name == "Generating decoded text file":
+                    self.generate_decoded_text_file(data_sources)
+
+                logger.info(f"✅ Step {i}/7 completed: {step_name}")
             
             logger.info("="*60)
             logger.info("✅ DATASET ANALYSIS COMPLETED SUCCESSFULLY")
@@ -2148,6 +2154,44 @@ Training configurations are stored in:
             logger.error("3. All dependencies are installed")
             logger.error("4. Sufficient disk space and memory available")
             raise
+
+    def generate_decoded_text_file(self, pretokenized_path: str = PRETOKENIZED_DATASET_PATH, output_filename: str = "decoded_dataset.txt"):
+        """Generate a file by decoding token IDs from pre-tokenized dataset, one decoded sequence per line."""
+        if not self.tokenizer:
+            self.download_model_and_tokenizer()  # Ensure tokenizer is loaded
+        
+        logger.info("Generating decoded text from pre-tokenized dataset...")
+        output_path = os.path.join(self.output_dir, output_filename)
+        
+        all_decoded = []
+        # Assume pretokenized is a directory of .json files with {"input_ids": [...]}
+        pretokenized_files = scan_directory(pretokenized_path, extension="json")  # Or change extension as needed
+        
+        all_files = []
+        for source, files in pretokenized_files.items():
+            all_files.extend(files)
+        
+        for file_path in tqdm(all_files, desc="Decoding pre-tokenized files", unit="files"):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        data = json.loads(line)
+                        input_ids = data.get("input_ids", [])  # Assume format has 'input_ids'
+                        if input_ids:
+                            decoded = self.tokenizer.decode(input_ids, skip_special_tokens=True).strip()
+                            all_decoded.append(decoded)
+            except Exception as e:
+                logger.warning(f"Could not decode file {file_path}: {e}")
+        
+        # Write to output file
+        with open(output_path, 'w', encoding='utf-8') as out_f:
+            for text in all_decoded:
+                out_f.write(text + '\n')
+        
+        logger.info(f"✅ Decoded text file generated: {output_path} ({len(all_decoded)} lines)")
+        return output_path
+
+
 
 
 def main():

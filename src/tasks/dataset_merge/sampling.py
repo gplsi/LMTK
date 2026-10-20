@@ -2,7 +2,9 @@
 Dataset sampling utilities for merge operations.
 """
 
-from typing import Union
+import os
+from pathlib import Path
+from typing import Optional, Union
 from datasets import Dataset, DatasetDict
 import logging
 
@@ -10,8 +12,16 @@ import logging
 class DatasetSampler:
     """Handles dataset sampling operations."""
     
-    def __init__(self, logger=None):
+    def __init__(
+        self,
+        logger=None,
+        shuffle_full_sample: bool = True,
+        indices_cache_dir: Optional[str] = None,
+    ):
         self.logger = logger or logging.getLogger(__name__)
+        self.shuffle_full_sample = shuffle_full_sample
+        self.indices_cache_dir = indices_cache_dir
+        self._shuffle_counter = 0
     
     def sample_dataset(self, dataset: Union[Dataset, DatasetDict], 
                       percentage: float, shuffle_seed: int = 42) -> Union[Dataset, DatasetDict]:
@@ -52,9 +62,25 @@ class DatasetSampler:
         """Sample from a single dataset."""
         total_size = len(dataset)
         target_size = int(total_size * percentage)
+        is_full_sample = self._is_full_percentage(percentage)
+
+        if is_full_sample and not self.shuffle_full_sample:
+            self.logger.debug(
+                "Skipping shuffle for dataset (percentage=%.3f, seed=%s)",
+                percentage,
+                shuffle_seed,
+            )
+            return dataset
+
+        shuffle_kwargs = {}
+        if self.indices_cache_dir:
+            os.makedirs(self.indices_cache_dir, exist_ok=True)
+            cache_file = Path(self.indices_cache_dir) / f"shuffle_{self._shuffle_counter:04d}.arrow"
+            shuffle_kwargs["indices_cache_file_name"] = str(cache_file)
         
-        # Shuffle first
-        shuffled = dataset.shuffle(seed=shuffle_seed)
+        # Shuffle first (may be identity if percentage == 1 and shuffle_full_sample is True)
+        shuffled = dataset.shuffle(seed=shuffle_seed, **shuffle_kwargs)
+        self._shuffle_counter += 1
         
         if target_size >= total_size:
             # No sampling needed or oversampling
@@ -68,3 +94,10 @@ class DatasetSampler:
         else:
             # Regular sampling
             return shuffled.select(range(target_size))
+
+    @staticmethod
+    def _is_full_percentage(percentage: Union[int, float]) -> bool:
+        try:
+            return abs(float(percentage) - 1.0) < 1e-9
+        except (TypeError, ValueError):
+            return False

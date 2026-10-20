@@ -53,12 +53,13 @@ allOf:
               format:
                 type: string
                 default: "any"
-                enum: ["csv", "txt", "json", "jsonl"]
+                enum: ["any", "csv", "txt", "json", "jsonl", "parquet"]
               text_column:
                 type: string
+                description: "Column to read text from for structured files (e.g., CSV/Parquet). If omitted, the dataset must already contain a 'text' column."
               text_key:
                 type: string
-                description: "For JSON/JSONL files, the key to extract text from when each entry is a dictionary"
+                description: "For JSON/JSONL files, the key to extract text from when each entry is a dictionary. Also accepted as an alias for text_column in some pipelines."
               encoding:
                 type: string
                 default: "utf-8"

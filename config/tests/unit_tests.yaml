@@ -1,0 +1,6 @@
+task: testing
+experiment_name: test_unit_tests
+verbose_level: 1
+testing:
+  mode: unit
+  command: "python3 -m pytest -q tests src/tasks"

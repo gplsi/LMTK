@@ -1,0 +1,9 @@
+task: testing
+experiment_name: test_integration_smoke
+verbose_level: 1
+testing:
+  mode: integration
+  configs:
+    - config/tests/tokenization_smoke.yaml
+    - config/tests/clm_training_smoke.yaml
+  stop_on_failure: true

@@ -1,0 +1,10 @@
+task: "convert"   # pretraining, tokenization
+experiment_name: "c0dc17_convert"
+verbose_level: 3
+
+convert:
+  base_model: "/leonardo_work/EUHPC_D22_034/models/models--BSC-LT--salamandra-2b/snapshots/d3d9761818cd5477ab5ec55543087fc304c30f9a"
+  checkpoint_path: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17"
+  output_dir: "/leonardo_scratch/large/userexternal/sgaliano/output/aitana-2b-dc17/aitana-s2b-c0dc17_hf"
+  initial_format: "fsdp"
+  final_format: "huggingface"

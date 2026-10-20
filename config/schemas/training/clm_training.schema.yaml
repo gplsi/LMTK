@@ -37,6 +37,14 @@ allOf:
         default: "none"
         description: "Which logging strategy to use"
 
+      strict_determinism:
+        type: boolean
+        default: true
+        description: "Require strict deterministic fresh CLM runs on the same stack"
+      model_revision:
+        type: [string, 'null']
+        description: "Optional immutable Hugging Face model commit; keep identical across repeats"
+
       # Seed arguments
       seed:
         type: [integer, 'null']

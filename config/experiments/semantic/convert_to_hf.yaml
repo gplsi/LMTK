@@ -1,0 +1,10 @@
+task: "convert"   # pretraining, tokenization
+experiment_name: "semantic_df_all"
+verbose_level: 3
+
+convert:
+  base_model: "meta-llama/Llama-3.2-3B"
+  checkpoint_path: "/home/gplsi/mikel/scripts5/LMTK-deterministic/output/random_10vol_selection_matonto_10_randoms_max40_overlap_bien_filtrado_01_small_v1_2gpus/epoch1"
+  output_dir: "/home/gplsi/mikel/scripts5/LMTK-deterministic/output/random_10vol_selection_matonto_10_randoms_max40_overlap_bien_filtrado_01_small_v1_2gpus/epoch1_hf"
+  initial_format: "fsdp"
+  final_format: "huggingface"

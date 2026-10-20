@@ -1,0 +1,76 @@
+# Dataset Merge Configuration (dc20..dc28, 8k context tokenization)
+task: "dataset_merge"
+experiment_name: "dc29_merged_dc20-dc28"
+verbose_level: 3
+
+# Fixed sequence length for all datasets
+sequence_length: 8192
+
+sequence_length_features:
+  - input_ids
+  - attention_mask
+  - labels
+
+required_features:
+  - input_ids
+  - attention_mask
+  - labels
+
+# Datasets to merge with their sampling percentages
+datasets:
+  - path: "data/tokenized/dc20"
+    percentage: 1.0
+    name: "dc20"
+
+  - path: "data/tokenized/dc21"
+    percentage: 1.0
+    name: "dc21"
+
+  - path: "data/tokenized/dc22"
+    percentage: 1.0
+    name: "dc22"
+
+  - path: "data/tokenized/dc23"
+    percentage: 1.0
+    name: "dc23"
+
+  - path: "data/tokenized/dc24"
+    percentage: 1.0
+    name: "dc24"
+
+  - path: "data/tokenized/dc25"
+    percentage: 1.0
+    name: "dc25"
+
+  - path: "data/tokenized/dc26"
+    percentage: 1.0
+    name: "dc26"
+
+  - path: "data/tokenized/dc27"
+    percentage: 1.0
+    name: "dc27"
+
+  - path: "data/tokenized/dc28"
+    percentage: 1.0
+    name: "dc28"
+
+# Output path for the merged dataset
+output_path: "data/tokenized/dc29"
+
+# Shuffling configuration
+shuffle_seed: 42
+final_shuffle_seed: 123
+
+# Validation options
+strict_compatibility: true
+
+sampler:
+  shuffle_full_sample: false
+  indices_cache_dir: "tmp/dataset_merge_indices"
+
+save:
+  max_shard_size: "2GB"
+  num_proc: 32
+
+# Seed for reproducibility
+seed: 42

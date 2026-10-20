@@ -18,20 +18,27 @@ SLURM_SCRIPT="$SCRIPT_DIR/p.slurm"
 # Initialize variables (will be set by config file, CLI args, or defaults in that order)
 CONFIG_FILE=""
 WANDB_API_KEY=""
+HUGGINGFACE_API_KEY=""
 GPU_COUNT=""
 MEMORY=""
 TIME_LIMIT=""
 PARTITION=""
+QOS=""
 JOB_NAME=""
 CPUS_PER_TASK=""
 NODES=""
 NTASKS_PER_NODE=""
+TOTAL_TASKS=""
 NODELIST=""
 OUTPUT_DIR=""
-OUTPUT_FILE_PATTERN=""
-ERROR_FILE_PATTERN=""
+OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-}"
+ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-}"
 DRY_RUN=false
-FORCE_REBUILD=false
+CONFIG_LOGGING_MODE=""
+CONFIG_WANDB_MODE=""
+
+ENV_OUTPUT_FILE_PATTERN="$OUTPUT_FILE_PATTERN"
+ENV_ERROR_FILE_PATTERN="$ERROR_FILE_PATTERN"
 
 # Load configuration file defaults if it exists
 SLURM_CONFIG_FILE="$SCRIPT_DIR/slurm_config.env"
@@ -42,15 +49,23 @@ if [[ -f "$SLURM_CONFIG_FILE" ]]; then
     CONFIG_LOADED=true
 fi
 
+if [[ -n "$ENV_OUTPUT_FILE_PATTERN" ]]; then
+    OUTPUT_FILE_PATTERN="$ENV_OUTPUT_FILE_PATTERN"
+fi
+if [[ -n "$ENV_ERROR_FILE_PATTERN" ]]; then
+    ERROR_FILE_PATTERN="$ENV_ERROR_FILE_PATTERN"
+fi
+
 # Set final defaults for any unset variables
 GPU_COUNT="${GPU_COUNT:-2}"
 MEMORY="${MEMORY:-64G}"
 TIME_LIMIT="${TIME_LIMIT:-48:00:00}"
 PARTITION="${PARTITION:-dgx}"
+QOS="${QOS:-boost_qos_dbg}"
 JOB_NAME="${JOB_NAME:-lmtk}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-8}"
 NODES="${NODES:-1}"
-NTASKS_PER_NODE="${NTASKS_PER_NODE:-1}"
+NTASKS_PER_NODE="${NTASKS_PER_NODE:-}"
 OUTPUT_FILE_PATTERN="${OUTPUT_FILE_PATTERN:-%j_lmtk.out}"
 ERROR_FILE_PATTERN="${ERROR_FILE_PATTERN:-%j_lmtk.err}"
 
@@ -72,16 +87,18 @@ REQUIRED:
 
 OPTIONAL:
     -k, --wandb-key API_KEY      WandB API key (optional, warning if not provided)
+        --hf-key API_KEY         Hugging Face API key (optional, enables gated repo access)
     -g, --gpus GPU_COUNT         Number of GPUs to request (default: 2)
     -m, --memory MEMORY          Memory to request (default: 64G)
     -t, --time TIME_LIMIT        Time limit (default: 48:00:00)
     -p, --partition PARTITION    SLURM partition (default: dgx)
+    -q, --qos QOS                SLURM QoS (default: boost_qos_dbg)
     -j, --job-name JOB_NAME      Job name (default: lmtk)
     --cpus CPUS                  CPUs per task (default: 16)
     --nodes NODES                Number of nodes (default: 1)
+    --ntasks-per-node COUNT      Tasks per node (default: 1)
     --nodelist NODELIST          Specific nodes to use (optional, e.g., lovelace.iuii.ua.es)
     -o, --output OUTPUT_DIR      Output directory name (optional)
-    --rebuild                    Force rebuild Docker image even if it exists
     -d, --dry-run                Show the command that would be executed without running it
     -h, --help                   Show this help message
 
@@ -101,11 +118,11 @@ EXAMPLES:
     # Different partition
     $0 -c config/experiments/my_experiment.yaml -p gpu -g 8 -m 400G
 
+    # Multi-node run (tasks per node must match GPUs per node)
+    $0 -c config/experiments/my_experiment.yaml --nodes 2 --ntasks-per-node 4 -g 4
+
     # Specific node
     $0 -c config/experiments/my_experiment.yaml --nodelist=lovelace.iuii.ua.es
-
-    # Force rebuild Docker image (useful after code changes)
-    $0 -c config/experiments/test_continual.yaml --rebuild
 
     # Dry run to see what would be executed
     $0 -c config/experiments/my_experiment.yaml -d
@@ -116,8 +133,7 @@ NOTES:
     - If no WandB key is provided, a warning will be shown but job will continue
     - Use environment variable WANDB_API_KEY as alternative to -k flag
     - Job logs will be saved as {job_id}_lmtk.out and {job_id}_lmtk.err
-    - Use --rebuild if you encounter Docker image issues or after code changes
-
+    - Total tasks is computed as nodes * ntasks-per-node and passed to sbatch
 SECURITY:
     - Never commit WandB API keys to version control
     - Use environment variables or pass keys via command line
@@ -137,6 +153,10 @@ while [[ $# -gt 0 ]]; do
             WANDB_API_KEY="$2"
             shift 2
             ;;
+        --hf-key)
+            HUGGINGFACE_API_KEY="$2"
+            shift 2
+            ;;
         -g|--gpus)
             GPU_COUNT="$2"
             shift 2
@@ -153,6 +173,10 @@ while [[ $# -gt 0 ]]; do
             PARTITION="$2"
             shift 2
             ;;
+        -q|--qos)
+            QOS="$2"
+            shift 2
+            ;;
         -j|--job-name)
             JOB_NAME="$2"
             shift 2
@@ -165,6 +189,10 @@ while [[ $# -gt 0 ]]; do
             NODES="$2"
             shift 2
             ;;
+        --ntasks-per-node)
+            NTASKS_PER_NODE="$2"
+            shift 2
+            ;;
         --nodelist)
             NODELIST="$2"
             shift 2
@@ -175,10 +203,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--dry-run)
             DRY_RUN=true
-            shift
-            ;;
-        --rebuild)
-            FORCE_REBUILD=true
             shift
             ;;
         -h|--help)
@@ -232,18 +256,53 @@ if [[ ! -f "$FULL_CONFIG_PATH" ]]; then
     exit 1
 fi
 
+if ! [[ "$NODES" =~ ^[0-9]+$ ]] || [[ "$NODES" -lt 1 ]]; then
+    echo "ERROR: --nodes must be a positive integer; got '$NODES'"
+    exit 1
+fi
+
+if ! [[ "$NTASKS_PER_NODE" =~ ^[0-9]+$ ]] || [[ "$NTASKS_PER_NODE" -lt 1 ]]; then
+    echo "ERROR: --ntasks-per-node must be a positive integer; got '$NTASKS_PER_NODE'"
+    exit 1
+fi
+
+TOTAL_TASKS=$((NODES * NTASKS_PER_NODE))
+
 # Check if WandB key is set via environment variable if not provided via command line
 if [[ -z "$WANDB_API_KEY" && -n "${WANDB_API_KEY:-}" ]]; then
     WANDB_API_KEY="${WANDB_API_KEY}"
 fi
 
-# Warn about WandB key but don't fail
+# Check for Hugging Face key from common environment variables if not provided via CLI
+if [[ -z "$HUGGINGFACE_API_KEY" ]]; then
+    if [[ -n "${HUGGINGFACE_API_KEY:-}" ]]; then
+        HUGGINGFACE_API_KEY="${HUGGINGFACE_API_KEY}"
+    elif [[ -n "${HUGGINGFACEHUB_API_TOKEN:-}" ]]; then
+        HUGGINGFACE_API_KEY="${HUGGINGFACEHUB_API_TOKEN}"
+    elif [[ -n "${HF_TOKEN:-}" ]]; then
+        HUGGINGFACE_API_KEY="${HF_TOKEN}"
+    fi
+fi
+
+# Warn about WandB key but don't fail (unless offline mode requested)
 if [[ -z "$WANDB_API_KEY" ]]; then
-    echo "⚠️  WARNING: No WandB API key provided."
-    echo "   - Experiment tracking will be disabled"
-    echo "   - To enable WandB, use: $0 -c $CONFIG_FILE -k your_wandb_key"
-    echo "   - Or set environment variable: export WANDB_API_KEY=your_key"
-    echo ""
+    if [[ "$CONFIG_LOGGING_MODE" == "wandb" && "$CONFIG_WANDB_MODE" != "offline" ]]; then
+        echo "⚠️  WARNING: No WandB API key provided."
+        echo "   - Experiment tracking will be disabled"
+        echo "   - To enable WandB, use: $0 -c $CONFIG_FILE -k your_wandb_key"
+        echo "   - Or set environment variable: export WANDB_API_KEY=your_key"
+        echo ""
+    fi
+fi
+
+# Default ntasks-per-node to the GPU count if not explicitly provided
+if [[ -z "$NTASKS_PER_NODE" ]]; then
+    NTASKS_PER_NODE="$GPU_COUNT"
+fi
+
+# Default total ntasks to the GPU count if not explicitly provided
+if [[ -z "$NTASKS" ]]; then
+    NTASKS="$GPU_COUNT"
 fi
 
 # Always pass CONFIG_FILE relative to PROJECT_ROOT for the container
@@ -259,12 +318,12 @@ if [[ -n "$WANDB_API_KEY" ]]; then
     EXPORT_VARS="${EXPORT_VARS},WANDB_API_KEY=$WANDB_API_KEY"
 fi
 
-if [[ -n "$OUTPUT_DIR" ]]; then
-    EXPORT_VARS="${EXPORT_VARS},OUTPUT_DIR_NAME=$OUTPUT_DIR"
+if [[ -n "$HUGGINGFACE_API_KEY" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},HUGGINGFACE_API_KEY=$HUGGINGFACE_API_KEY,HF_TOKEN=$HUGGINGFACE_API_KEY,HUGGINGFACEHUB_API_TOKEN=$HUGGINGFACE_API_KEY"
 fi
 
-if [[ "$FORCE_REBUILD" == "true" ]]; then
-    EXPORT_VARS="${EXPORT_VARS},FORCE_REBUILD=true"
+if [[ -n "$OUTPUT_DIR" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},OUTPUT_DIR_NAME=$OUTPUT_DIR"
 fi
 
 # Always include job configuration variables for reference
@@ -272,24 +331,38 @@ EXPORT_VARS="${EXPORT_VARS},GPU_COUNT=$GPU_COUNT"
 EXPORT_VARS="${EXPORT_VARS},MEMORY=$MEMORY"
 EXPORT_VARS="${EXPORT_VARS},TIME_LIMIT=$TIME_LIMIT"
 EXPORT_VARS="${EXPORT_VARS},PARTITION=$PARTITION"
+EXPORT_VARS="${EXPORT_VARS},QOS=$QOS"
 EXPORT_VARS="${EXPORT_VARS},JOB_NAME=$JOB_NAME"
 EXPORT_VARS="${EXPORT_VARS},CPUS_PER_TASK=$CPUS_PER_TASK"
 EXPORT_VARS="${EXPORT_VARS},NODES=$NODES"
 EXPORT_VARS="${EXPORT_VARS},NTASKS_PER_NODE=$NTASKS_PER_NODE"
+EXPORT_VARS="${EXPORT_VARS},TOTAL_TASKS=$TOTAL_TASKS"
+if [[ -n "${PYTHON_COMMAND:-}" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},PYTHON_COMMAND=$PYTHON_COMMAND"
+fi
+if [[ -n "${MAIN_SCRIPT:-}" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},MAIN_SCRIPT=$MAIN_SCRIPT"
+fi
 
 if [[ -n "$NODELIST" ]]; then
     EXPORT_VARS="${EXPORT_VARS},NODELIST=$NODELIST"
+fi
+
+if [[ "$CONFIG_LOGGING_MODE" == "wandb" && "$CONFIG_WANDB_MODE" == "offline" ]]; then
+    EXPORT_VARS="${EXPORT_VARS},WANDB_MODE=offline"
 fi
 
 # Build the sbatch command with proper SLURM directives
 SBATCH_CMD="sbatch"
 SBATCH_CMD="$SBATCH_CMD --job-name=$JOB_NAME"
 SBATCH_CMD="$SBATCH_CMD --partition=$PARTITION"
+# SBATCH_CMD="$SBATCH_CMD --qos=$QOS"
 SBATCH_CMD="$SBATCH_CMD --gres=gpu:$GPU_COUNT"
 SBATCH_CMD="$SBATCH_CMD --mem=$MEMORY"
 SBATCH_CMD="$SBATCH_CMD --time=$TIME_LIMIT"
 SBATCH_CMD="$SBATCH_CMD --cpus-per-task=$CPUS_PER_TASK"
 SBATCH_CMD="$SBATCH_CMD --nodes=$NODES"
+SBATCH_CMD="$SBATCH_CMD --ntasks=$TOTAL_TASKS"
 SBATCH_CMD="$SBATCH_CMD --ntasks-per-node=$NTASKS_PER_NODE"
 SBATCH_CMD="$SBATCH_CMD --output=$OUTPUT_FILE_PATTERN"
 SBATCH_CMD="$SBATCH_CMD --error=$ERROR_FILE_PATTERN"
@@ -318,11 +391,14 @@ echo "Config File: $CONFIG_FILE"
 echo "Full Config Path: $FULL_CONFIG_PATH"
 echo "Job Name: $JOB_NAME"
 echo "Partition: $PARTITION"
+echo "QoS: $QOS"
 echo "GPU Count: $GPU_COUNT"
 echo "Memory: $MEMORY"
 echo "Time Limit: $TIME_LIMIT"
 echo "CPUs per Task: $CPUS_PER_TASK"
+echo "Tasks per Node: $NTASKS_PER_NODE"
 echo "Nodes: $NODES"
+echo "Total Tasks: $TOTAL_TASKS"
 if [[ -n "$NODELIST" ]]; then
     echo "Nodelist: $NODELIST"
 fi
@@ -330,6 +406,11 @@ if [[ -n "$WANDB_API_KEY" ]]; then
     echo "WandB API Key: ${WANDB_API_KEY:0:10}..."
 else
     echo "WandB API Key: [NOT PROVIDED]"
+fi
+if [[ -n "$HUGGINGFACE_API_KEY" ]]; then
+    echo "Hugging Face API Key: ${HUGGINGFACE_API_KEY:0:10}..."
+else
+    echo "Hugging Face API Key: [NOT PROVIDED]"
 fi
 if [[ -n "$OUTPUT_DIR" ]]; then
     echo "Output Directory: $OUTPUT_DIR"

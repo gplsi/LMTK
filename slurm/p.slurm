@@ -15,6 +15,10 @@ set -e  # Exit on any error
 set -u  # Exit on undefined variables
 set -o pipefail  # Exit on pipe failures
 
+# Required before Python starts; fixed hashing is independent of training seed.
+export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
+export CUBLAS_WORKSPACE_CONFIG="${CUBLAS_WORKSPACE_CONFIG:-:4096:8}"
+
 # ===================================================================
 # CONFIGURABLE VARIABLES
 # ===================================================================
@@ -36,12 +40,6 @@ NODELIST="${NODELIST:-}"
 # --- Project Paths (auto-detected) ---
 PROJECT_NAME="${PROJECT_NAME:-LMTK}"
 HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-/home/gplsi/$(whoami)/$PROJECT_NAME}"
-CONTAINER_PROJECT_ROOT="${CONTAINER_PROJECT_ROOT:-/workspace}"
-
-# --- Docker Configuration ---
-DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-lmtk:latest}"
-DOCKERFILE_RELATIVE_PATH="${DOCKERFILE_RELATIVE_PATH:-docker/Dockerfile}"
-FORCE_REBUILD="${FORCE_REBUILD:-false}"
 
 # --- Output Configuration (derived from config or defaults) ---
 OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-experiment_$(date +%Y%m%d_%H%M%S)}"
@@ -54,6 +52,7 @@ CACHE_DIR_NAME="${CACHE_DIR_NAME:-.cache}"
 WANDB_PROJECT="${WANDB_PROJECT:-lmtk-experiments}"
 WANDB_ENTITY="${WANDB_ENTITY:-}"
 WANDB_API_KEY="${WANDB_API_KEY:-}"
+HUGGINGFACE_API_KEY="${HUGGINGFACE_API_KEY:-}"
 
 # --- Python Environment ---
 PYTHON_COMMAND="${PYTHON_COMMAND:-python3}"
@@ -112,12 +111,10 @@ echo "Group ID: $GROUP_ID"
 echo "============================="
 
 # --- Build Derived Paths ---
-DOCKERFILE_PATH="$HOST_PROJECT_ROOT/$DOCKERFILE_RELATIVE_PATH"
 LOG_DIR="$HOST_PROJECT_ROOT/output/$OUTPUT_DIR_NAME/$LOG_SUBDIR"
 CACHE_DIR="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME"
 CONFIG_PATH="$HOST_PROJECT_ROOT/$CONFIG_FILE"
 
-echo $CACHE_DIR
 # --- Create Required Directories ---
 echo "===== Setting up directories ====="
 mkdir -p "$LOG_DIR"
@@ -130,17 +127,19 @@ echo "==============================="
 # --- Configuration Summary ---
 echo "===== Job Configuration ====="
 echo "Project Root: $HOST_PROJECT_ROOT"
-echo "Container Root: $CONTAINER_PROJECT_ROOT"
-echo "Docker Image: $DOCKER_IMAGE_NAME"
 echo "Config File: $CONFIG_FILE"
 echo "Config Path: $CONFIG_PATH"
 echo "Output Directory: $LOG_DIR"
+echo "Partition: $PARTITION"
+echo "Nodes: $NODES"
+echo "Tasks per Node: $NTASKS_PER_NODE"
 if [[ -n "$NODELIST" ]]; then
 echo "Nodelist: $NODELIST"
 fi
 echo "WandB Project: $WANDB_PROJECT"
 echo "WandB Entity: $WANDB_ENTITY"
 echo "WandB API Key: ${WANDB_API_KEY:+[PROVIDED]}${WANDB_API_KEY:-[NOT PROVIDED]}"
+echo "Hugging Face API Key: ${HUGGINGFACE_API_KEY:+[PROVIDED]}${HUGGINGFACE_API_KEY:-[NOT PROVIDED]}"
 echo "=============================="
 
 # --- Data Validation ---
@@ -151,12 +150,6 @@ if [ ! -d "$HOST_PROJECT_ROOT" ]; then
     exit 1
 fi
 echo "✅ Project root: $HOST_PROJECT_ROOT"
-
-if [ ! -f "$DOCKERFILE_PATH" ]; then
-    echo "❌ ERROR: Dockerfile not found: $DOCKERFILE_PATH"
-    exit 1
-fi
-echo "✅ Dockerfile: $DOCKERFILE_PATH"
 
 if [ ! -f "$CONFIG_PATH" ]; then
     echo "❌ ERROR: Config file not found: $CONFIG_PATH"
@@ -182,6 +175,18 @@ else
 fi
 echo "==============================="
 
+# --- Hugging Face Authentication Validation ---
+echo "===== Hugging Face Configuration ====="
+if [ -z "$HUGGINGFACE_API_KEY" ]; then
+    echo "⚠️  WARNING: Hugging Face API key not provided"
+    echo "   - Access to gated Hugging Face repositories will fail"
+    echo "   - Provide a key via: ./submit_job.sh -c $CONFIG_FILE --hf-key your_key_here"
+    echo "   - Or set environment variable: export HUGGINGFACEHUB_API_TOKEN=your_key"
+else
+    echo "✅ Hugging Face API key provided"
+fi
+echo "==============================="
+
 # --- Load Required Modules (if needed) ---
 # Uncomment and customize for your cluster
 # echo "===== Loading modules ====="
@@ -190,120 +195,131 @@ echo "==============================="
 # echo "Modules loaded successfully"
 # echo "============================"
 
-# --- Docker Image Management ---
-echo "===== Docker Image Management ====="
-echo "Checking for Docker image: $DOCKER_IMAGE_NAME"
+ENV_SCRIPT="$HOST_PROJECT_ROOT/scripts/set_environment.sh"
 
-# Check if force rebuild is requested
-if [[ "$FORCE_REBUILD" == "true" ]]; then
-    echo "🔨 Force rebuild requested. Rebuilding Docker image: $DOCKER_IMAGE_NAME"
-    echo "Build arguments: USER_ID=$USER_ID, GROUP_ID=$GROUP_ID, USERNAME=$USERNAME"
-    
-    # Remove existing image first
-    docker rmi "$DOCKER_IMAGE_NAME" 2>/dev/null || true
-    
-    docker build \
-        --build-arg USER_ID="$USER_ID" \
-        --build-arg GROUP_ID="$GROUP_ID" \
-        --build-arg USERNAME="$USERNAME" \
-        --network=host \
-        -t "$DOCKER_IMAGE_NAME" \
-        -f "$DOCKERFILE_PATH" \
-        "$HOST_PROJECT_ROOT"
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Docker image built successfully: $DOCKER_IMAGE_NAME"
+echo "===== Environment Setup ====="
+if [ ! -f "$ENV_SCRIPT" ]; then
+    echo "❌ ERROR: Environment script not found: $ENV_SCRIPT"
+    exit 1
+fi
+
+echo "Sourcing environment script: $ENV_SCRIPT"
+source "$ENV_SCRIPT"
+
+if ! command -v "$PYTHON_COMMAND" >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_COMMAND="python3"
+    elif command -v python >/dev/null 2>&1; then
+        PYTHON_COMMAND="python"
     else
-        echo "❌ Docker build failed"
-        exit 1
-    fi
-# More robust image existence check - actually try to run a simple command
-elif docker run --rm --entrypoint /bin/echo "$DOCKER_IMAGE_NAME" "Image test successful" &> /dev/null; then
-    echo "✅ Using existing Docker image: $DOCKER_IMAGE_NAME"
-else
-    echo "🔨 Docker image not found or corrupted. Building: $DOCKER_IMAGE_NAME"
-    echo "Build arguments: USER_ID=$USER_ID, GROUP_ID=$GROUP_ID, USERNAME=$USERNAME"
-    
-    # Remove any potentially corrupted image first
-    docker rmi "$DOCKER_IMAGE_NAME" 2>/dev/null || true
-    
-    docker build \
-        --build-arg USER_ID="$USER_ID" \
-        --build-arg GROUP_ID="$GROUP_ID" \
-        --build-arg USERNAME="$USERNAME" \
-        --network=host \
-        -t "$DOCKER_IMAGE_NAME" \
-        -f "$DOCKERFILE_PATH" \
-        "$HOST_PROJECT_ROOT"
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Docker image built successfully: $DOCKER_IMAGE_NAME"
-    else
-        echo "❌ Docker build failed"
+        echo "❌ ERROR: No python executable found in PATH after environment setup."
         exit 1
     fi
 fi
-echo "================================="
 
-# --- Container Execution ---
-echo "===== Starting Training Container ====="
-CONTAINER_NAME="${SLURM_JOB_ID}_lmtk"
-echo "Container name: $CONTAINER_NAME"
-echo "Running as user: $USERNAME (UID: $USER_ID, GID: $GROUP_ID)"
-echo "======================================="
+# Resolve to an absolute path so `srun` doesn't depend on PATH propagation.
+PYTHON_COMMAND="$(command -v "$PYTHON_COMMAND")"
 
-# Trap to clean up container on script exit
-cleanup() {
-    echo "===== Cleanup ====="
-    echo "Stopping and removing container if it exists..."
-    docker stop "$CONTAINER_NAME" 2>/dev/null || true
-    docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    echo "Cleanup completed"
-    echo "=================="
-}
-trap cleanup EXIT
+echo "Python executable after environment setup: $PYTHON_COMMAND"
+echo "Conda environment: ${CONDA_DEFAULT_ENV:-unknown}"
+echo "PYTHONPATH: ${PYTHONPATH:-not set}"
+echo "================================"
 
-# Run the training container
-echo "===== Starting Docker Container ====="
-echo "Container name: $CONTAINER_NAME"
-echo "Docker image: $DOCKER_IMAGE_NAME"
-echo "Host project root: $HOST_PROJECT_ROOT"
-echo "Container project root: $CONTAINER_PROJECT_ROOT"
-echo "Docker version: $(docker --version)"
-echo "Available Docker images:"
-docker images | grep -E "(REPOSITORY|lmtk)" || echo "No lmtk images found"
-echo "======================================="
+echo "===== Environment Versions ====="
+$PYTHON_COMMAND - <<'PY'
+import sys
+import torch
+import lightning
 
-docker run \
-    --name "$CONTAINER_NAME" \
-    --gpus all \
-    --rm \
-    --network host \
-    --user "$USER_ID:$GROUP_ID" \
-    --volume "$HOST_PROJECT_ROOT:$CONTAINER_PROJECT_ROOT" \
-    --env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES" \
-    --env "PYTHONPATH=$CONTAINER_PROJECT_ROOT/src:$CONTAINER_PROJECT_ROOT:${PYTHONPATH:-}" \
-    --env "HF_DATASETS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/datasets" \
-    --env "HF_HOME=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface" \
-    --env "TRANSFORMERS_CACHE=$CONTAINER_PROJECT_ROOT/$CACHE_DIR_NAME/transformers" \
-    --env "WANDB_PROJECT=$WANDB_PROJECT" \
-    --env "WANDB_ENTITY=$WANDB_ENTITY" \
-    --env "WANDB_API_KEY=$WANDB_API_KEY" \
-    --env "WANDB_MODE=$WANDB_MODE" \
-    --env "SLURM_JOB_ID=$SLURM_JOB_ID" \
-    --env "SLURM_NODELIST=$SLURM_NODELIST" \
-    --env "USER=$USERNAME" \
-    --env "HOME=/home/$USERNAME" \
-    --env "LOGNAME=$USERNAME" \
-    --env "PYTHON_COMMAND=$PYTHON_COMMAND" \
-    --env "MAIN_SCRIPT=$MAIN_SCRIPT" \
-    --env "CONFIG_FILE=$CONFIG_FILE" \
-    --workdir "$CONTAINER_PROJECT_ROOT" \
-    "$DOCKER_IMAGE_NAME" \
-    /workspace/slurm/run_container.sh
+print(f"ENV python={sys.version.split()[0]}")
+print(f"ENV torch={torch.__version__}")
+print(f"ENV lightning={lightning.__version__}")
+print(f"ENV cuda={torch.version.cuda}")
+print(f"ENV nccl={torch.distributed.is_nccl_available()}")
+PY
+echo "==============================="
 
+# Ensure cache directories mirror container defaults
+export HF_DATASETS_CACHE="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/datasets"
+export HF_HOME="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/huggingface"
+export TRANSFORMERS_CACHE="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/transformers"
+export PYTORCH_TRANSFORMERS_CACHE="$HOST_PROJECT_ROOT/$CACHE_DIR_NAME/transformers"
+export WANDB_CACHE_DIR="$HOST_PROJECT_ROOT/tmp/wandb_cache"
+export WANDB_CONFIG_DIR="$HOST_PROJECT_ROOT/tmp/wandb_config"
+
+mkdir -p "$WANDB_CACHE_DIR" "$WANDB_CONFIG_DIR"
+
+# Normalise HF tokens for downstream libraries
+if [ -n "$HUGGINGFACE_API_KEY" ]; then
+    export HUGGINGFACEHUB_API_TOKEN="$HUGGINGFACE_API_KEY"
+    export HF_TOKEN="$HUGGINGFACE_API_KEY"
+fi
+
+if [ -n "${WANDB_API_KEY:-}" ]; then
+    export WANDB_API_KEY
+    export WANDB_MODE="${WANDB_MODE:-online}"
+else
+    export WANDB_MODE="disabled"
+fi
+
+TRAIN_CMD=("$PYTHON_COMMAND" "$MAIN_SCRIPT" "--config" "$CONFIG_PATH")
+
+echo "===== Launching Training ====="
+echo "Command: ${TRAIN_CMD[*]}"
+USE_SRUN=false
+if [[ "$NODES" -gt 1 || "$NTASKS_PER_NODE" -gt 1 ]]; then
+    USE_SRUN=true
+fi
+
+if [[ "$USE_SRUN" == "true" ]]; then
+    if ! command -v srun >/dev/null 2>&1; then
+        echo "❌ ERROR: srun is required for multi-node or multi-process runs but was not found."
+        exit 1
+    fi
+
+    if [[ -z "${MASTER_ADDR:-}" ]]; then
+        if command -v scontrol >/dev/null 2>&1; then
+            MASTER_ADDR=$(scontrol show hostnames "$SLURM_NODELIST" | head -n 1)
+            export MASTER_ADDR
+        else
+            echo "⚠️  WARNING: scontrol not found; leaving MASTER_ADDR unset."
+        fi
+    fi
+
+    if [[ -z "${MASTER_PORT:-}" ]]; then
+        if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+            MASTER_PORT=$((15000 + (${SLURM_JOB_ID} % 10000)))
+        else
+            MASTER_PORT=12910
+        fi
+        export MASTER_PORT
+    fi
+
+    echo "Running with srun to leverage SLURM allocation"
+else
+    echo "Running without srun (single-node/single-process)"
+fi
+echo "================================"
+export PYTHONPATH="$HOST_PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+cd "$HOST_PROJECT_ROOT"
+
+export PYTHONPATH="$HOST_PROJECT_ROOT:$HOST_PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+
+echo "Working directory: $(pwd)"
+echo "PYTHONPATH final: $PYTHONPATH"
+if [[ "$USE_SRUN" == "true" ]]; then
+    srun --export=ALL \
+         --nodes "$NODES" \
+         --ntasks-per-node "$NTASKS_PER_NODE" \
+         "${TRAIN_CMD[@]}"
+else
+    "${TRAIN_CMD[@]}"
+fi
 # Capture exit code
 EXIT_CODE=$?
+
+#REMOVE TMP DIRECTORY MAPPED
+rm -R /leonardo_scratch/large/userexternal/sgaliano/tmp/*
 
 echo "===== Job Completion ====="
 echo "Container finished with exit code: $EXIT_CODE"
@@ -312,20 +328,10 @@ echo "Job finished at: $(date)"
 if [ $EXIT_CODE -ne 0 ]; then
     echo "❌ Job failed with exit code: $EXIT_CODE"
     echo "===== Debugging Information ====="
-    echo "Docker images available:"
-    docker images | head -10
-    
-    echo "Recent Docker events:"
-    docker events --since="1h" --until="$(date --iso-8601=seconds)" | tail -10 || echo "No Docker events available"
-    
-    echo "Docker system info:"
-    docker system df || echo "Docker system info not available"
-    
-    echo "Testing Docker image again:"
-    docker run --rm --entrypoint /bin/echo "$DOCKER_IMAGE_NAME" "Test after failure" || echo "Image test failed"
-    
     echo "SLURM job details:"
     scontrol show job "$SLURM_JOB_ID" 2>/dev/null || echo "SLURM job details not available"
+    echo "Active modules:"
+    module list 2>/dev/null || echo "Module system not in use"
     echo "================================"
 else
     echo "✅ Job completed successfully"

@@ -6,17 +6,31 @@ import psutil
 
 def inherit_init_params(cls):
     """
-    Inherit init parameters from base class.
+    Decorator that keeps the subclass' __init__ implementation while exposing the
+    signature of the parent __init__. This prevents accidentally discarding the
+    subclass initialisation logic while still providing the expected signature for
+    external tooling (e.g. CLI autocompletion).
     """
-    base_init = cls.__bases__[0].__init__
-    sig = inspect.signature(base_init)
-    
-    @wraps(base_init)
-    def new_init(self, *args, **kwargs):
-        return base_init(self, *args, **kwargs)
-    
-    new_init.__signature__ = sig
-    cls.__init__ = new_init
+    if not cls.__bases__:
+        return cls
+
+    base_init = getattr(cls.__bases__[0], "__init__", None)
+    original_init = cls.__init__
+
+    if base_init is not None:
+        try:
+            signature = inspect.signature(base_init)
+        except (TypeError, ValueError):
+            signature = inspect.Signature()
+    else:
+        signature = inspect.Signature()
+
+    @wraps(original_init)
+    def wrapped_init(self, *args, **kwargs):
+        return original_init(self, *args, **kwargs)
+
+    wrapped_init.__signature__ = signature
+    cls.__init__ = wrapped_init
     return cls
 
 def get_optimal_thread_count():

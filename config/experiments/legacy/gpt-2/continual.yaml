@@ -1,0 +1,65 @@
+task: "clm_training"   # pretraining, tokenization
+experiment_name: "anonymized_corpus_va_gpt2_test"
+verbose_level: 3
+
+# Training data
+dataset:
+  source: "local"  # huggingface, local
+  nameOrPath: "/workspace/data/tokenized/anonymized-va-salamandra"
+
+# Output dir
+output_dir: "output/gpt-2-test/"
+
+# Model
+model_name: "openai-community/gpt2"
+
+# Model precisionW
+precision: "bf16-true"
+static_graph: false
+
+# Training parameters
+number_epochs: 4 # 2 + 2
+batch_size: 1
+
+# Validation parameters
+validate_on_end: true
+validate_after_epoch: true
+validate_after_k_steps: 750
+
+# Gradient parameters
+gradient_accumulation: true
+gradient_accumulation_steps: 32
+grad_clip: 1.0
+
+# Optimizer parameters
+lr: 0.00002      
+lr_decay: true
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+
+# Scheduler parameters
+lr_scheduler: "warmup_linear"
+warmup_proportion: 0.06   
+
+# Logging
+logging_config: "wandb"
+
+# Wandb logging specific parameters
+wandb_project: "gpt2-test"
+wandb_entity: "gplsi_continual"
+log_model: false
+log_iter_interval: 10
+
+# Distributed_strategy
+parallelization_strategy: "fsdp"
+
+# FSDP specific parameters
+# auto_wrap_policy: "llama"
+sharding_strategy: "FULL_SHARD"
+state_dict_type: "sharded"
+limit_all_gathers: true
+cpu_offload: false
+num_workers: 4
+gradient_checkpointing: true
+

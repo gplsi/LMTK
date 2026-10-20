@@ -10,7 +10,7 @@ allOf:
 
           format:
             type: string
-            enum: ["fsdp"]
+            enum: ["fsdp", "ddp"]
             default: "fsdp"
 
           base_model:
@@ -47,6 +47,11 @@ allOf:
           create_pr:
             type: boolean
             description: "Whether to create a pull request instead of pushing directly"
+            default: false
+
+          validate_upload:
+            type: boolean
+            description: "Whether to load the uploaded model/tokenizer for a quick smoke test"
             default: false
 
         required:

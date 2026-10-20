@@ -1,0 +1,646 @@
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,5 @@
++> Esta copia incorpora determinismo estricto para CPT. Lee [DETERMINISMO.md](DETERMINISMO.md) antes de entrenar; la verificación en GPU está pendiente.
++
+ # LMTK
+ The Language Model ToolKit
+ 
+--- /dev/null
++++ b/DETERMINISMO.md
+@@ -0,0 +1,143 @@
++# LMTK: copia con determinismo estricto para CPT
++
++Base: `gplsi/LMTK`, rama `hpc`, commit
++`65e8ddc45c746609c55310ce27096ed9b6568767`.
++
++**Estado: controles implementados; repetibilidad en GPU pendiente de verificar.**
++No se ha ejecutado un entrenamiento real en esta entrega: el entorno de edición
++no tiene PyTorch ni GPU y la instalación de dependencias fue bloqueada por la
++aprobación de red. Las pruebas locales cubren lógica y controles con dobles de
++prueba; no certifican los kernels de tu clúster.
++
++## Qué cambia
++
++Se conserva el modelo, BF16, FSDP, cuatro workers, la estructura del proyecto y
++el flujo de SLURM. `clm_training` activa por defecto `strict_determinism: true`.
++
++1. Se exige una seed válida y hashing de Python fijo desde el arranque.
++2. Se configura cuBLAS antes de inicializar CUDA; PyTorch exige algoritmos
++   deterministas con `warn_only=False`. Se desactiva TF32 y el backend SDPA
++   memory-efficient. La atención se fija a SDPA nativo de PyTorch; Flash nativo
++   puede seguir utilizándose si soporta la ejecución determinista. No se cambia
++   silenciosamente a FP32 ni a otra arquitectura.
++3. El sampler recibe la seed explícitamente, incluso con FSDP; los workers
++   tienen un generador independiente por split/rank. Las épocas tienen un orden
++   reproducible. Esto puede cambiar el orden respecto al sampler antiguo.
++4. Cada rank guarda versiones, dispositivo, fingerprint del dataset, revisión
++   resuelta del modelo y configuración relevante en un JSON de reproducibilidad.
++5. Se rechaza `checkpoint`/`initial_weights_checkpoint` en modo estricto. Esta
++   copia soporta nuevas ejecuciones desde `model_name`, que es tu caso, no una
++   promesa de reanudación exacta del entrenador original.
++
++Las correcciones de optimización están separadas en `patches/02-optimization.patch`:
++se normalizan todos los microbatches, se procesa el grupo incompleto de final
++de época, se ajusta el scheduler al número real de actualizaciones/datos y se
++elimina el clipping doble. **Estas correcciones cambian el algoritmo respecto
++a tus experimentos anteriores.** No atribuyas un cambio de F1 solo al determinismo.
++`patches/01-strict-determinism.patch` contiene los controles de reproducibilidad.
++Ambos cambios ya están aplicados en esta carpeta: no vuelvas a aplicar los patches.
++
++`state_dict_type` continúa siendo `full` en el constructor FSDP original. No se
++ha reestructurado la configuración general de estrategias. El comparador acepta
++esos checkpoints completos `.pth`, no checkpoints distribuidos fragmentados.
++
++## Uso con tu configuración
++
++Usa el mismo contenedor y las mismas versiones que en el clúster. No actualices
++las dependencias durante una comparación. Se incluye
++`config/examples/random8_deterministic.yaml`, con tus parámetros y una carpeta
++de salida nueva. Comprueba la ruta local del dataset antes de ejecutarlo.
++
++Desde la raíz de esta copia, en una asignación GPU ya obtenida:
++
++```bash
++bash scripts/run_deterministic.sh --config config/examples/random8_deterministic.yaml
++```
++
++Para SLURM usa el `slurm/submit_job.sh` existente con tus opciones habituales y
++`-c config/examples/random8_deterministic.yaml`. `slurm/p.slurm` ya exporta las
++variables necesarias. Si usas otro lanzador/contenedor, asegúrate de que dentro
++del contenedor, **antes de arrancar Python**, están:
++
++```bash
++export PYTHONHASHSEED=0
++export CUBLAS_WORKSPACE_CONFIG=:4096:8
++```
++
++La seed de entrenamiento sigue siendo 42. El 0 del hashing de Python es otro
++control independiente. `PYTHONHASHSEED` no debe establecerse por primera vez
++desde dentro de un intérprete Python ya arrancado.
++
++## Prueba pequeña antes del CPT de 3B
++
++Dentro del contenedor, desde la raíz de esta copia:
++
++```bash
++python scripts/prepare_determinism_smoke.py determinism-smoke
++```
++
++Se crea una única inicialización local de un Llama pequeño y un único dataset
++tokenizado, sin descargar modelos. Se crean `run-a.yaml` y `run-b.yaml`, iguales
++salvo la carpeta de salida, con BF16, FSDP, seed 42 y acumulación 16.
++
++Ejecuta las dos configuraciones con el mismo número/tipo de GPU y el mismo
++lanzador que vayas a usar para el experimento real. En una asignación GPU local:
++
++```bash
++bash scripts/run_deterministic.sh --config determinism-smoke/run-a.yaml
++bash scripts/run_deterministic.sh --config determinism-smoke/run-b.yaml
++python scripts/compare_cpt_runs.py determinism-smoke/run-a determinism-smoke/run-b
++```
++
++En SLURM entrega cada YAML al lanzador existente; no se envía ningún trabajo
++automáticamente. Para certificar FSDP necesitas al menos dos GPU: una sola GPU
++usa la estrategia automática original. No cambies el número de GPU entre runs.
++
++El comparador exige los mismos manifests y el mismo conjunto de checkpoints.
++Compara bit a bit pesos y estados de optimizador/scheduler, además de contadores;
++rechaza valores no finitos y sale con error si hay diferencias. No compara los
++bytes de los archivos `.pth` completos ni los tiempos/logs de WandB.
++
++Si funciona, repite una prueba corta con **tu Llama-3.2-3B, tus secuencias de 8192,
++tu dataset y tu topología real**, por ejemplo usando el mismo `train_data_ratio`
++pequeño en dos copias del YAML, dos épocas y distintas salidas. El Llama pequeño
++no certifica todos los kernels usados por un modelo mayor. Una prueba corta
++tampoco certifica matemáticamente una ejecución de duración arbitraria; verifica
++los checkpoints completos cuando repitas los CPT definitivos.
++
++Si PyTorch informa de una operación no determinista, conserva el error y la
++versión exacta para resolver ese kernel. No pongas `warn_only=True` para saltarlo.
++Si el comparador detecta diferencias, la prueba **no ha pasado**, aunque los F1
++coincidan. Si falla el cargador seguro del checkpoint, no habilites pickle
++arbitrario: revisa el formato guardado en tu versión.
++
++## Condiciones de la comparación
++
++Mantén iguales: datos tokenizados y su orden, pesos iniciales, configuración,
++modelo de GPU y topología, número de procesos, contenedor, PyTorch/Lightning/
++Transformers/CUDA/cuDNN y parámetros de ejecución. Puedes fijar
++`model_revision` al SHA de Hugging Face que usaste (se registra `model_commit`),
++o usar una copia local inmutable. El fingerprint del dataset es metadata útil,
++no sustituye un checksum criptográfico de todos sus archivos.
++
++No existe garantía universal entre hardware o versiones diferentes. Los
++controles estrictos detectan operaciones conocidas por PyTorch; no son una
++prueba formal de ausencia de errores en todas las bibliotecas externas.
++
++## Verificación local y entrega
++
++```bash
++python tests/unit/training/test_deterministic_copy.py
++```
++
++Estas pruebas no requieren instalar PyTorch y no son un entrenamiento GPU.
++El resultado y los límites están documentados en `issues/deterministic-cpt.md`.
++
++El ZIP contiene el árbol completo y el historial Git disponible del snapshot
++original. Los cambios nuevos quedan sin commit, para que los revises con
++`git diff`. El remoto original se conserva como `upstream`, con push desactivado.
++No se ha creado ni modificado un repositorio remoto de GitHub.
++
++Para publicar la copia, crea un repositorio vacío en tu cuenta y, tras revisar
++los cambios, añade su URL como `origin`, crea tu commit y sube la rama
++`deterministic`. No se han incluido datos, pesos ni credenciales nuevos.
+--- /dev/null
++++ b/issues/deterministic-cpt.md
+@@ -0,0 +1,34 @@
++# Deterministic CPT copy
++
++Status: implemented; 11 local regression tests passed; GPU acceptance pending.
++
++User request: independent copy of gplsi/LMTK hpc with minimal changes for
++repeatable CPT. Upstream snapshot: 65e8ddc45c746609c55310ce27096ed9b6568767.
++
++Scope: the existing CLM/Fabric path, fresh training runs on an identical
++software/hardware/data stack. Do not claim cross-platform determinism. Require
++a seed, deterministic PyTorch algorithms and controlled data generators.
++Retain BF16, FSDP, workers and the original model. Do not implement resume:
++upstream checkpoints do not restore all RNG/data-loader state. Reject resume
++and initial_weights_checkpoint in strict mode (the latter also has a preexisting
++loading issue). Normal from_pretrained CPT remains supported.
++
++Related work: issues/42-online-packing.md and its execution plan discuss
++deterministic sampling, but online packing is out of scope. Existing trainer
++uses local pretokenized datasets. PyTorch reproducibility guidance:
++https://docs.pytorch.org/docs/stable/notes/randomness.html
++Fabric gradient accumulation guidance:
++https://lightning.ai/docs/fabric/stable/advanced/gradient_accumulation.html
++
++Changes are delivered as two separate patches: strict reproducibility, then
++gradient normalization/clipping correctness. The latter changes the training
++algorithm and is not evidence of a cause of run-to-run variability.
++
++Validation: dependency-free regression tests execute extracted production
++methods with numerical test doubles. Real tensor and repeated GPU training
++checks must run in the user's existing cluster container. This environment has
++no PyTorch/GPU; package installation was blocked by network approval. No SLURM
++jobs submitted. Record cluster job IDs, log paths, environment manifests and
++checkpoint comparison output here when running the acceptance procedure.
++
++Local verification: `python tests/unit/training/test_deterministic_copy.py` passed 11 tests. Shell syntax and modified Python parsing passed. GPU jobs: none; SLURM ID: not applicable. Kernel-level repeatability remains unverified.
+--- /dev/null
++++ b/config/examples/random8_deterministic.yaml
+@@ -0,0 +1,54 @@
++task: clm_training
++experiment_name: llama_3.2_3b_random8_deterministic
++verbose_level: 3
++dataset:
++  source: local
++  nameOrPath: /home/gplsi/mikel/scripts4/lmtk_decoders/LMTK/data/owl/tokenized_outputs/random_10vol_selection_matonto_10_randoms_max40_overlap_bien_filtrado_08
++  format: hf
++validation_split:
++  proportion: 0.01
++  seed: 42
++  shuffle: true
++output_dir: output/random8_deterministic_v1
++seed: 42
++strict_determinism: true
++model_name: meta-llama/Llama-3.2-3B
++# Optional: set model_revision to the exact Hugging Face commit you used.
++precision: bf16-true
++static_graph: false
++number_epochs: 2
++batch_size: 1
++validate_on_end: true
++validate_after_epoch: true
++validate_after_k_steps: null
++save_on_validate: true
++save_on_end: true
++gradient_accumulation: true
++gradient_accumulation_steps: 16
++grad_clip: 1.0
++lr: 0.00002
++lr_decay: true
++weight_decay: 0.01
++beta1: 0.9
++beta2: 0.999
++lr_scheduler: warmup_linear
++warmup_proportion: 0.1
++logging_config: wandb
++wandb_project: llama_3.2_3b_df_all_8192
++wandb_entity: gplsi_continual
++wandb_run_name: llama_3.2_3b_random8_deterministic
++wandb_group: aitana-s2b
++wandb_job_type: train
++wandb_tags: [fsdp, bf16, continual, deterministic]
++wandb_notes: Strict CPT; corrected accumulation and clipping; not an unchanged historical run.
++wandb_resume: allow
++wandb_mode: online
++log_model: false
++log_iter_interval: 10
++parallelization_strategy: fsdp
++sharding_strategy: FULL_SHARD
++state_dict_type: full
++limit_all_gathers: true
++cpu_offload: false
++num_workers: 4
++gradient_checkpointing: true
+--- a/config/schemas/training/clm_training.schema.yaml
++++ b/config/schemas/training/clm_training.schema.yaml
+@@ -37,6 +37,14 @@
+         default: "none"
+         description: "Which logging strategy to use"
+ 
++      strict_determinism:
++        type: boolean
++        default: true
++        description: "Require strict deterministic fresh CLM runs on the same stack"
++      model_revision:
++        type: [string, 'null']
++        description: "Optional immutable Hugging Face model commit; keep identical across repeats"
++
+       # Seed arguments
+       seed:
+         type: [integer, 'null']
+--- /dev/null
++++ b/scripts/run_deterministic.sh
+@@ -0,0 +1,8 @@
++#!/usr/bin/env bash
++set -euo pipefail
++export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
++export CUBLAS_WORKSPACE_CONFIG="${CUBLAS_WORKSPACE_CONFIG:-:4096:8}"
++repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
++export PYTHONPATH="$repo_root:$repo_root/src${PYTHONPATH:+:$PYTHONPATH}"
++cd "$repo_root"
++exec "${PYTHON_COMMAND:-python3}" src/main.py "$@"
+--- /dev/null
++++ b/scripts/prepare_determinism_smoke.py
+@@ -0,0 +1,54 @@
++"""Create a local tiny Llama, fixed tokenized data, and two fresh-run configs.
++
++Run inside the same container used for training. No model download is needed.
++This prepares files only and never submits SLURM jobs.
++"""
++import argparse
++from pathlib import Path
++
++import torch
++from datasets import Dataset
++from transformers import LlamaConfig, LlamaForCausalLM
++import yaml
++
++
++def prepare(directory):
++    directory = directory.resolve()
++    directory.mkdir(parents=True, exist_ok=False)
++    torch.manual_seed(42)
++    model = LlamaForCausalLM(LlamaConfig(
++        vocab_size=128, hidden_size=64, intermediate_size=128,
++        num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2,
++        max_position_embeddings=128, attention_dropout=0.0,
++    ))
++    model.save_pretrained(directory / 'model')
++    tokens = torch.randint(3, 128, (66, 128)).tolist()
++    Dataset.from_dict({'input_ids': tokens, 'attention_mask': [[1]*128 for _ in tokens],
++                       'labels': tokens}).save_to_disk(str(directory / 'dataset'))
++    config = {
++        'task': 'clm_training', 'experiment_name': 'determinism-smoke', 'verbose_level': 2,
++        'dataset': {'source': 'local', 'nameOrPath': str(directory / 'dataset'), 'format': 'hf'},
++        'validation_split': {'count': 2, 'seed': 42, 'shuffle': True},
++        'seed': 42, 'strict_determinism': True, 'model_name': str(directory / 'model'),
++        'precision': 'bf16-true', 'parallelization_strategy': 'fsdp',
++        'number_epochs': 2, 'batch_size': 1, 'num_workers': 4,
++        'gradient_accumulation_steps': 16, 'gradient_accumulation': True, 'grad_clip': 1.0,
++        'lr': 2e-5, 'weight_decay': 0.01, 'beta1': 0.9, 'beta2': 0.999,
++        'lr_scheduler': 'warmup_linear', 'warmup_proportion': 0.1,
++        'validate_on_end': True, 'validate_after_epoch': True, 'validate_after_k_steps': None,
++        'save_on_validate': True, 'save_on_end': True,
++        'gradient_checkpointing': True, 'logging_config': 'none', 'log_iter_interval': 1,
++        'cpu_offload': False, 'sharding_strategy': 'FULL_SHARD',
++        'state_dict_type': 'full', 'limit_all_gathers': True,
++    }
++    for name in ('a', 'b'):
++        config['output_dir'] = str(directory / f'run-{name}')
++        path = directory / f'run-{name}.yaml'
++        path.write_text(yaml.safe_dump(config, sort_keys=False))
++        print(path)
++
++
++if __name__ == '__main__':
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('directory', type=Path)
++    prepare(parser.parse_args().directory)
+--- /dev/null
++++ b/scripts/compare_cpt_runs.py
+@@ -0,0 +1,74 @@
++"""Compare corresponding trusted LMTK full checkpoints and run manifests.
++
++Exit 0 only if tensors are bitwise equal, finite, and metadata matches.
++This requires PyTorch; it does not compare archive bytes or timing/WandB logs.
++"""
++import argparse
++import json
++from pathlib import Path
++import struct
++
++import torch
++
++
++def compare(a, b, path='state'):
++    if type(a) is not type(b):
++        raise AssertionError(f'{path}: different types')
++    if isinstance(a, torch.Tensor):
++        if a.dtype != b.dtype or a.shape != b.shape or a.layout != b.layout:
++            raise AssertionError(f'{path}: different tensor metadata')
++        if a.is_floating_point() and (not torch.isfinite(a).all() or not torch.isfinite(b).all()):
++            raise AssertionError(f'{path}: non-finite values')
++        # Byte views also distinguish positive/negative zero. Flatten scalar states.
++        av = a.detach().cpu().contiguous().reshape(-1).view(torch.uint8)
++        bv = b.detach().cpu().contiguous().reshape(-1).view(torch.uint8)
++        if not torch.equal(av, bv):
++            raise AssertionError(f'{path}: tensor bytes differ')
++    elif isinstance(a, dict):
++        if a.keys() != b.keys():
++            raise AssertionError(f'{path}: different keys')
++        for key in a:
++            compare(a[key], b[key], f'{path}.{key}')
++    elif isinstance(a, (list, tuple)):
++        if len(a) != len(b):
++            raise AssertionError(f'{path}: different lengths')
++        for i, (x, y) in enumerate(zip(a, b)):
++            compare(x, y, f'{path}[{i}]')
++    elif isinstance(a, float):
++        if struct.pack('!d', a) != struct.pack('!d', b):
++            raise AssertionError(f'{path}: different floats')
++    elif a != b:
++        raise AssertionError(f'{path}: different values')
++
++
++def compare_runs(first, second):
++    manifests = sorted(p.name for p in first.glob('reproducibility-rank-*.json'))
++    if not manifests or manifests != sorted(p.name for p in second.glob('reproducibility-rank-*.json')):
++        raise AssertionError('Missing or different rank manifests')
++    for name in manifests:
++        left = json.loads((first / name).read_text())
++        right = json.loads((second / name).read_text())
++        if not left['deterministic_algorithms'] or left['warn_only']:
++            raise AssertionError('Run was not in strict deterministic mode')
++        compare(left, right, name)
++    checkpoints = sorted(p.name for p in first.glob('e-*.pth'))
++    if not checkpoints or checkpoints != sorted(p.name for p in second.glob('e-*.pth')):
++        raise AssertionError('Missing or different checkpoint sets')
++    for name in checkpoints:
++        # Safe loader: do not silently fall back to arbitrary pickle execution.
++        a = torch.load(first / name, map_location='cpu', weights_only=True)
++        b = torch.load(second / name, map_location='cpu', weights_only=True)
++        for key in ('model', 'optimizer', 'scheduler', 'step_count', 'iter_num', 'current_epoch'):
++            if key not in a or key not in b:
++                raise AssertionError(f'{name}: missing {key}')
++            compare(a[key], b[key], f'{name}.{key}')
++        print(f'PASS {name}: model, optimizer, scheduler and counters match exactly')
++        del a, b
++
++
++if __name__ == '__main__':
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('first', type=Path)
++    parser.add_argument('second', type=Path)
++    args = parser.parse_args()
++    compare_runs(args.first, args.second)
+--- a/slurm/p.slurm
++++ b/slurm/p.slurm
+@@ -14,6 +14,10 @@
+ set -e  # Exit on any error
+ set -u  # Exit on undefined variables
+ set -o pipefail  # Exit on pipe failures
++
++# Required before Python starts; fixed hashing is independent of training seed.
++export PYTHONHASHSEED="${PYTHONHASHSEED:-0}"
++export CUBLAS_WORKSPACE_CONFIG="${CUBLAS_WORKSPACE_CONFIG:-:4096:8}"
+ 
+ # ===================================================================
+ # CONFIGURABLE VARIABLES
+--- a/src/tasks/training/__init__.py
++++ b/src/tasks/training/__init__.py
+@@ -2,6 +2,8 @@
+ 
+ # src/tasks/training.py
+ def execute(config: Box):
++    from src.tasks.training.reproducibility import prepare_process
++    prepare_process(config)
+     from src.tasks.training.orchestrator import ContinualOrchestrator
+     orchestrator = ContinualOrchestrator(config)
+-    return orchestrator.execute()
+\ No newline at end of file
++    return orchestrator.execute()
+--- /dev/null
++++ b/src/tasks/training/reproducibility.py
+@@ -0,0 +1,75 @@
++"""Strict, fresh-run CLM reproducibility on an unchanged execution stack."""
++import importlib.metadata
++import json
++import os
++from pathlib import Path
++import platform
++
++
++def strict_enabled(config):
++    return config.get('strict_determinism', config.get('task') == 'clm_training')
++
++
++def prepare_process(config):
++    """Called before importing the training stack; no torch imports here."""
++    if not strict_enabled(config):
++        return
++    seed = config.get('seed')
++    if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**32:
++        raise ValueError('Strict CPT requires an integer seed in [0, 2**32).')
++    accumulation = config.get('gradient_accumulation_steps')
++    if isinstance(accumulation, bool) or not isinstance(accumulation, int) or accumulation < 1:
++        raise ValueError('Strict CPT requires gradient_accumulation_steps >= 1 (use 1 to disable accumulation).')
++    hash_seed = os.environ.get('PYTHONHASHSEED', '')
++    if not hash_seed.isdigit() or not 0 <= int(hash_seed) < 2**32:
++        raise RuntimeError('Start Python with PYTHONHASHSEED=0 (or use scripts/run_deterministic.sh).')
++    # Must be set before any CUDA context is created.
++    workspace = os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
++    if workspace not in (':4096:8', ':16:8'):
++        raise RuntimeError('CUBLAS_WORKSPACE_CONFIG must be :4096:8 or :16:8.')
++    if config.get('checkpoint') is not None or config.get('initial_weights_checkpoint') is not None:
++        raise ValueError('Strict mode supports fresh from_pretrained runs only; checkpoint resume is not RNG-complete.')
++    if config.get('task') != 'clm_training':
++        raise ValueError('Strict mode is implemented for clm_training only.')
++    if config.get('parallelization_strategy', 'fsdp') not in ('fsdp', 'ddp'):
++        raise ValueError('Strict mode supports the existing fsdp/ddp paths only.')
++
++
++def seed_worker(worker_id):
++    """Seed worker-local Python/NumPy from the loader's independent generator."""
++    import random
++    import numpy as np
++    import torch
++    seed = torch.initial_seed() % 2**32
++    random.seed(seed)
++    np.random.seed(seed)
++
++
++def write_manifest(config, fabric, model, datasets):
++    """Whitelist metadata: never dump credentials or the full environment."""
++    import torch
++    packages = {}
++    for name in ('torch', 'lightning', 'transformers', 'datasets', 'numpy'):
++        packages[name] = importlib.metadata.version(name)
++    fields = ('seed', 'model_name', 'model_revision', 'precision', 'parallelization_strategy',
++              'batch_size', 'gradient_accumulation_steps', 'num_workers', 'number_epochs',
++              'lr', 'lr_scheduler', 'warmup_proportion', 'weight_decay', 'beta1', 'beta2',
++              'grad_clip', 'validation_split', 'train_data_ratio')
++    metadata = {
++        'python': platform.python_version(), 'packages': packages,
++        'cuda': torch.version.cuda, 'cudnn': torch.backends.cudnn.version(),
++        'world_size': fabric.world_size, 'rank': fabric.global_rank,
++        'python_hash_probe': hash('LMTK-deterministic'),
++        'device': str(fabric.device),
++        'gpu': torch.cuda.get_device_name(fabric.device) if fabric.device.type == 'cuda' else None,
++        'environment': {k: os.environ.get(k) for k in
++                        ('PYTHONHASHSEED', 'CUBLAS_WORKSPACE_CONFIG', 'NCCL_ALGO', 'NCCL_PROTO')},
++        'training': {k: config.get(k) for k in fields},
++        'datasets': {k: {'rows': len(v), 'fingerprint': v._fingerprint} for k, v in datasets.items()},
++        'model_commit': getattr(model.model.config, '_commit_hash', None),
++        'attention': getattr(model.model.config, '_attn_implementation', None),
++        'deterministic_algorithms': torch.are_deterministic_algorithms_enabled(),
++        'warn_only': torch.is_deterministic_algorithms_warn_only_enabled(),
++    }
++    path = Path(config.output_dir) / f'reproducibility-rank-{fabric.global_rank}.json'
++    path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + '\n')
+--- a/src/tasks/training/utils.py
++++ b/src/tasks/training/utils.py
+@@ -178,7 +178,7 @@
+     return optimizer
+ 
+ 
+-def deterministic(seed) -> None:
++def deterministic(seed, strict=False) -> None:
+     """
+     Configures the environment to produce deterministic results.
+     
+@@ -197,6 +197,13 @@
+     np.random.seed(seed)
+     torch.manual_seed(seed)
+     torch.cuda.manual_seed_all(seed)
++    if strict:
++        torch.use_deterministic_algorithms(True, warn_only=False)
++        torch.backends.cuda.matmul.allow_tf32 = False
++        torch.backends.cudnn.allow_tf32 = False
++        # Avoid the nondeterministic memory-efficient SDPA backward on older stacks.
++        # Native Flash SDPA must honor strict mode or fail; never use warn_only.
++        torch.backends.cuda.enable_mem_efficient_sdp(False)
+ 
+ 
+ def _parse_slurm_int(value: Optional[str]) -> Optional[int]:
+--- a/src/tasks/training/fabric/trainer/base.py
++++ b/src/tasks/training/fabric/trainer/base.py
+@@ -9,7 +9,8 @@
+ from pathlib import Path
+ import time
+ import torch
+-from torch.utils.data import DataLoader
++from torch.utils.data import DataLoader, DistributedSampler
++from src.tasks.training.reproducibility import strict_enabled, seed_worker, prepare_process, write_manifest
+ from datasets import load_from_disk, DatasetDict
+ from datasets import Dataset as HFDataset
+ from tqdm import tqdm
+@@ -92,6 +93,8 @@
+         self.num_nodes = num_nodes if num_nodes is not None else 1
+         self.devices_per_node = devices_per_node
+         self.config = config
++        self.strict_determinism = strict_enabled(config)
++        prepare_process(config)
+         self.checkpoint_path = checkpoint_path
+         self.state = {}
+         self.dataset = dataset
+@@ -783,6 +786,8 @@
+         for epoch in range(epochs):
+             # Update current epoch in state for checkpoint naming
+             self.state["current_epoch"] = epoch + 1
++            if self.strict_determinism:
++                self.dataloaders['train'].sampler.set_epoch(epoch)
+             
+             if fabric.global_rank == 0:
+                 self.cli_logger.debug(f"Running Epoch {epoch + 1} of {epochs}")
+@@ -954,7 +959,7 @@
+         """
+         # DETERMINISTIC RESULTS
+         if self.config.get("seed", None) is not None:
+-            deterministic(self.config.seed)
++            deterministic(self.config.seed, strict=self.strict_determinism)
+             fabric.seed_everything(self.config.seed)
+ 
+         # MONITORING
+@@ -965,8 +970,27 @@
+             os.makedirs(self.config.output_dir, exist_ok=True)
+         fabric.barrier()
+ 
++        # Independent, explicitly seeded sampling in strict mode. Validation and
++        # model initialization cannot consume the training sampler's RNG stream.
++        if self.strict_determinism:
++            for split, loader in list(self.dataloaders.items()):
++                sampler = DistributedSampler(
++                    loader.dataset, num_replicas=fabric.world_size,
++                    rank=fabric.global_rank, shuffle=(split == "train"),
++                    seed=self.config.seed, drop_last=False,
++                )
++                generator = torch.Generator().manual_seed(
++                    self.config.seed + fabric.global_rank + (0 if split == "train" else 1)
++                )
++                self.dataloaders[split] = DataLoader(
++                    loader.dataset, batch_size=self.config.batch_size,
++                    sampler=sampler, num_workers=self.config.num_workers,
++                    pin_memory=True, drop_last=False,
++                    generator=generator, worker_init_fn=seed_worker,
++                )
++
+         # FABRIC DATALOADERS SETUP
+-        self.dataloaders = {k: fabric.setup_dataloaders(v) for k, v in self.dataloaders.items()}
++        self.dataloaders = {k: fabric.setup_dataloaders(v, use_distributed_sampler=not self.strict_determinism) for k, v in self.dataloaders.items()}
+ 
+         # MODEL: instantiate within the fabric.init_module() context
+         t0 = time.perf_counter()
+@@ -976,6 +1000,9 @@
+         
+ 
+             
++        if self.strict_determinism:
++            write_manifest(self.config, fabric, self.model, self.datasets)
++
+         # Properly set up the model with fabric for FSDP TODO: check if this is the problem with Salamandra
+         self.model = fabric.setup(self.model)
+         self.cli_logger.info(f"Time to SetUp model: {time.perf_counter() - t0:.02f} seconds.")
+--- a/src/tasks/training/fabric/model/clm.py
++++ b/src/tasks/training/fabric/model/clm.py
+@@ -6,6 +6,7 @@
+ from torch.optim import AdamW
+ from utils.logging import VerboseLevel, get_logger
+ from src.tasks.training.fabric.model.base import BaseModel
++from src.tasks.training.reproducibility import strict_enabled
+ 
+ 
+ """
+@@ -42,8 +43,16 @@
+         """
+         super().__init__(**kwargs)
+         
++        load_kwargs = {}
++        if strict_enabled(kwargs):
++            # Native PyTorch SDPA participates in deterministic-algorithm checks.
++            # Keep memory-efficient native Flash attention if the stack supports it.
++            load_kwargs["attn_implementation"] = "sdpa"
++        if kwargs.get("model_revision") is not None:
++            load_kwargs["revision"] = kwargs["model_revision"]
+         self.model = AutoModelForCausalLM.from_pretrained(
+             self.model_name,
+             dtype=self.torch_dtype,
+-            use_cache=False
++            use_cache=False,
++            **load_kwargs
+         )
+\ No newline at end of file
