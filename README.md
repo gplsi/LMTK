@@ -1,4 +1,4 @@
-> Esta copia incorpora determinismo estricto para CPT. Lee [DETERMINISMO.md](DETERMINISMO.md) antes de entrenar; la verificación en GPU está pendiente.
+> Esta copia incorpora determinismo estricto para CPT. Lee [DETERMINISMO.md](DETERMINISMO.md) antes de entrenar.
 
 # LMTK
 The Language Model ToolKit
